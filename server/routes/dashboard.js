@@ -1,18 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const dashboardController = require('../controllers/dashboardController');
 
-router.get('/', (req, res) => {
-  res.json({
-    totalStudents: 42,
-    totalStaff: 6,
-    inventoryCount: 140,
-    recentActivities: [
-      'Outdoor playtime completed',
-      'New books added to library',
-      'Weekly staff meeting held'
-    ]
-  });
-});
+router.get('/', dashboardController.getDashboardMetrics);
 
 module.exports = router;
 
