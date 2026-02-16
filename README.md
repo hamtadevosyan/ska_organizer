@@ -4,11 +4,17 @@
 Smart Kids Organizer is a full-stack web application for managing child care operations including:
 
 📊 Dashboard
+
 📦 Inventory
+
 🧒 Attendance
+
 🗓 Activity Planner
+
 🍽 Meal Planner
+
 👩‍🏫 Staff
+
 📑 Reports
 
 Built with:
