@@ -1,31 +1,48 @@
 // server/mockData.js
-const { v4: uuid } = require('uuid');
+const crypto = require('crypto');
 
-const now = () => new Date().toISOString();
+let uuid;
+try {
+  uuid = () => crypto.randomUUID();
+} catch (e) {
+  try {
+    const u = require('uuid');
+    uuid = typeof u.v4 === 'function' ? u.v4 : (() => String(Date.now()));
+  } catch (err) {
+    uuid = () => String(Date.now()) + Math.floor(Math.random() * 10000);
+  }
+}
 
+const nowIso = () => new Date().toISOString();
+
+// Simple in-memory mock data used by services and controllers
 const children = [
-  { id: 'c1', firstName: 'Ava', lastName: 'Smith', dateOfBirth: '2021-06-12', photoConsent: true, notes: '' },
-  { id: 'c2', firstName: 'Liam', lastName: 'Jones', dateOfBirth: '2020-11-03', photoConsent: false, notes: '' }
-];
-
-const staff = [
-  { id: 's1', name: 'Mariana', role: 'teacher', availability: [{ day: 'mon', start: '08:00', end: '17:00' }] },
-  { id: 's2', name: 'Ethan', role: 'assistant', availability: [{ day: 'mon', start: '09:00', end: '15:00' }] }
-];
-
-const rooms = [
-  { id: 'r1', name: 'Toddlers', ageMinMonths: 12, ageMaxMonths: 36, capacity: 12 },
-  { id: 'r2', name: 'Preschool', ageMinMonths: 36, ageMaxMonths: 60, capacity: 16 }
+  { id: 'c1', firstName: 'Alice', lastName: 'Johnson', dateOfBirth: '2020-06-15', preferredName: '', photoConsent: true, notes: '', createdAt: nowIso() },
+  { id: 'c2', firstName: 'Ben', lastName: 'Martinez', dateOfBirth: '2019-11-02', preferredName: 'Benny', photoConsent: false, notes: '', createdAt: nowIso() }
 ];
 
 const enrollments = [
-  { id: 'e1', childId: 'c1', roomId: 'r1', startDate: '2023-09-01', status: 'active' },
-  { id: 'e2', childId: 'c2', roomId: 'r2', startDate: '2023-09-01', status: 'active' }
+  { id: uuid(), childId: 'c1', roomId: 'r1', status: 'active', startDate: '2023-09-01', endDate: null },
+  { id: uuid(), childId: 'c2', roomId: 'r1', status: 'active', startDate: '2023-09-01', endDate: null }
 ];
 
-const attendance = []; // { id, childId, roomId, checkIn, checkOut, recordedBy }
+const attendance = [
+  // Example record format
+  // { id: uuid(), childId: 'c1', roomId: 'r1', checkIn: nowIso(), checkOut: null, recordedBy: 'staff1' }
+];
 
+const staff = [
+  { id: 's1', name: 'Sam Staff', role: 'teacher' },
+  { id: 's2', name: 'Riley Admin', role: 'admin' }
+];
+
+// Export helpers and data
 module.exports = {
-  children, staff, rooms, enrollments, attendance, uuid, now
+  uuid,
+  nowIso,
+  children,
+  enrollments,
+  attendance,
+  staff
 };
 
