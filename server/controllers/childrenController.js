@@ -1,79 +1,66 @@
 // server/controllers/childrenController.js
 const childrenService = require('../services/childrenService');
 
-exports.list = async (req, res) => {
+exports.list = async (req, res, next) => {
   try {
-    const filters = {
-      q: req.query.q,
-      roomId: req.query.roomId,
-      page: parseInt(req.query.page || '1', 10),
-      pageSize: parseInt(req.query.pageSize || '50', 10)
-    };
-    const result = await childrenService.listChildren(filters);
+    const { q, roomId, page, pageSize } = req.query;
+    const result = await childrenService.listChildren({ q, roomId, page: Number(page) || 1, pageSize: Number(pageSize) || 50 });
     res.json(result);
   } catch (err) {
-    console.error('children.list error', err);
-    res.status(500).json({ error: 'Failed to list children' });
+    next(err);
   }
 };
 
-exports.get = async (req, res) => {
+exports.create = async (req, res, next) => {
+  try {
+    const { firstName, lastName, dateOfBirth, preferredName, photoConsent, notes } = req.body;
+    if (!firstName || !lastName || !dateOfBirth) {
+      return res.status(400).json({ error: 'firstName, lastName and dateOfBirth are required' });
+    }
+    const child = await childrenService.createChild({ firstName, lastName, dateOfBirth, preferredName, photoConsent, notes });
+    res.status(201).json(child);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.get = async (req, res, next) => {
   try {
     const child = await childrenService.getById(req.params.id);
     if (!child) return res.status(404).json({ error: 'Child not found' });
     res.json(child);
   } catch (err) {
-    console.error('children.get error', err);
-    res.status(500).json({ error: 'Failed to fetch child' });
+    next(err);
   }
 };
 
-exports.create = async (req, res) => {
-  try {
-    const payload = req.body;
-    // minimal controller-level validation
-    if (!payload.firstName || !payload.lastName || !payload.dateOfBirth) {
-      return res.status(400).json({ error: 'firstName, lastName and dateOfBirth are required' });
-    }
-    const created = await childrenService.createChild(payload);
-    res.status(201).json(created);
-  } catch (err) {
-    console.error('children.create error', err);
-    res.status(500).json({ error: 'Failed to create child' });
-  }
-};
-
-exports.update = async (req, res) => {
+exports.update = async (req, res, next) => {
   try {
     const updated = await childrenService.updateChild(req.params.id, req.body);
     if (!updated) return res.status(404).json({ error: 'Child not found' });
     res.json(updated);
   } catch (err) {
-    console.error('children.update error', err);
-    res.status(500).json({ error: 'Failed to update child' });
+    next(err);
   }
 };
 
-exports.remove = async (req, res) => {
+exports.remove = async (req, res, next) => {
   try {
-    const removed = await childrenService.deleteChild(req.params.id);
-    if (!removed) return res.status(404).json({ error: 'Child not found' });
-    res.json({ success: true });
+    const ok = await childrenService.deleteChild(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Child not found' });
+    res.status(204).end();
   } catch (err) {
-    console.error('children.remove error', err);
-    res.status(500).json({ error: 'Failed to delete child' });
+    next(err);
   }
 };
 
-// Optional: endpoint to fetch child's enrollments and recent reports
-exports.getProfile = async (req, res) => {
+exports.getProfile = async (req, res, next) => {
   try {
     const profile = await childrenService.getProfile(req.params.id);
     if (!profile) return res.status(404).json({ error: 'Child not found' });
     res.json(profile);
   } catch (err) {
-    console.error('children.getProfile error', err);
-    res.status(500).json({ error: 'Failed to fetch child profile' });
+    next(err);
   }
 };
 
