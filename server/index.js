@@ -7,6 +7,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Dashboard route
+app.use('/api/dashboard', require('./routes/dashboard'));
 // Attendance route
 app.use('/api/attendance', require('./routes/attendance'));
 // Inventory route

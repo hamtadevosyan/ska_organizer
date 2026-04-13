@@ -1,6 +1,7 @@
 // src/pages/Dashboard.tsx
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../lib/api'; // make sure this is defined
 
 interface DashboardMetrics {
   totalStudents: number;
@@ -14,7 +15,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     axios
-      .get('http://192.168.33.132:3001/api/dashboard') // <- Update this to your actual backend IP
+      .get(`${API_BASE_URL}/api/dashboard`)
       .then((res) => setMetrics(res.data))
       .catch((err) => console.error('Failed to fetch metrics:', err));
   }, []);
@@ -33,11 +34,15 @@ const Dashboard = () => {
 
       <div className="bg-white rounded shadow p-4">
         <h3 className="text-lg font-semibold mb-2 text-gray-800">Recent Activities</h3>
-        <ul className="list-disc list-inside text-gray-700 space-y-1">
-          {metrics.recentActivities.map((activity, index) => (
-            <li key={index}>{activity}</li>
-          ))}
-        </ul>
+        {metrics.recentActivities?.length ? (
+          <ul className="list-disc list-inside text-gray-700 space-y-1">
+            {metrics.recentActivities.map((activity, index) => (
+              <li key={index}>{activity}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-gray-500">No recent activities available.</p>
+        )}
       </div>
     </div>
   );
@@ -46,9 +51,8 @@ const Dashboard = () => {
 const MetricCard = ({ label, value }: { label: string; value: number }) => (
   <div className="bg-white rounded shadow p-4 text-center">
     <p className="text-sm text-gray-500">{label}</p>
-    <p className="text-3xl font-bold text-indigo-600">{value}</p>
+    <p className="text-2xl font-bold text-gray-900">{value}</p>
   </div>
 );
 
 export default Dashboard;
-

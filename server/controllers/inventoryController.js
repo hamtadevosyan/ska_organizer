@@ -1,7 +1,10 @@
 const inventoryService = require('../services/inventoryService');
 
 exports.getStatus = (req, res) => {
-  const data = inventoryService.getStatus();
-  res.json(data);
+  res.json(inventoryService.getStatus());
+};
+
+exports.getItems = (req, res) => {
+  res.json(inventoryService.getInventoryItems());
 };
 
