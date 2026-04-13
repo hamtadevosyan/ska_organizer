@@ -42,7 +42,24 @@ app.use((err, req, res, next) => {
 module.exports = app;
 
 if(require.main == module) {
-	const PORT = process.env.PORT || 3001;
-	app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+	(async () => {
+		try {
+			if (process.env.DB_ADAPTER === 'sequelize') {
+				// Lazy require so mock default remains unaffected
+				const sequelizeAdapter = require('./services/dbAdapter.sequelize');
+				const connectionString = process.env.DATABASE_URL || 'sqlite::memory:';
+				await sequelizeAdapter.setup(connectionString);
+				console.log('Sequelize adapter initialized');
+			}
+
+			const PORT = process.env.PORT || 3001;
+			app.listen(PORT, () => {
+				console.log(`Server running on port ${PORT}`);
+			});
+		} catch (err) {
+			console.error('Failed to bootstrap application:', err);
+			process.exit(1);
+		}
+	})();
 }
 
