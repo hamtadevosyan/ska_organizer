@@ -1,25 +1,13 @@
-// server/routes/children.js
+// server/routes/children.js (example)
 const express = require('express');
 const router = express.Router();
 const childrenController = require('../controllers/childrenController');
+const { validateChild } = require('../middleware/validate'); // if you have validation
 
-// List children with optional filters: ?q=&roomId=&page=&pageSize=
-router.get('/', childrenController.list);
-
-// Create child
-router.post('/', childrenController.create);
-
-// Get single child
-router.get('/:id', childrenController.get);
-
-// Update child
-router.patch('/:id', childrenController.update);
-
-// Delete child
-router.delete('/:id', childrenController.remove);
-
-// Child profile (enrollments, recent attendance, reports)
-router.get('/:id/profile', childrenController.getProfile);
+router.get('/', childrenController.listChildren);
+router.get('/:id', childrenController.getChildById);
+router.post('/', validateChild, childrenController.createChild);
+router.put('/:id', validateChild, childrenController.updateChild);
+router.delete('/:id', childrenController.deleteChild);
 
 module.exports = router;
-

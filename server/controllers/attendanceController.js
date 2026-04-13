@@ -19,6 +19,7 @@ exports.getAttendance = async (req, res, next) => {
 exports.getAttendanceById = async (req, res, next) => {
   try {
     const id = req.params.id;
+    if (!id) return res.status(400).json({ error: { message: 'attendance id is required' } });
     const record = await attendanceService.getById(id);
     if (!record) return res.status(404).json({ error: 'Attendance record not found' });
     res.json(record);
