@@ -51,6 +51,60 @@ module.exports = {
     if (!rec) return null;
     Object.assign(rec, changes);
     return rec;
-  }
+  },
+
+  // Activities
+  listActivities: async (opts = {}) => {
+    if (!mock.activities) mock.activities = [];
+    let items = mock.activities.slice();
+
+    if (opts.q) {
+      const q = opts.q.toLowerCase();
+      items = items.filter(a =>
+        a.name.toLowerCase().includes(q) ||
+        (a.description || '').toLowerCase().includes(q)
+      );
+    }
+
+    if (opts.roomId) items = items.filter(a => a.roomId === opts.roomId);
+
+    return items;
+  },
+
+  getActivityById: async (id) => {
+    if (!mock.activities) mock.activities = [];
+    return mock.activities.find(a => a.id === id) || null;
+  },
+
+  createActivity: async (payload) => {
+    if (!mock.activities) mock.activities = [];
+    const rec = {
+      id: payload.id || mock.uuid(),
+      name: payload.name,
+      description: payload.description || '',
+      roomId: payload.roomId || null,
+      startTime: payload.startTime || null,
+      endTime: payload.endTime || null,
+      createdAt: mock.nowIso()
+    };
+    mock.activities.push(rec);
+    return rec;
+  },
+
+  updateActivity: async (id, changes) => {
+    if (!mock.activities) mock.activities = [];
+    const idx = mock.activities.findIndex(a => a.id === id);
+    if (idx === -1) return null;
+    mock.activities[idx] = { ...mock.activities[idx], ...changes };
+    return mock.activities[idx];
+  },
+
+  deleteActivity: async (id) => {
+    if (!mock.activities) mock.activities = [];
+    const idx = mock.activities.findIndex(a => a.id === id);
+    if (idx === -1) return false;
+    mock.activities.splice(idx, 1);
+    return true;
+  },
 };
 
