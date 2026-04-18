@@ -24,6 +24,8 @@ app.use('/api/schedule', require('./routes/schedule'));
 app.use('/api/activity', require('./routes/activity'));
 // Children route
 app.use('/api/children', require('./routes/children'));
+// Rooms route
+app.use('/api/rooms', require('./routes/rooms'));
 
 // 404 handler (after all routes)
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));

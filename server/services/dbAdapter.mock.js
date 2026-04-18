@@ -52,6 +52,15 @@ module.exports = {
     Object.assign(rec, changes);
     return rec;
   },
+  getChildrenPresentInRoom: async (roomId, date) => {
+    const records = mock.attendance.filter(r =>
+      r.roomId === roomId &&
+      (!date || r.checkIn.slice(0,10) === date) &&
+      !r.checkOut
+    );
+  
+    return records.map(r => mock.children.find(c => c.id === r.childId)).filter(Boolean);
+  },
 
   // Activities
   listActivities: async (opts = {}) => {
@@ -82,6 +91,16 @@ module.exports = {
       id: payload.id || mock.uuid(),
       name: payload.name,
       description: payload.description || '',
+      category: payload.category,
+      repeatWindowWeeks: payload.repeatWindowWeeks,
+      type: payload.type,
+      location: payload.location,
+      ageMin: payload.ageMin,
+      ageMax: payload.ageMax,
+      energyLevel: payload.energyLevel,
+      estimatedCost: payload.estimatedCost,
+      materialsLinks: payload.materialsLinks,
+      materialsNotes: payload.materialsNotes,
       roomId: payload.roomId || null,
       startTime: payload.startTime || null,
       endTime: payload.endTime || null,
@@ -104,6 +123,47 @@ module.exports = {
     const idx = mock.activities.findIndex(a => a.id === id);
     if (idx === -1) return false;
     mock.activities.splice(idx, 1);
+    return true;
+  },
+
+  listScheduleEntries: async (roomId, weekStart) => {
+    if (!mock.scheduleEntries) mock.scheduleEntries = [];
+    
+    const start = new Date(weekStart);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    
+    return mock.scheduleEntries.filter(e => {
+    	const d = new Date(e.date);
+    	return e.roomId === roomId && d >= start && d <= end;
+    });
+  },
+  
+  saveScheduleEntries: async (roomId, weekStart, entries) => {
+    if (!mock.scheduleEntries) mock.scheduleEntries = [];
+    
+    const start = new Date(weekStart);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    
+    // Remove existing entries for that week
+    mock.scheduleEntries = mock.scheduleEntries.filter(e => {
+    	const d = new Date(e.date);
+    	return !(e.roomId === roomId && d >= start && d <= end);
+    });
+    
+    // Insert new entries
+    for (const entry of entries) {
+    	mock.scheduleEntries.push({
+    		id: mock.uuid(),
+    		roomId,
+    		date: entry.date,
+    		timeBlock: entry.timeBlock,
+    		activityId: entry.activityId,
+    		createdAt: mock.nowIso()
+    	});
+    }
+    
     return true;
   },
 };

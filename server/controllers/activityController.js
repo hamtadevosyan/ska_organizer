@@ -30,6 +30,7 @@ exports.getActivityById = async (req, res, next) => {
 
 exports.createActivity = async (req, res, next) => {
   try {
+    console.log("Payload received:", req.body);
     const payload = req.body;
     const created = await activityService.createActivity(payload);
     res.status(201).json(created);

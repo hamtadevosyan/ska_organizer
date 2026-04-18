@@ -13,3 +13,15 @@ exports.checkOut = async (id) => {
   return db.updateAttendance(id, { checkOut: new Date().toISOString() });
 };
 
+exports.getPresentChildrenForRoom = async (roomId, date) => {
+  const records = await db.listAttendance({ roomId, date });
+
+  const present = records.filter(r => !r.checkOut);
+
+  const children = await Promise.all(
+    present.map(r => db.getChildById(r.childId))
+  );
+
+  return children.filter(Boolean);
+};
+
