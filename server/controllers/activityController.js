@@ -1,6 +1,10 @@
 // server/controllers/activityController.js
 const activityService = require('../services/activityService');
 
+// -------------------------
+// EXISTING CRUD ENDPOINTS
+// -------------------------
+
 exports.listActivities = async (req, res, next) => {
   try {
     const opts = {
@@ -62,5 +66,33 @@ exports.deleteActivity = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// -------------------------
+// NEW WEEKLY PLAN ENDPOINTS
+// -------------------------
+
+exports.generateActivityPlan = (req, res) => {
+  const plan = activityService.generateWeeklyPlan();
+  res.json({ plan });
+};
+
+exports.getWeeklyActivityPlan = (req, res) => {
+  const week = activityService.getSavedWeeklyPlan();
+  if (!week) {
+    return res.status(404).json({ message: "No weekly plan saved yet" });
+  }
+  res.json({ week });
+};
+
+exports.saveWeeklyActivityPlan = (req, res) => {
+  const { week } = req.body;
+
+  if (!Array.isArray(week)) {
+    return res.status(400).json({ message: "Invalid payload: expected { week: [] }" });
+  }
+
+  const saved = activityService.saveWeeklyPlan(week);
+  res.json({ week: saved });
 };
 

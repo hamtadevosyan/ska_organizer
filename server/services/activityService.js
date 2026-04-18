@@ -28,3 +28,34 @@ exports.deleteActivity = (id) => {
   return db.deleteActivity(id);
 };
 
+// -------------------------
+// NEW WEEKLY PLAN SERVICE
+// -------------------------
+
+let currentWeekPlan = null;
+
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const ACTIVITIES = [
+  "Reading Time",
+  "Outdoor Play",
+  "Art & Crafts",
+  "Math Practice",
+  "Science Exploration",
+];
+
+exports.generateWeeklyPlan = () => {
+  return DAYS.map((day, index) => ({
+    day,
+    activity: ACTIVITIES[index % ACTIVITIES.length],
+  }));
+};
+
+exports.getSavedWeeklyPlan = () => {
+  return currentWeekPlan;
+};
+
+exports.saveWeeklyPlan = (plan) => {
+  currentWeekPlan = plan;
+  return currentWeekPlan;
+};
+
