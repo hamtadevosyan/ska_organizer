@@ -1,15 +1,15 @@
 // server/services/activityService.js
 const db = require('./dbAdapter');
 
-exports.listActivities = (opts = {}) => {
+exports.listActivities = async (opts = {}) => {
   return db.listActivities(opts);
 };
 
-exports.getById = (id) => {
+exports.getById = async (id) => {
   return db.getActivityById(id);
 };
 
-exports.createActivity = (payload) => {
+exports.createActivity = async (payload) => {
   return db.createActivity({
     id: payload.id,
     name: payload.name,
@@ -20,42 +20,48 @@ exports.createActivity = (payload) => {
   });
 };
 
-exports.updateActivity = (id, changes) => {
+exports.updateActivity = async (id, changes) => {
   return db.updateActivity(id, changes);
 };
 
-exports.deleteActivity = (id) => {
+exports.deleteActivity = async (id) => {
   return db.deleteActivity(id);
 };
 
 // -------------------------
-// NEW WEEKLY PLAN SERVICE
+// WEEKLY PLAN SERVICE
 // -------------------------
 
-let currentWeekPlan = null;
+exports.generateWeeklyPlan = async (roomId, weekStart) => {
+  const activities = await db.listActivities({ roomId });
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-const ACTIVITIES = [
-  "Reading Time",
-  "Outdoor Play",
-  "Art & Crafts",
-  "Math Practice",
-  "Science Exploration",
-];
+  if (!activities || activities.length === 0) {
+    return [];
+  }
 
-exports.generateWeeklyPlan = () => {
-  return DAYS.map((day, index) => ({
-    day,
-    activity: ACTIVITIES[index % ACTIVITIES.length],
-  }));
+  const existingEntries = await db.listScheduleEntries(roomId, weekStart);
+  if (existingEntries && existingEntries.length > 0) {
+    return existingEntries;
+  }
+
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+  return days.map((day, index) => {
+    const activity = activities[index % activities.length];
+
+    return {
+      day,
+      activity: activity.name,
+    };
+  });
 };
 
-exports.getSavedWeeklyPlan = () => {
-  return currentWeekPlan;
+exports.getSavedWeeklyPlan = async (roomId, weekStart) => {
+  const entries = await db.listScheduleEntries(roomId, weekStart);
+  return entries || [];
 };
 
-exports.saveWeeklyPlan = (plan) => {
-  currentWeekPlan = plan;
-  return currentWeekPlan;
+exports.saveWeeklyPlan = async (roomId, weekStart, week) => {
+  await db.saveScheduleEntries(roomId, weekStart, week);
+  return db.listScheduleEntries(roomId, weekStart);
 };
-

@@ -2,11 +2,8 @@ const express = require('express');
 const router = express.Router();
 const inventoryController = require('../controllers/inventoryController');
 
-// Summary status (what your UI needs right now)
-router.get('/', inventoryController.getStatus);      // GET /api/inventory
-router.get('/status', inventoryController.getStatus); // GET /api/inventory/status
-
-router.get('/items', inventoryController.getItems);   // GET /api/inventory/items
+router.get('/', inventoryController.getItems);
+router.get('/items', inventoryController.getItems);
+router.get('/status', inventoryController.getStatus);
 
 module.exports = router;
-
