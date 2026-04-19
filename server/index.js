@@ -26,6 +26,13 @@ app.use('/api/activity', require('./routes/activity'));
 app.use('/api/children', require('./routes/children'));
 // Rooms route
 app.use('/api/rooms', require('./routes/rooms'));
+// Menu route
+app.use("/api/menu", require("./routes/menu"));
+// Shopping route
+app.use("/api/shopping", require("./routes/shopping"));
+// Shelf route
+app.use("/api/shelf", require("./routes/shelf"));
+
 
 // 404 handler (after all routes)
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
