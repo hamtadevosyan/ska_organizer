@@ -270,7 +270,7 @@ module.exports = {
   // ------------------------------------------------------
   // CONFIRMED MENU
   // ------------------------------------------------------
-  saveConfirmedMenu: async (week) => {
+  saveConfirmedMenu: async ({ week }) => {
     mock.confirmedMenu = {
       week,
       confirmedAt: mock.nowIso()

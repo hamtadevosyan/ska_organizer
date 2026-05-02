@@ -1,5 +1,4 @@
 // server/controllers/shelfController.js
-
 const shelfService = require("../services/shelfService");
 
 exports.saveShelfCheck = async (req, res, next) => {
@@ -7,11 +6,14 @@ exports.saveShelfCheck = async (req, res, next) => {
     const { items } = req.body;
 
     if (!Array.isArray(items)) {
-      return res.status(400).json({ error: "Invalid shelf data" });
+      return res.status(400).json({
+        error: { message: "Invalid shelf data" }
+      });
     }
 
     const saved = await shelfService.saveShelfCheck(items);
-    res.json({ success: true, saved });
+
+    res.json({ data: saved });
   } catch (err) {
     next(err);
   }
@@ -20,9 +22,9 @@ exports.saveShelfCheck = async (req, res, next) => {
 exports.generateFinalShoppingList = async (req, res, next) => {
   try {
     const list = await shelfService.generateFinalShoppingList();
-    res.json({ list });
+
+    res.json({ data: list });
   } catch (err) {
     next(err);
   }
 };
-

@@ -32,8 +32,8 @@ exports.generateWeeklyMenu = async () => {
   }));
 };
 
-exports.confirmWeeklyMenu = async (week) => {
-  return db.saveConfirmedMenu(week);
+exports.confirmWeeklyMenu = async ({ week }) => {
+  return db.saveConfirmedMenu({ week });
 };
 
 exports.getCurrentMenu = async () => {

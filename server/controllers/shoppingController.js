@@ -11,7 +11,7 @@ exports.generateShoppingList = async (req, res, next) => {
       staffCount
     });
 
-    res.json({ list });
+    res.json({ data: list });
   } catch (err) {
     next(err);
   }

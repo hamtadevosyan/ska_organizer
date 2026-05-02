@@ -22,8 +22,8 @@ describe("Menu API", () => {
     const res = await request(app).get("/api/menu/generate");
 
     expect(res.status).toBe(200);
-    expect(res.body.week).toHaveLength(5);
-    expect(res.body.week[0].menu.breakfast.name).toBe("Oatmeal");
+    expect(res.body.data.week).toHaveLength(5);
+    expect(res.body.data.week[0].menu.breakfast.name).toBe("Oatmeal");
   });
 
   test("POST /api/menu/confirm stores confirmed menu", async () => {
@@ -31,13 +31,14 @@ describe("Menu API", () => {
 
     const res = await request(app)
       .post("/api/menu/confirm")
-      .send({ week: generated.body.week });
+      .send({ week: generated.body.data.week });
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.body).toHaveProperty("data");
 
     const current = await request(app).get("/api/menu/current");
-    expect(current.body.menu.week).toHaveLength(5);
+    expect(current.status).toBe(200);
+    expect(current.body.data.week).toHaveLength(5);
   });
 });
 

@@ -8,7 +8,13 @@ exports.generateShoppingList = async ({ childrenCount = 20, staffCount = 5 } = {
     throw new Error("No confirmed menu found");
   }
 
-  const week = confirmed.week;
+  const week = Array.isArray(confirmed.week)
+  ? confirmed.week
+  : confirmed.week.week;
+
+  if (!Array.isArray(week)) {
+    throw new Error("Confirmed menu week must be an array");
+  }
 
   // Total people to feed
   const totalPeople = childrenCount + staffCount;

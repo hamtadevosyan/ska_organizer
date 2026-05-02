@@ -3,10 +3,9 @@
 const express = require("express");
 const router = express.Router();
 const menuController = require("../controllers/menuController");
-const generator = require("../controllers/menuController");
 
 // Suggest menu
-router.get("/generate", generator.generateWeeklyMenu);
+router.get("/generate", menuController.generateWeeklyMenu);
 
 // Confirm menu (Friday)
 router.post("/confirm", menuController.confirmWeeklyMenu);
