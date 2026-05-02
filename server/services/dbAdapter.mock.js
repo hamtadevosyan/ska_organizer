@@ -5,9 +5,20 @@ const mock = {
   children: [],
   attendance: [],
   activities: [],
-  meals: [],
-  ingredients: [],
-  mealIngredients: [],
+  meals: [
+    { id: "meal-1", name: "Oatmeal", type: "breakfast", description: "" },
+    { id: "meal-2", name: "Banana", type: "snack", description: "" },
+    { id: "meal-3", name: "Chicken Rice", type: "lunch", description: "" },
+    { id: "meal-4", name: "Yogurt", type: "afternoonSnack", description: "" }
+  ],
+  ingredients: [
+    { id: "ing-1", name: "Oats", unit: "g", shelfLifeDays: 180 },
+    { id: "ing-2", name: "Milk", unit: "ml", shelfLifeDays: 7 }
+  ],
+  mealIngredients: [
+    { mealId: "meal-1", ingredientId: "ing-1", quantity: 30 },
+    { mealId: "meal-1", ingredientId: "ing-2", quantity: 100 }
+  ],
   shelf: [],
   confirmedMenu: null,
   uuid: () => Math.random().toString(36).substring(2, 10),
