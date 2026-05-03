@@ -47,6 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <NavItem to="/meals" icon={<Utensils size={18} />} label="Meal Planner" />
           <NavItem to="/staff" icon={<Users size={18} />} label="Staff" />
           <NavItem to="/reports" icon={<FileText size={18} />} label="Reports" />
+	  <NavItem to="/meals-management" icon={<Utensils size={18} />} label="Meals"/>
         </nav>
       </aside>
     </>

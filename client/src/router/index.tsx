@@ -7,6 +7,7 @@ import Meals from "../pages/Meals";
 import Staff from "../pages/Staff";
 import Reports from "../pages/Reports";
 import SchedulePage from "../pages/SchedulePage";
+import MealsManagement from '../pages/MealsManagement';
 
 export default function AppRoutes() {
   return (
@@ -18,6 +19,7 @@ export default function AppRoutes() {
       <Route path="/staff" element={<Staff />} />
       <Route path="/reports" element={<Reports />} />
       <Route path="/schedule" element={<SchedulePage />} />
+      <Route path="/meals-management" element={<MealsManagement />} />
     </Routes>
   );
 }

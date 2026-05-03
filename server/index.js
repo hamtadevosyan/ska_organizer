@@ -32,6 +32,10 @@ app.use("/api/menu", require("./routes/menu"));
 app.use("/api/shopping", require("./routes/shopping"));
 // Shelf route
 app.use("/api/shelf", require("./routes/shelf"));
+// Meals route
+app.use("/api/meals", require("./routes/meals"));
+app.use("/api/ingredients", require("./routes/ingredients"));
+app.use("/api/meals", require("./routes/mealIngredients"));
 
 
 // 404 handler (after all routes)

@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
-  CalendarDays,
-  CheckCircle2,
-  ShoppingCart,
-  ClipboardCheck,
   Sparkles,
   Loader2,
+  Save,
+  Printer,
+  RefreshCw,
+  ShoppingCart,
+  PackageCheck,
 } from 'lucide-react';
 import { API_BASE_URL } from '../lib/api';
 
@@ -27,24 +28,15 @@ type MenuDay = {
 };
 
 type ShoppingItem = {
-  ingredient: {
-    id: string;
-    name: string;
-    unit: string;
+  ingredient?: {
+    id?: string;
+    name?: string;
+    unit?: string;
   };
+  ingredientId?: string;
+  name?: string;
+  unit?: string;
   quantity: number;
-};
-
-type FinalShoppingItem = {
-  ingredient: {
-    id: string;
-    name: string;
-    unit: string;
-  };
-  required: number;
-  inStorage: number;
-  toBuy: number;
-  warnings?: string[];
 };
 
 type ShelfItemInput = {
@@ -60,10 +52,20 @@ const getErrorMessage = (err: unknown, fallback: string) => {
   return fallback;
 };
 
+const getIngredientId = (item: ShoppingItem) => {
+  return item.ingredient?.id || item.ingredientId || item.name || 'unknown-item';
+};
+
+const getIngredientName = (item: ShoppingItem) => {
+  return item.ingredient?.name || item.name || item.ingredientId || 'Unnamed Item';
+};
+
+const getIngredientUnit = (item: ShoppingItem) => {
+  return item.ingredient?.unit || item.unit || '';
+};
+
 const convertToUS = (quantity: number, unit: string) => {
-  if (!quantity) {
-    return { value: '0', unit };
-  }
+  if (!quantity) return { value: '0', unit };
 
   switch (unit) {
     case 'g':
@@ -72,9 +74,10 @@ const convertToUS = (quantity: number, unit: string) => {
         : { value: (quantity / 28.35).toFixed(1), unit: 'oz' };
 
     case 'ml':
-      return quantity >= 946.353
-        ? { value: (quantity / 946.353).toFixed(2), unit: 'qt' }
-        : { value: (quantity / 29.5735).toFixed(1), unit: 'fl oz' };
+      return {
+        value: (quantity / 3785.41).toFixed(3),
+        unit: 'gal',
+      };
 
     default:
       return { value: String(quantity), unit };
@@ -84,49 +87,84 @@ const convertToUS = (quantity: number, unit: string) => {
 const Meals = () => {
   const [weeklyMenu, setWeeklyMenu] = useState<MenuDay[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
-  const [finalItems, setFinalItems] = useState<FinalShoppingItem[]>([]);
-  const [shelfItems, setShelfItems] = useState<Record<string, number>>({});
+  const [inStock, setInStock] = useState<Record<string, number>>({});
   const [childrenCount, setChildrenCount] = useState(20);
   const [staffCount, setStaffCount] = useState(5);
-  const [menuConfirmed, setMenuConfirmed] = useState(false);
-  const [shelfSaved, setShelfSaved] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
+  const [hasSaved, setHasSaved] = useState(false);
 
   const isBusy = loading !== null;
-
-  const currentStep =
-    finalItems.length > 0
-      ? 4
-      : shelfSaved
-        ? 3
-        : shoppingItems.length > 0
-          ? 2
-          : menuConfirmed
-            ? 1
-            : weeklyMenu.length > 0
-              ? 0
-              : -1;
 
   const showMessage = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(text);
     setMessageType(type);
   };
 
+  const finalShoppingItems = useMemo(() => {
+    return shoppingItems.map((item) => {
+      const itemId = getIngredientId(item);
+      const stockQty = Number(inStock[itemId]) || 0;
+      const toBuy = Math.max(item.quantity - stockQty, 0);
+
+      return {
+        ...item,
+        inStorage: stockQty,
+        toBuy,
+      };
+    });
+  }, [shoppingItems, inStock]);
+
+  const generateShoppingListForMenu = async () => {
+    const shoppingRes = await axios.post(`${API_BASE_URL}/api/shopping/generate`, {
+      childrenCount,
+      staffCount,
+    });
+
+    const items = shoppingRes.data.data.items || [];
+    setShoppingItems(items);
+
+    const nextStock: Record<string, number> = {};
+    items.forEach((item: ShoppingItem) => {
+      const itemId = getIngredientId(item);
+      nextStock[itemId] = inStock[itemId] || 0;
+    });
+
+    setInStock(nextStock);
+  };
+
+  useEffect(() => {
+    if (weeklyMenu.length === 0) return;
+
+    const timer = setTimeout(() => {
+      generateShoppingListForMenu().catch((err) => {
+        console.error('Failed to refresh shopping list:', err);
+        showMessage(getErrorMessage(err, 'Failed to refresh shopping list.'), 'error');
+      });
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [childrenCount, staffCount]);
+
   const generateMenu = async () => {
-    setLoading('menu');
+    setLoading('generate');
     setMessage('');
+    setHasSaved(false);
 
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/menu/generate`);
-      setWeeklyMenu(res.data.data.week || []);
-      setShoppingItems([]);
-      setFinalItems([]);
-      setShelfItems({});
-      setMenuConfirmed(false);
-      setShelfSaved(false);
-      showMessage('Weekly menu generated successfully.', 'success');
+      const menuRes = await axios.get(`${API_BASE_URL}/api/menu/generate`);
+      const week = menuRes.data.data.week || [];
+
+      setWeeklyMenu(week);
+
+      await axios.post(`${API_BASE_URL}/api/menu/confirm`, {
+        week,
+      });
+
+      await generateShoppingListForMenu();
+
+      showMessage('Menu generated. Shopping list is ready to review.', 'success');
     } catch (err) {
       console.error('Failed to generate menu:', err);
       showMessage(getErrorMessage(err, 'Failed to generate menu.'), 'error');
@@ -135,13 +173,49 @@ const Meals = () => {
     }
   };
 
-  const confirmMenu = async () => {
+  const updateMealName = (
+    dayIndex: number,
+    mealKey: keyof MenuDay['menu'],
+    value: string
+  ) => {
+    setWeeklyMenu((prev) =>
+      prev.map((day, index) => {
+        if (index !== dayIndex) return day;
+
+        return {
+          ...day,
+          menu: {
+            ...day.menu,
+            [mealKey]: {
+              ...day.menu[mealKey],
+              name: value,
+            },
+          },
+        };
+      })
+    );
+
+    setHasSaved(false);
+  };
+
+  const clearInStock = () => {
+    const cleared: Record<string, number> = {};
+
+    shoppingItems.forEach((item) => {
+      cleared[getIngredientId(item)] = 0;
+    });
+
+    setInStock(cleared);
+    setHasSaved(false);
+  };
+
+  const saveMenu = async () => {
     if (weeklyMenu.length === 0) {
       showMessage('Please generate a menu first.', 'error');
       return;
     }
 
-    setLoading('confirm');
+    setLoading('save');
     setMessage('');
 
     try {
@@ -149,336 +223,240 @@ const Meals = () => {
         week: weeklyMenu,
       });
 
-      setMenuConfirmed(true);
-      showMessage('Menu confirmed. You can now generate the shopping list.', 'success');
-    } catch (err) {
-      console.error('Failed to confirm menu:', err);
-      showMessage(getErrorMessage(err, 'Failed to confirm menu.'), 'error');
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const generateShoppingList = async () => {
-    if (!menuConfirmed) {
-      showMessage('Please confirm the menu first.', 'error');
-      return;
-    }
-
-    setLoading('shopping');
-    setMessage('');
-
-    try {
-      const res = await axios.post(`${API_BASE_URL}/api/shopping/generate`, {
-        childrenCount,
-        staffCount,
-      });
-
-      const items = res.data.data.items || [];
-      setShoppingItems(items);
-      setFinalItems([]);
-      setShelfSaved(false);
-
-      const initialShelf: Record<string, number> = {};
-      items.forEach((item: ShoppingItem) => {
-        initialShelf[item.ingredient.id] = 0;
-      });
-
-      setShelfItems(initialShelf);
-      showMessage('Shopping list generated.', 'success');
-    } catch (err) {
-      console.error('Failed to generate shopping list:', err);
-      showMessage(getErrorMessage(err, 'Failed to generate shopping list.'), 'error');
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const saveShelfCheck = async () => {
-    if (shoppingItems.length === 0) {
-      showMessage('Generate a shopping list first.', 'error');
-      return;
-    }
-
-    setLoading('shelf');
-    setMessage('');
-
-    try {
-      const items: ShelfItemInput[] = Object.entries(shelfItems).map(
+      const shelfItems: ShelfItemInput[] = Object.entries(inStock).map(
         ([ingredientId, quantity]) => ({
           ingredientId,
           quantity: Number(quantity) || 0,
         })
       );
 
-      await axios.post(`${API_BASE_URL}/api/shelf/check`, {
-        items,
-      });
+      if (shelfItems.length > 0) {
+        await axios.post(`${API_BASE_URL}/api/shelf/check`, {
+          items: shelfItems,
+        });
+      }
 
-      setShelfSaved(true);
-      showMessage('Shelf check saved. You can now generate the final shopping list.', 'success');
+      setHasSaved(true);
+      showMessage('Menu and in-house quantities saved.', 'success');
     } catch (err) {
-      console.error('Failed to save shelf check:', err);
-      showMessage(getErrorMessage(err, 'Failed to save shelf check.'), 'error');
+      console.error('Failed to save menu:', err);
+      showMessage(getErrorMessage(err, 'Failed to save menu.'), 'error');
     } finally {
       setLoading(null);
     }
   };
 
-  const generateFinalShoppingList = async () => {
-    if (!shelfSaved) {
-      showMessage('Please save the shelf check first.', 'error');
-      return;
-    }
-
-    setLoading('final');
-    setMessage('');
-
-    try {
-      const res = await axios.get(`${API_BASE_URL}/api/shelf/final`);
-      setFinalItems(res.data.data.items || []);
-      showMessage('Final shopping list generated.', 'success');
-    } catch (err) {
-      console.error('Failed to generate final shopping list:', err);
-      showMessage(getErrorMessage(err, 'Failed to generate final shopping list.'), 'error');
-    } finally {
-      setLoading(null);
-    }
+  const printShoppingList = () => {
+    window.print();
   };
 
   return (
     <div className="p-6 space-y-6">
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 p-8 text-white shadow-xl">
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 p-8 text-white shadow-xl print:hidden">
         <div className="absolute right-[-60px] top-[-60px] h-48 w-48 rounded-full bg-white/10" />
         <div className="absolute bottom-[-80px] left-[35%] h-56 w-56 rounded-full bg-white/10" />
 
-        <div className="relative z-10 max-w-3xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-sm">
-            <Sparkles size={16} />
-            Smart Kids Academy Meal Planning
+        <div className="relative z-10 flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-sm">
+              <Sparkles size={16} />
+              Smart Kids Academy Meal Planning
+            </div>
+
+            <h2 className="text-4xl font-bold tracking-tight">Meal Planner</h2>
+            <p className="mt-3 text-sm leading-6 text-emerald-50">
+              Generate a weekly menu, edit it in place, enter what is already in house,
+              and print a clean shopping list.
+            </p>
           </div>
 
-          <h2 className="text-4xl font-bold tracking-tight">Meal Planner</h2>
-          <p className="mt-3 text-sm leading-6 text-emerald-50">
-            Generate weekly menus, confirm meals, calculate shopping needs, check shelf inventory,
-            and create the final purchase list using US-friendly measurements.
-          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <ActionButton
+              label="Generate Menu"
+              icon={<RefreshCw size={18} />}
+              loading={loading === 'generate'}
+              disabled={isBusy}
+              onClick={generateMenu}
+            />
+
+            <ActionButton
+              label="Save Menu"
+              icon={<Save size={18} />}
+              loading={loading === 'save'}
+              disabled={isBusy || weeklyMenu.length === 0}
+              onClick={saveMenu}
+            />
+
+            <ActionButton
+              label="Print List"
+              icon={<Printer size={18} />}
+              loading={false}
+              disabled={finalShoppingItems.length === 0}
+              onClick={printShoppingList}
+            />
+          </div>
         </div>
-      </section>
-
-      <ProgressSteps current={currentStep} />
-
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <StepCard
-          icon={<CalendarDays size={22} />}
-          step="Step 1"
-          title="Generate Menu"
-          active={weeklyMenu.length > 0}
-          onClick={generateMenu}
-          disabled={isBusy}
-          loading={loading === 'menu'}
-        />
-
-        <StepCard
-          icon={<CheckCircle2 size={22} />}
-          step="Step 2"
-          title="Confirm Menu"
-          active={menuConfirmed}
-          onClick={confirmMenu}
-          disabled={isBusy || weeklyMenu.length === 0}
-          loading={loading === 'confirm'}
-        />
-
-        <StepCard
-          icon={<ShoppingCart size={22} />}
-          step="Step 3"
-          title="Shopping List"
-          active={shoppingItems.length > 0}
-          onClick={generateShoppingList}
-          disabled={isBusy || !menuConfirmed}
-          loading={loading === 'shopping'}
-        />
-
-        <StepCard
-          icon={<ClipboardCheck size={22} />}
-          step="Step 4"
-          title="Save Shelf"
-          active={shelfSaved}
-          onClick={saveShelfCheck}
-          disabled={isBusy || shoppingItems.length === 0}
-          loading={loading === 'shelf'}
-        />
-
-        <StepCard
-          icon={<ShoppingCart size={22} />}
-          step="Step 5"
-          title="Final List"
-          active={finalItems.length > 0}
-          onClick={generateFinalShoppingList}
-          disabled={isBusy || !shelfSaved}
-          loading={loading === 'final'}
-        />
       </section>
 
       {message && <MessageBox message={message} type={messageType} />}
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={`rounded-2xl bg-white p-5 shadow-sm border border-gray-100 ${isBusy ? 'opacity-70' : ''}`}>
-          <p className="text-sm text-gray-500">Children Count</p>
-          <input
-            type="number"
-            min="0"
-            value={childrenCount}
-            disabled={isBusy}
-            onChange={(e) => setChildrenCount(Number(e.target.value))}
-            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-lg font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
-          />
-        </div>
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-3 print:hidden">
+        <InfoCard
+          title="Children"
+          value={childrenCount}
+          onChange={setChildrenCount}
+          disabled={isBusy}
+        />
 
-        <div className={`rounded-2xl bg-white p-5 shadow-sm border border-gray-100 ${isBusy ? 'opacity-70' : ''}`}>
-          <p className="text-sm text-gray-500">Staff Count</p>
-          <input
-            type="number"
-            min="0"
-            value={staffCount}
-            disabled={isBusy}
-            onChange={(e) => setStaffCount(Number(e.target.value))}
-            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-lg font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
-          />
+        <InfoCard
+          title="Staff"
+          value={staffCount}
+          onChange={setStaffCount}
+          disabled={isBusy}
+        />
+
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">Status</p>
+          <p className="mt-2 text-lg font-bold text-gray-800">
+            {hasSaved ? 'Saved' : weeklyMenu.length > 0 ? 'Draft' : 'Not Started'}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            Shopping list updates immediately when in-house amounts change.
+          </p>
         </div>
       </section>
 
-      <section className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-2xl font-bold text-gray-800">Weekly Menu</h3>
-            <p className="text-sm text-gray-500">Generated from backend meal data.</p>
-          </div>
-          <StatusBadge active={menuConfirmed} label={menuConfirmed ? 'Confirmed' : 'Draft'} />
-        </div>
-
-        {weeklyMenu.length === 0 ? (
-          <EmptyState
-            title="No Menu Yet"
-            description="Start by generating a weekly menu."
-          />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-            {weeklyMenu.map((day) => (
-              <div
-                key={day.day}
-                className="rounded-2xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white p-4"
-              >
-                <h4 className="mb-4 text-lg font-bold text-emerald-700">{day.day}</h4>
-                <MealLine label="Breakfast" value={day.menu.breakfast?.name} />
-                <MealLine label="Snack" value={day.menu.snack?.name} />
-                <MealLine label="Lunch" value={day.menu.lunch?.name} />
-                <MealLine label="Afternoon Snack" value={day.menu.afternoonSnack?.name} />
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr] print:hidden">
         <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h3 className="text-2xl font-bold text-gray-800">Shopping List</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Calculated based on confirmed menu and total people.
-              </p>
-            </div>
-            <StatusBadge
-              active={shoppingItems.length > 0}
-              label={shoppingItems.length > 0 ? 'Ready' : 'Pending'}
-            />
+          <div className="mb-5">
+            <h3 className="text-2xl font-bold text-gray-800">Editable Weekly Menu</h3>
+            <p className="text-sm text-gray-500">
+              Adjust generated meals directly before saving.
+            </p>
           </div>
 
-          {shoppingItems.length === 0 ? (
+          {weeklyMenu.length === 0 ? (
             <EmptyState
-              title="No Shopping List Yet"
-              description="Confirm the menu, then generate the shopping list."
+              title="No Menu Yet"
+              description="Click Generate Menu to create the weekly plan."
             />
           ) : (
-            <div className="mt-5 overflow-hidden rounded-2xl border border-gray-100">
-              <table className="w-full text-left">
-                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <tr>
-                    <th className="p-4">Ingredient</th>
-                    <th className="p-4">Needed</th>
-                    <th className="p-4">Unit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shoppingItems.map((item) => {
-                    const converted = convertToUS(item.quantity, item.ingredient.unit);
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {weeklyMenu.map((day, dayIndex) => (
+                <div
+                  key={day.day}
+                  className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4"
+                >
+                  <h4 className="mb-4 text-lg font-bold text-emerald-700">{day.day}</h4>
 
-                    return (
-                      <tr key={item.ingredient.id} className="border-t border-gray-100">
-                        <td className="p-4 font-semibold text-gray-800">{item.ingredient.name}</td>
-                        <td className="p-4 text-gray-700">{converted.value}</td>
-                        <td className="p-4 text-gray-500">{converted.unit}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                  <MealEditLine
+                    label="Breakfast"
+                    value={day.menu.breakfast?.name || ''}
+                    onChange={(value) => updateMealName(dayIndex, 'breakfast', value)}
+                  />
+
+                  <MealEditLine
+                    label="Snack"
+                    value={day.menu.snack?.name || ''}
+                    onChange={(value) => updateMealName(dayIndex, 'snack', value)}
+                  />
+
+                  <MealEditLine
+                    label="Lunch"
+                    value={day.menu.lunch?.name || ''}
+                    onChange={(value) => updateMealName(dayIndex, 'lunch', value)}
+                  />
+
+                  <MealEditLine
+                    label="Afternoon Snack"
+                    value={day.menu.afternoonSnack?.name || ''}
+                    onChange={(value) => updateMealName(dayIndex, 'afternoonSnack', value)}
+                  />
+                </div>
+              ))}
             </div>
           )}
         </div>
 
         <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between gap-4">
+          <div className="mb-5 flex items-center justify-between gap-4">
             <div>
-              <h3 className="text-2xl font-bold text-gray-800">Shelf Check</h3>
-              <p className="mt-1 text-sm text-gray-500">Enter what you already have before buying.</p>
+              <h3 className="text-2xl font-bold text-gray-800">Shopping Items</h3>
+              <p className="text-sm text-gray-500">
+                Enter in-house quantities next to each item.
+              </p>
             </div>
-            <StatusBadge
-              active={shelfSaved}
-              label={shelfSaved ? 'Saved' : 'Pending'}
-            />
+
+            {shoppingItems.length > 0 && (
+              <button
+                onClick={clearInStock}
+                disabled={isBusy}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Clear All
+              </button>
+            )}
           </div>
 
           {shoppingItems.length === 0 ? (
             <EmptyState
-              title="Shelf Check Not Ready"
-              description="Generate a shopping list before entering shelf quantities."
+              title="No Shopping Items Yet"
+              description="Generate a menu first. Items will appear here automatically."
             />
           ) : (
-            <div className="mt-5 space-y-3">
+            <div className="space-y-3">
               {shoppingItems.map((item) => {
-                const converted = convertToUS(item.quantity, item.ingredient.unit);
+                const itemId = getIngredientId(item);
+                const unit = getIngredientUnit(item);
+                const needed = convertToUS(item.quantity, unit);
+                const stockQty = Number(inStock[itemId]) || 0;
+                const buyQty = Math.max(item.quantity - stockQty, 0);
+                const buy = convertToUS(buyQty, unit);
 
                 return (
                   <div
-                    key={item.ingredient.id}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4"
+                    key={itemId}
+                    className="rounded-2xl border border-gray-100 bg-gray-50 p-4"
                   >
-                    <div>
-                      <p className="font-semibold text-gray-800">{item.ingredient.name}</p>
-                      <p className="text-xs text-gray-500">
-                        Needed: {converted.value} {converted.unit}
-                      </p>
-                    </div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {getIngredientName(item)}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Needed: {needed.value} {needed.unit}
+                        </p>
+                        <p
+                          className={`mt-1 text-xs font-semibold ${
+                            buyQty > 0 ? 'text-emerald-700' : 'text-gray-400 line-through'
+                          }`}
+                        >
+                          Buy: {buy.value} {buy.unit}
+                        </p>
+                      </div>
 
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        disabled={isBusy}
-                        value={shelfItems[item.ingredient.id] ?? 0}
-                        onChange={(e) => {
-                          setShelfSaved(false);
-                          setFinalItems([]);
-                          setShelfItems((prev) => ({
-                            ...prev,
-                            [item.ingredient.id]: Number(e.target.value),
-                          }));
-                        }}
-                        className="w-28 rounded-xl border border-gray-200 px-3 py-2 text-right font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
-                      />
-                      <span className="text-sm text-gray-500">{converted.unit}</span>
+                      <div className="text-right">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                          In House
+                        </p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            disabled={isBusy}
+                            value={inStock[itemId] ?? 0}
+                            onChange={(e) => {
+                              setHasSaved(false);
+                              setInStock((prev) => ({
+                                ...prev,
+                                [itemId]: Number(e.target.value),
+                              }));
+                            }}
+                            className="w-24 rounded-xl border border-gray-200 px-3 py-2 text-right font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
+                          />
+                          <span className="text-sm text-gray-500">{needed.unit}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -488,56 +466,80 @@ const Meals = () => {
         </div>
       </section>
 
-      <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl">
+      <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl print:bg-white print:text-black print:shadow-none">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-bold">Final Shopping List</h3>
-            <p className="mt-1 text-sm text-slate-300">
-              Optimized after subtracting shelf inventory.
+            <div className="flex items-center gap-2">
+              <ShoppingCart size={22} />
+              <h3 className="text-2xl font-bold">Printable Shopping List</h3>
+            </div>
+            <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
+              Final list after subtracting in-house quantities.
             </p>
           </div>
-          <StatusBadge
-            active={finalItems.length > 0}
-            label={finalItems.length > 0 ? 'Ready to Purchase' : 'Pending'}
-          />
+
+          <div className="flex items-center gap-2 print:hidden">
+            <PackageCheck size={18} className="text-emerald-300" />
+            <span className="rounded-full bg-emerald-400 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-950">
+              Live Updated
+            </span>
+          </div>
         </div>
 
-        {finalItems.length === 0 ? (
-          <div className="rounded-2xl bg-white/10 p-5">
-            <p className="font-semibold text-white">Final List Not Ready</p>
-            <p className="mt-1 text-sm text-slate-300">
-              Save the shelf check first, then generate the final list.
+        {finalShoppingItems.length === 0 ? (
+          <div className="rounded-2xl bg-white/10 p-5 print:bg-gray-100">
+            <p className="font-semibold">Shopping List Not Ready</p>
+            <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
+              Generate a menu to create the shopping list.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {finalItems.map((item) => {
-              const required = convertToUS(item.required, item.ingredient.unit);
-              const inStorage = convertToUS(item.inStorage, item.ingredient.unit);
-              const toBuy = convertToUS(item.toBuy, item.ingredient.unit);
+          <div className="overflow-hidden rounded-2xl border border-white/10 print:border-gray-300">
+            <table className="w-full text-left">
+              <thead className="bg-white/10 text-xs uppercase tracking-wide text-slate-100 print:bg-gray-100 print:text-gray-700">
+                <tr>
+                  <th className="p-4">Item</th>
+                  <th className="p-4">Needed</th>
+                  <th className="p-4">In House</th>
+                  <th className="p-4">Buy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {finalShoppingItems.map((item) => {
+                  const itemId = getIngredientId(item);
+                  const unit = getIngredientUnit(item);
+                  const needed = convertToUS(item.quantity, unit);
+                  const stock = convertToUS(item.inStorage, unit);
+                  const buy = convertToUS(item.toBuy, unit);
 
-              return (
-                <div
-                  key={item.ingredient.id}
-                  className="rounded-2xl border border-white/10 bg-white/10 p-5"
-                >
-                  <p className="text-lg font-bold">{item.ingredient.name}</p>
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
-                    <MiniStat label="Required" value={`${required.value} ${required.unit}`} />
-                    <MiniStat label="Storage" value={`${inStorage.value} ${inStorage.unit}`} />
-                    <MiniStat label="Buy" value={`${toBuy.value} ${toBuy.unit}`} highlight />
-                  </div>
-
-                  {item.warnings && item.warnings.length > 0 && (
-                    <div className="mt-4 rounded-xl bg-amber-400/20 p-3 text-xs text-amber-100">
-                      {item.warnings.map((warning, index) => (
-                        <p key={index}>{warning}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  return (
+                    <tr
+                      key={itemId}
+                      className="border-t border-white/10 text-slate-100 print:border-gray-200 print:text-black"
+                    >
+                      <td className="p-4 font-semibold text-white print:text-black">
+                        {getIngredientName(item)}
+                      </td>
+                      <td className="p-4 text-slate-200 print:text-black">
+                        {needed.value} {needed.unit}
+                      </td>
+                      <td className="p-4 text-slate-200 print:text-black">
+                        {stock.value} {stock.unit}
+                      </td>
+                      <td
+                        className={`p-4 font-bold print:text-black ${
+                          item.toBuy > 0
+                            ? 'text-emerald-300'
+                            : 'text-slate-400 line-through'
+                        }`}
+                      >
+                        {buy.value} {buy.unit}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -545,30 +547,88 @@ const Meals = () => {
   );
 };
 
-const ProgressSteps = ({ current }: { current: number }) => {
-  const steps = ['Generate', 'Confirm', 'Shopping', 'Shelf', 'Final'];
+const ActionButton = ({
+  label,
+  icon,
+  loading,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  loading: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={`flex items-center justify-center gap-2 rounded-2xl px-5 py-4 text-sm font-bold shadow-sm transition ${
+      disabled
+        ? 'cursor-not-allowed bg-white/20 text-white/50'
+        : 'bg-white text-emerald-700 hover:-translate-y-0.5 hover:shadow-lg'
+    }`}
+  >
+    {loading ? <Loader2 className="animate-spin" size={18} /> : icon}
+    {label}
+  </button>
+);
 
-  return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm border border-gray-100">
-      <div className="flex flex-wrap items-center gap-2">
-        {steps.map((step, index) => (
-          <div key={step} className="flex items-center gap-2">
-            <span
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                index <= current
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-gray-100 text-gray-400'
-              }`}
-            >
-              {step}
-            </span>
-            {index < steps.length - 1 && <span className="text-gray-300">→</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+const InfoCard = ({
+  title,
+  value,
+  onChange,
+  disabled,
+}: {
+  title: string;
+  value: number;
+  onChange: (value: number) => void;
+  disabled: boolean;
+}) => (
+  <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
+    <p className="text-sm text-gray-500">{title}</p>
+    <input
+      type="number"
+      min="0"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-lg font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
+    />
+  </div>
+);
+
+const MealEditLine = ({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) => (
+  <div className="mb-3 rounded-xl bg-white p-3 shadow-sm">
+    <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="mt-1 w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800 outline-none focus:border-emerald-500"
+    />
+  </div>
+);
+
+const EmptyState = ({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) => (
+  <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6">
+    <p className="font-semibold text-gray-700">{title}</p>
+    <p className="mt-1 text-sm text-gray-500">{description}</p>
+  </div>
+);
 
 const MessageBox = ({
   message,
@@ -589,90 +649,5 @@ const MessageBox = ({
     </div>
   );
 };
-
-const StepCard = ({
-  icon,
-  step,
-  title,
-  active,
-  disabled,
-  loading,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  step: string;
-  title: string;
-  active: boolean;
-  disabled: boolean;
-  loading: boolean;
-  onClick: () => void;
-}) => {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`group rounded-2xl border p-5 text-left shadow-sm transition ${
-        disabled
-          ? 'cursor-not-allowed border-gray-100 bg-gray-100 text-gray-400'
-          : active
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:shadow-md'
-            : 'border-gray-100 bg-white text-gray-800 hover:-translate-y-0.5 hover:shadow-md'
-      }`}
-    >
-      <div className="mb-4 flex items-center justify-between">
-        <div className="rounded-xl bg-white p-2 shadow-sm">
-          {loading ? <Loader2 className="animate-spin" size={22} /> : icon}
-        </div>
-        <span className="text-xs font-semibold uppercase tracking-wide">{step}</span>
-      </div>
-      <p className="text-lg font-bold">{title}</p>
-    </button>
-  );
-};
-
-const MealLine = ({ label, value }: { label: string; value?: string }) => (
-  <div className="mb-3 rounded-xl bg-white p-3 shadow-sm">
-    <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
-    <p className="mt-1 text-sm font-semibold text-gray-800">{value || 'Not assigned'}</p>
-  </div>
-);
-
-const EmptyState = ({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) => (
-  <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6">
-    <p className="font-semibold text-gray-700">{title}</p>
-    <p className="mt-1 text-sm text-gray-500">{description}</p>
-  </div>
-);
-
-const StatusBadge = ({ active, label }: { active: boolean; label: string }) => (
-  <span
-    className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold uppercase tracking-wide ${
-      active ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-    }`}
-  >
-    {label}
-  </span>
-);
-
-const MiniStat = ({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string;
-  value: string | number;
-  highlight?: boolean;
-}) => (
-  <div className={`rounded-xl p-3 ${highlight ? 'bg-emerald-400 text-slate-950' : 'bg-white/10'}`}>
-    <p className="text-xs opacity-80">{label}</p>
-    <p className="text-lg font-bold">{value}</p>
-  </div>
-);
 
 export default Meals;
