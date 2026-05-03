@@ -32,3 +32,48 @@ exports.addMealIngredient = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.updateMealIngredient = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { quantity } = req.body;
+
+    if (quantity === undefined || Number(quantity) <= 0) {
+      return res.status(400).json({
+        error: { message: "quantity must be greater than 0" }
+      });
+    }
+
+    const updated = await mealIngredientsService.updateMealIngredient(id, {
+      quantity: Number(quantity)
+    });
+
+    if (!updated) {
+      return res.status(404).json({
+        error: { message: "Meal ingredient not found" }
+      });
+    }
+
+    res.json({ data: updated });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.deleteMealIngredient = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const deleted = await mealIngredientsService.deleteMealIngredient(id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        error: { message: "Meal ingredient not found" }
+      });
+    }
+
+    res.json({ data: { deleted: true, id } });
+  } catch (err) {
+    next(err);
+  }
+};

@@ -4,5 +4,7 @@ const mealIngredientsController = require("../controllers/mealIngredientsControl
 
 router.get("/:mealId/ingredients", mealIngredientsController.listMealIngredients);
 router.post("/:mealId/ingredients", mealIngredientsController.addMealIngredient);
+router.put("/ingredients/:id", mealIngredientsController.updateMealIngredient);
+router.delete("/ingredients/:id", mealIngredientsController.deleteMealIngredient);
 
 module.exports = router;

@@ -1,80 +1,68 @@
 // src/components/Sidebar.tsx
-import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   Boxes,
-  Calendar,
+  CalendarDays,
   Utensils,
   Users,
   FileText,
-  X,
-} from 'lucide-react';
+} from "lucide-react";
 
-interface SidebarProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+const navItems = [
+  {
+    to: "/dashboard",
+    label: "Dashboard",
+    icon: <LayoutDashboard size={20} />,
+  },
+  {
+    to: "/inventory",
+    label: "Inventory",
+    icon: <Boxes size={20} />,
+  },
+  {
+    to: "/activities",
+    label: "Activity Planner",
+    icon: <CalendarDays size={20} />,
+  },
+  {
+    to: "/meals",
+    label: "Meals",
+    icon: <Utensils size={20} />,
+  },
+  {
+    to: "/staff",
+    label: "Staff",
+    icon: <Users size={20} />,
+  },
+  {
+    to: "/reports",
+    label: "Reports",
+    icon: <FileText size={20} />,
+  },
+];
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+export default function Sidebar() {
   return (
-    <>
-      {/* Overlay for mobile */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
-          onClick={onClose}
-        />
-      )}
-
-      {/* Sidebar container */}
-      <aside
-        className={`fixed z-50 md:static top-0 left-0 h-full bg-[#0F172A] text-white w-64 p-6 transform transition-transform duration-200 ease-in-out ${
-          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
-      >
-        {/* Close button for mobile */}
-        <div className="flex justify-end md:hidden">
-          <button onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-
-        <nav className="space-y-4 mt-4 md:mt-0">
-          <NavItem to="/" icon={<LayoutDashboard size={18} />} label="Dashboard" />
-          <NavItem to="/inventory" icon={<Boxes size={18} />} label="Inventory" />
-          <NavItem to="/activities" icon={<Calendar size={18} />} label="Activity Planner" />
-          <NavItem to="/meals" icon={<Utensils size={18} />} label="Meal Planner" />
-          <NavItem to="/staff" icon={<Users size={18} />} label="Staff" />
-          <NavItem to="/reports" icon={<FileText size={18} />} label="Reports" />
-	  <NavItem to="/meals-management" icon={<Utensils size={18} />} label="Meals"/>
-        </nav>
-      </aside>
-    </>
+    <aside className="w-72 min-h-screen bg-slate-950 text-white p-6">
+      <nav className="space-y-3">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) =>
+              `flex items-center gap-4 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                isActive
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-200 hover:bg-slate-800 hover:text-white"
+              }`
+            }
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
+    </aside>
   );
-};
-
-const NavItem = ({
-  to,
-  icon,
-  label,
-}: {
-  to: string;
-  icon: React.ReactNode;
-  label: string;
-}) => (
-  <NavLink
-    to={to}
-    className={({ isActive }) =>
-      `flex items-center space-x-3 px-3 py-2 rounded text-sm hover:bg-slate-700 transition ${
-        isActive ? 'bg-slate-700' : ''
-      }`
-    }
-  >
-    {icon}
-    <span>{label}</span>
-  </NavLink>
-);
-
-export default Sidebar;
-
+}

@@ -1,26 +1,28 @@
 // server/services/shoppingService.js
-
 const db = require("./dbAdapter");
 
 exports.generateShoppingList = async ({ childrenCount = 20, staffCount = 5 } = {}) => {
   const confirmed = await db.getConfirmedMenu();
+
   if (!confirmed || !confirmed.week) {
     throw new Error("No confirmed menu found");
   }
 
   const week = Array.isArray(confirmed.week)
-  ? confirmed.week
-  : confirmed.week.week;
+    ? confirmed.week
+    : confirmed.week.week;
 
   if (!Array.isArray(week)) {
     throw new Error("Confirmed menu week must be an array");
   }
 
-  // Total people to feed
-  const totalPeople = childrenCount + staffCount;
+  const totalPeople = Number(childrenCount) + Number(staffCount);
 
-  // Ingredient totals
-  const totals = {}; // { ingredientId: { ingredient, quantity } }
+  if (totalPeople <= 0) {
+    throw new Error("childrenCount and staffCount must be greater than 0");
+  }
+
+  const totals = {};
 
   for (const day of week) {
     const meals = Object.values(day.menu);
@@ -28,28 +30,35 @@ exports.generateShoppingList = async ({ childrenCount = 20, staffCount = 5 } = {
     for (const meal of meals) {
       const mealIngredients = await db.listMealIngredients(meal.id);
 
-      for (const mi of mealIngredients) {
-        const ingredient = await db.getIngredientById(mi.ingredientId);
+      for (const mealIngredient of mealIngredients) {
+        const ingredient = await db.getIngredientById(mealIngredient.ingredientId);
         if (!ingredient) continue;
 
-        const needed = mi.quantity * totalPeople;
+        // quantity means amount needed per person for this meal
+        const quantityPerPerson = Number(mealIngredient.quantity) || 0;
+        const neededQuantity = quantityPerPerson * totalPeople;
 
         if (!totals[ingredient.id]) {
           totals[ingredient.id] = {
             ingredient,
-            quantity: 0
+            quantity: 0,
+            quantityPerPerson,
+            totalPeople,
           };
         }
 
-        totals[ingredient.id].quantity += needed;
+        totals[ingredient.id].quantity += neededQuantity;
       }
     }
   }
 
   return {
-    generatedAt: new Date().toISOString(),
-    peopleCount: totalPeople,
-    items: Object.values(totals)
+    items: Object.values(totals),
+    meta: {
+      childrenCount: Number(childrenCount),
+      staffCount: Number(staffCount),
+      totalPeople,
+      calculation: "quantityPerPerson * totalPeople",
+    },
   };
 };
-

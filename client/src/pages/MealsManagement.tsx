@@ -378,7 +378,7 @@ const MealsManagement = () => {
                 onChange={(e) =>
                   setAssignForm({ ...assignForm, quantity: Number(e.target.value) })
                 }
-                placeholder="Quantity per meal"
+                placeholder="Quantity per person"
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-sky-500"
               />
 
@@ -480,7 +480,7 @@ const MealsManagement = () => {
                         <p className="text-lg font-bold text-emerald-300">
                           {item.quantity} {getIngredientUnit(item.ingredientId)}
                         </p>
-                        <p className="text-xs text-slate-400">per meal</p>
+                        <p className="text-xs text-slate-400">per person</p>
                       </div>
                     </div>
                   ))}

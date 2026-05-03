@@ -1,27 +1,27 @@
 // server/controllers/menuController.js
 const menuService = require("../services/menuService");
 
-exports.generateWeeklyMenu = async (req, res, next) => {
-  try {
-    const week = await menuService.generateWeeklyMenu();
-    res.json({ data: { week } });
-  } catch (err) {
-    next(err);
-  }
-};
-
 exports.confirmWeeklyMenu = async (req, res, next) => {
   try {
     const { week } = req.body;
 
-    if (!Array.isArray(week)) {
+    if (!week || !Array.isArray(week)) {
       return res.status(400).json({
-        error: { message: "Invalid payload: expected { week: [] }" }
+        error: { message: "Invalid menu format" }
       });
     }
 
     const saved = await menuService.confirmWeeklyMenu({ week });
     res.json({ data: saved });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.generateWeeklyMenu = async (req, res, next) => {
+  try {
+    const result = await menuService.generateWeeklyMenu();
+    res.json({ data: result });
   } catch (err) {
     next(err);
   }

@@ -11,3 +11,11 @@ exports.addMealIngredient = async (mealId, payload) => {
     quantity: Number(payload.quantity) || 0
   });
 };
+
+exports.updateMealIngredient = async (id, changes) => {
+  return db.updateMealIngredient(id, changes);
+};
+
+exports.deleteMealIngredient = async (id) => {
+  return db.deleteMealIngredient(id);
+};
