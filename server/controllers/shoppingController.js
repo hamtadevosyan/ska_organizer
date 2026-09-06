@@ -4,11 +4,12 @@ const shoppingService = require("../services/shoppingService");
 
 exports.generateShoppingList = async (req, res, next) => {
   try {
-    const { childrenCount, staffCount } = req.body || {};
+    const { childrenCount, staffCount, week } = req.body || {};
 
     const list = await shoppingService.generateShoppingList({
       childrenCount,
-      staffCount
+      staffCount,
+      week
     });
 
     res.json({ data: list });
@@ -16,4 +17,3 @@ exports.generateShoppingList = async (req, res, next) => {
     next(err);
   }
 };
-
