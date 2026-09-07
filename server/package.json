@@ -4,8 +4,14 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "jest --runInBand --detectOpenHandles"
+    "test": "jest --runInBand --detectOpenHandles",
+    "db:migrate": "node scripts/database.js migrate",
+    "db:seed": "node scripts/database.js seed",
+    "test:postgres": "node scripts/test-postgres.js",
+    "test:restart:prepare": "node scripts/verify-restart.js prepare",
+    "test:restart:verify": "node scripts/verify-restart.js verify"
   },
+  "engines": { "node": ">=20.19.0" },
   "keywords": [],
   "author": "",
   "license": "ISC",

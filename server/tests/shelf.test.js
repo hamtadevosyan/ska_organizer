@@ -4,12 +4,6 @@ const db = require("../services/dbAdapter");
 
 describe("Shelf Check API", () => {
   beforeEach(async () => {
-    db.meals = [];
-    db.ingredients = [];
-    db.mealIngredients = [];
-    db.shelf = [];
-    db.confirmedMenu = null;
-
     const breakfast = await db.createMeal({ name: "Oatmeal", type: "breakfast" });
     await db.createMeal({ name: "Banana", type: "snack" });
     await db.createMeal({ name: "Chicken Rice", type: "lunch" });

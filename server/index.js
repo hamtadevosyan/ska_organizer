@@ -1,4 +1,5 @@
 // server/index.js
+require('./config/environment');
 const express = require('express');
 const cors = require('cors');
 
@@ -54,25 +55,43 @@ app.use((err, req, res, next) => {
 
 module.exports = app;
 
-if(require.main == module) {
-	(async () => {
-		try {
-			if (process.env.DB_ADAPTER === 'sequelize') {
-				// Lazy require so mock default remains unaffected
-				const sequelizeAdapter = require('./services/dbAdapter.sequelize');
-				const connectionString = process.env.DATABASE_URL || 'sqlite::memory:';
-				await sequelizeAdapter.setup(connectionString);
-				console.log('Sequelize adapter initialized');
-			}
-
-			const PORT = process.env.PORT || 3001;
-			app.listen(PORT, () => {
-				console.log(`Server running on port ${PORT}`);
-			});
-		} catch (err) {
-			console.error('Failed to bootstrap application:', err);
-			process.exit(1);
-		}
-	})();
+if (require.main === module) {
+  const db = require('./services/dbAdapter');
+  (async () => {
+    try {
+      if (db.setup) {
+        await db.setup(process.env.DATABASE_URL, { schema: process.env.DB_SCHEMA || 'public' });
+        console.log('PostgreSQL storage initialized');
+      } else {
+        console.log('Mock storage enabled: data is lost when the server stops.');
+      }
+      const port = process.env.PORT || 3001;
+      const server = app.listen(port, () => console.log(`Server running on port ${port}`));
+      let closing = false;
+      const shutdown = () => {
+        if (closing) return;
+        closing = true;
+        const deadline = setTimeout(() => process.exit(1), 10000);
+        deadline.unref();
+        server.close(async () => {
+          await db.close?.();
+          clearTimeout(deadline);
+        });
+      };
+      server.on('error', async (error) => {
+        console.error(`Could not listen on port ${port} (${error.code}).`);
+        await db.close?.();
+        process.exitCode = 1;
+      });
+      process.once('SIGINT', shutdown);
+      process.once('SIGTERM', shutdown);
+    } catch (error) {
+      // Do not print connection URLs, passwords or Sequelize connection objects.
+      const message = /^(DATABASE_URL|Database migrations|Invalid database schema)/.test(error.message)
+        ? error.message : 'Could not initialize PostgreSQL. Check DATABASE_URL and database availability.';
+      console.error(`Server startup failed: ${message}`);
+      await db.close?.();
+      process.exitCode = 1;
+    }
+  })();
 }
-

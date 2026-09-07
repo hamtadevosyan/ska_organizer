@@ -23,6 +23,11 @@ Frontend: React + Vite + TypeScript + TailwindCSS
 Backend: Node.js + Express
 API-ready architecture (future mobile app support)
 
+Meal data now uses PostgreSQL. Before starting the backend for the first time,
+follow [PostgreSQL setup and restart verification](docs/postgresql-setup.md).
+This includes the Ubuntu VMware / Windows Chrome workflow, migrations, optional
+sample data and isolated database tests.
+
 🚀 Project Structure
 ska_organizer/
 │
@@ -34,7 +39,7 @@ ska_organizer/
 🛠 Requirements
 
 Make sure you have installed:
-Node.js (v18+ recommended)
+Node.js (v20.19+ required; 22 or 24 supported)
 npm (comes with Node)
 
 Check versions:
@@ -47,7 +52,8 @@ npm -v
 cd server
 2️⃣ Install dependencies
 npm install
-3️⃣ Start backend server
+3️⃣ Configure PostgreSQL and run `npm run db:migrate` using the guide above.
+4️⃣ Start backend server
 node index.js
 
 You should see:
