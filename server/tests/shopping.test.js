@@ -4,11 +4,6 @@ const db = require("../services/dbAdapter");
 
 describe("Shopping List API", () => {
   beforeEach(async () => {
-    db.meals = [];
-    db.ingredients = [];
-    db.mealIngredients = [];
-    db.confirmedMenu = null;
-
     const breakfast = await db.createMeal({ name: "Oatmeal", type: "breakfast" });
     await db.createMeal({ name: "Banana", type: "snack" });
     await db.createMeal({ name: "Chicken Rice", type: "lunch" });

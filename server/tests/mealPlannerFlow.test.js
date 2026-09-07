@@ -4,8 +4,6 @@ const db = require("../services/dbAdapter");
 
 describe("Meal Planner end-to-end API flow", () => {
   beforeEach(async () => {
-    db.reset();
-
     const oatmeal = await db.createMeal({
       name: "Oatmeal",
       type: "breakfast"

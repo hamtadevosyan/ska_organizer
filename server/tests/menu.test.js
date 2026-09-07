@@ -4,13 +4,6 @@ const db = require("../services/dbAdapter");
 
 describe("Menu API", () => {
   beforeEach(async () => {
-    // Reset mock DB
-    db.children = [];
-    db.attendance = [];
-    db.activities = [];
-    db.meals = [];
-    db.confirmedMenu = null;
-
     // Seed meals
     await db.createMeal({ name: "Oatmeal", type: "breakfast" });
     await db.createMeal({ name: "Banana", type: "snack" });
@@ -41,4 +34,3 @@ describe("Menu API", () => {
     expect(current.body.data.week).toHaveLength(5);
   });
 });
-

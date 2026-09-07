@@ -1,14 +1,7 @@
 const request = require("supertest");
 const app = require("../index");
-const db = require("../services/dbAdapter");
 
 describe("Meals Management API", () => {
-  beforeEach(() => {
-    db.meals = [];
-    db.ingredients = [];
-    db.mealIngredients = [];
-  });
-
   test("POST /api/meals creates a meal", async () => {
     const res = await request(app)
       .post("/api/meals")
