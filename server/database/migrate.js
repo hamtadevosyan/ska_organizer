@@ -1,5 +1,8 @@
 const { DataTypes, QueryTypes } = require('sequelize');
-const migrations = [{ name: '001-persistent-meals', ...require('./migrations/001-persistent-meals') }];
+const migrations = [
+  { name: '001-persistent-meals', ...require('./migrations/001-persistent-meals') },
+  { name: '002-weekly-plans', ...require('./migrations/002-weekly-plans') },
+];
 
 const appliedMigrations = (sequelize, schema, transaction) =>
   sequelize.query(`SELECT "name" FROM "${schema}"."SequelizeMeta" ORDER BY "name"`, {

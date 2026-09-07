@@ -42,14 +42,17 @@ const navItems = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   return (
-    <aside className="w-72 min-h-screen bg-slate-950 text-white p-6">
+    <>
+    {isOpen && <button aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-20 bg-black/40 md:hidden" />}
+    <aside className={`${isOpen ? 'block' : 'hidden'} fixed inset-y-0 left-0 z-30 w-72 min-h-screen bg-slate-950 text-white p-6 md:static md:block print:hidden`}>
       <nav className="space-y-3">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
+            onClick={onClose}
             className={({ isActive }) =>
               `flex items-center gap-4 rounded-xl px-4 py-3 text-sm font-semibold transition ${
                 isActive
@@ -64,5 +67,6 @@ export default function Sidebar() {
         ))}
       </nav>
     </aside>
+    </>
   );
 }

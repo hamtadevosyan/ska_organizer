@@ -1,13 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Plus, PackagePlus, Link2 } from 'lucide-react';
 import { API_BASE_URL } from '../../lib/api';
+import type { Meal } from './weeklyPlan';
+type Ingredient = { id: string; name: string; unit: string };
+type RecipeLink = { id: string; ingredientId: string; quantity: number };
 
 const MealSetup = () => {
-  const [meals, setMeals] = useState([]);
-  const [ingredients, setIngredients] = useState([]);
-  const [selectedMeal, setSelectedMeal] = useState(null);
-  const [mealIngredients, setMealIngredients] = useState([]);
+  const [meals, setMeals] = useState<Meal[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null);
+  const [mealIngredients, setMealIngredients] = useState<RecipeLink[]>([]);
 
   const [mealForm, setMealForm] = useState({
     name: '',
@@ -26,7 +29,7 @@ const MealSetup = () => {
   });
 
   const ingredientMap = useMemo(() => {
-    const map = {};
+    const map: Record<string, Ingredient> = {};
     ingredients.forEach(i => (map[i.id] = i));
     return map;
   }, [ingredients]);
@@ -41,7 +44,7 @@ const MealSetup = () => {
     setIngredients(res.data.data || []);
   };
 
-  const loadMealIngredients = async (mealId) => {
+  const loadMealIngredients = async (mealId: string) => {
     const res = await axios.get(`${API_BASE_URL}/api/meals/${mealId}/ingredients`);
     setMealIngredients(res.data.data || []);
   };
@@ -66,12 +69,13 @@ const MealSetup = () => {
     loadIngredients();
   };
 
-  const selectMeal = async (meal) => {
+  const selectMeal = async (meal: Meal) => {
     setSelectedMeal(meal);
     await loadMealIngredients(meal.id);
   };
 
   const assignIngredient = async () => {
+    if (!selectedMeal) return;
     await axios.post(
       `${API_BASE_URL}/api/meals/${selectedMeal.id}/ingredients`,
       assignForm

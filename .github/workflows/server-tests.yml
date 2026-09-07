@@ -2,7 +2,7 @@ name: Server persistence tests
 
 on:
   push:
-    branches: [development, 'feature/SKAO-17-*']
+    branches: [development, 'feature/SKAO-17-*', 'feature/SKAO-18-*']
     paths: ['server/**', '.github/workflows/server-tests.yml']
   pull_request:
     paths: ['server/**', '.github/workflows/server-tests.yml']

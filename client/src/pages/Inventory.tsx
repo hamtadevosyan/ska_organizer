@@ -1,5 +1,5 @@
 // src/pages/Inventory.tsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API_BASE_URL } from '../lib/api';
 

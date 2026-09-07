@@ -28,6 +28,10 @@ follow [PostgreSQL setup and restart verification](docs/postgresql-setup.md).
 This includes the Ubuntu VMware / Windows Chrome workflow, migrations, optional
 sample data and isolated database tests.
 
+The meal planner now saves and reopens separate calendar weeks with headcounts,
+stock and historical recipe quantities. See [Saved weekly menus](docs/saved-weekly-menus.md)
+for the SKAO-18 update commands, dated API and usage instructions.
+
 🚀 Project Structure
 ska_organizer/
 │

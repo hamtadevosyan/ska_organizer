@@ -21,7 +21,9 @@ exports.saveShelfCheck = async (req, res, next) => {
 
 exports.generateFinalShoppingList = async (req, res, next) => {
   try {
-    const list = await shelfService.generateFinalShoppingList();
+    const list = req.query.weekStart
+      ? await require('../services/weeklyPlanService').shopping(req.query.weekStart)
+      : await shelfService.generateFinalShoppingList();
 
     res.json({ data: list });
   } catch (err) {

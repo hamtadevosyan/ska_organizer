@@ -10,8 +10,10 @@ test('a new Node process returns the same IDs, recipes, saved menu and shelf ari
   const reopened = await runProcess('read');
   expect(reopened).toEqual(written);
   expect(reopened.recipe[0].quantity).toBe(1);
-  // The existing saved-shopping API uses 20 children + 5 staff (SKAO-18 changes that).
+  // The undated compatibility API retains the old defaults. Dated plans use their saved counts.
   expect(reopened.shopping[0]).toMatchObject({ required: 125, inStorage: 20, toBuy: 105 });
+  expect(reopened.datedShopping.items[0]).toMatchObject({ quantity: 15, inStorage: 2, toBuy: 13 });
+  expect(reopened.datedPlans[1]).toMatchObject({ childrenCount: 8, staffCount: 1 });
 });
 
 test('migrations and explicit seeds preserve existing records when repeated', async () => {

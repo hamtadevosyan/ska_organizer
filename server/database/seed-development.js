@@ -4,10 +4,10 @@ const { assertMigrated } = require('./migrate');
 async function seedDevelopment(sequelize, schema = 'public') {
   if (process.env.NODE_ENV === 'production') throw new Error('Development seeds are disabled in production.');
   await assertMigrated(sequelize, schema);
-  const { Meal, Ingredient, MealIngredient, ConfirmedMenu, ShelfCheck } = defineModels(sequelize);
+  const { Meal, Ingredient, MealIngredient, ConfirmedMenu, ShelfCheck, WeeklyPlan } = defineModels(sequelize);
   return sequelize.transaction(async (transaction) => {
     await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:schema), 17002)', { replacements: { schema }, transaction });
-    for (const model of [Meal, Ingredient, MealIngredient, ConfirmedMenu, ShelfCheck]) {
+    for (const model of [Meal, Ingredient, MealIngredient, ConfirmedMenu, ShelfCheck, WeeklyPlan]) {
       if (await model.count({ transaction })) return { seeded: false, reason: 'Meal storage is not empty; existing data was preserved.' };
     }
     await Meal.bulkCreate([

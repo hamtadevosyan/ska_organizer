@@ -25,6 +25,12 @@ async function api(method, url, body, status = 200) {
       if (await api('get', '/api/menu/current') !== null) throw new Error('Draft was saved automatically');
       await api('post', '/api/menu/confirm', { week: draft.week });
       await api('post', '/api/shelf/check', { items: [{ ingredientId: eggs.id, quantity: 20, expiresAt: '2099-01-01' }] });
+      for (const [weekStart, childrenCount] of [['2026-09-07', 4], ['2026-09-14', 8]]) {
+        const calculated = await api('post', `/api/menu/plans/${weekStart}/preview`, {
+          version: 0, week: draft.week.slice(0, 3), childrenCount, staffCount: 1, inHouse: { [eggs.id]: 2 },
+        });
+        await api('put', `/api/menu/plans/${weekStart}`, { previewToken: calculated.previewToken });
+      }
     }
     const meals = await api('get', '/api/meals');
     const breakfast = meals.find((meal) => meal.type === 'breakfast');
@@ -34,6 +40,8 @@ async function api(method, url, body, status = 200) {
       menu: await api('get', '/api/menu/current'),
       shelf: await db.getShelf(),
       shopping: (await api('get', '/api/shelf/final')).items,
+      datedPlans: [await api('get', '/api/menu/plans/2026-09-07'), await api('get', '/api/menu/plans/2026-09-14')],
+      datedShopping: await api('get', '/api/shelf/final?weekStart=2026-09-07'),
     };
     await db.close();
     process.send({ snapshot }, () => process.disconnect());

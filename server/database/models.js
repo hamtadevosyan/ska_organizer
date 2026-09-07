@@ -26,6 +26,12 @@ module.exports = (sequelize) => {
     week: { type: DataTypes.JSONB, allowNull: false },
     confirmedAt: { type: DataTypes.DATE, allowNull: false },
   }, { timestamps: false });
+  const WeeklyPlan = sequelize.define('WeeklyPlan', {
+    weekStart: { type: DataTypes.DATEONLY, primaryKey: true },
+    version: { type: DataTypes.INTEGER, allowNull: false },
+    snapshot: { type: DataTypes.JSONB, allowNull: false },
+    savedAt: { type: DataTypes.DATE, allowNull: false },
+  }, { timestamps: false });
   // One atomic snapshot matches the existing shelf-check API.
   const ShelfCheck = sequelize.define('ShelfCheck', {
     id: { type: DataTypes.STRING, primaryKey: true },
@@ -43,5 +49,5 @@ module.exports = (sequelize) => {
     checkOut: DataTypes.DATE, recordedBy: DataTypes.STRING,
   }, { timestamps: false });
   const Activity = require('../models/activity')(sequelize, DataTypes);
-  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, ShelfCheck, Child, Attendance, Activity };
+  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity };
 };
