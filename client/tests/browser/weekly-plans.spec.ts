@@ -20,8 +20,9 @@ test('save, reload, preserve drafts and reopen two independent weeks through rea
   const save = page.getByRole('button', { name: 'Save Menu' });
   await expect(generate).toBeEnabled();
   await generate.click();
-  await expect(page.getByLabel('Breakfast', { exact: true })).toHaveCount(5);
-  for (let i = 0; i < 5; i++) await page.getByLabel('Breakfast', { exact: true }).nth(i).selectOption(i < 3 ? meal.id : oatmeal.id);
+  const breakfasts = page.getByRole('combobox', { name: 'Breakfast', exact: true });
+  await expect(breakfasts).toHaveCount(5);
+  for (let i = 0; i < 5; i++) await breakfasts.nth(i).selectOption(i < 3 ? meal.id : oatmeal.id);
   await page.getByLabel('Children', { exact: true }).fill('4');
   await page.getByLabel('Staff', { exact: true }).fill('1');
   await expect(save).toBeEnabled();

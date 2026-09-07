@@ -167,3 +167,17 @@ Manual check: add a breakfast recipe using one egg per person; select it on thre
 days, set 4 children and 1 staff, and enter 2 eggs in house. Save and reload: the
 shopping table must show 15 needed and 13 buy. Save a different second week, then
 reopen the first and verify its selections, counts and stock are unchanged.
+
+### Ubuntu verification — September 7, 2026
+
+The handoff commit was imported and migration `002-weekly-plans` applied to the
+existing configured database, without recreating databases or changing `.env`
+files. With Node 22.17.1, all 35 mock tests, all 39 native PostgreSQL tests, all
+12 React interaction tests and the production build passed. ESLint passed with
+the existing `MealsManagement.tsx` hook dependency warning.
+
+The full Chromium flow passed after correcting its breakfast selector to use
+the combobox role and accessible name. It verified save/reload, the 15/2/13
+quantities through both the UI and saved-shopping API, draft retention across
+tabs and weeks, reopening the saved first week, and mobile navigation.
+GitHub CI and PR merge remain separate delivery gates.
