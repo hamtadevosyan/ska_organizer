@@ -13,11 +13,19 @@ const mock = {
   ],
   ingredients: [
     { id: "ing-1", name: "Oats", unit: "g", shelfLifeDays: 180 },
-    { id: "ing-2", name: "Milk", unit: "ml", shelfLifeDays: 7 }
+    { id: "ing-2", name: "Milk", unit: "ml", shelfLifeDays: 7 },
+    { id: "ing-3", name: "Bananas", unit: "count", shelfLifeDays: 7 },
+    { id: "ing-4", name: "Chicken", unit: "g", shelfLifeDays: 3 },
+    { id: "ing-5", name: "Rice", unit: "g", shelfLifeDays: 180 },
+    { id: "ing-6", name: "Yogurt", unit: "g", shelfLifeDays: 7 }
   ],
   mealIngredients: [
-    { mealId: "meal-1", ingredientId: "ing-1", quantity: 30 },
-    { mealId: "meal-1", ingredientId: "ing-2", quantity: 100 }
+    { id: "link-1", mealId: "meal-1", ingredientId: "ing-1", quantity: 30 },
+    { id: "link-2", mealId: "meal-1", ingredientId: "ing-2", quantity: 100 },
+    { id: "link-3", mealId: "meal-2", ingredientId: "ing-3", quantity: 1 },
+    { id: "link-4", mealId: "meal-3", ingredientId: "ing-4", quantity: 75 },
+    { id: "link-5", mealId: "meal-3", ingredientId: "ing-5", quantity: 50 },
+    { id: "link-6", mealId: "meal-4", ingredientId: "ing-6", quantity: 100 }
   ],
   shelf: [],
   confirmedMenu: null,
@@ -26,7 +34,18 @@ const mock = {
   nowIso: () => new Date().toISOString()
 };
 
+let catalogQueue = Promise.resolve();
 module.exports = {
+  withCatalogLock: (fn) => {
+    const operation = catalogQueue.then(fn);
+    catalogQueue = operation.catch(() => {});
+    return operation;
+  },
+  ingredientHasQuantities: async (id) => mock.mealIngredients.some((link) => link.ingredientId === id) ||
+    mock.shelf.some((item) => item.ingredientId === id) ||
+    Object.values(mock.weeklyPlans).some((plan) => plan.items.some((item) => item.ingredient.id === id) ||
+      Object.hasOwn(plan.inHouse, id)),
+  getMealIngredientById: async (id) => mock.mealIngredients.find((link) => link.id === id) || null,
   // ------------------------------------------------------
   // RESET (for tests)
   // ------------------------------------------------------
@@ -190,10 +209,10 @@ module.exports = {
   // ------------------------------------------------------
   // MEALS
   // ------------------------------------------------------
-  listMeals: async () => mock.meals,
+  listMeals: async ({ type, includeArchived = false } = {}) => mock.meals.filter((m) => (includeArchived || !m.archived) && (!type || m.type === type)),
 
   listMealsByType: async (type) =>
-    mock.meals.filter((m) => m.type === type),
+    mock.meals.filter((m) => m.type === type && !m.archived),
 
   getMealById: async (id) =>
     mock.meals.find((m) => m.id === id) || null,
@@ -202,6 +221,7 @@ module.exports = {
     const rec = {
       id: payload.id || mock.uuid(),
       name: payload.name,
+      archived: payload.archived || false,
       type: payload.type,
       description: payload.description || "",
       createdAt: mock.nowIso()
@@ -227,7 +247,7 @@ module.exports = {
   // ------------------------------------------------------
   // INGREDIENTS
   // ------------------------------------------------------
-  listIngredients: async () => mock.ingredients,
+  listIngredients: async ({ includeArchived = false } = {}) => mock.ingredients.filter((i) => includeArchived || !i.archived),
 
   getIngredientById: async (id) =>
     mock.ingredients.find((i) => i.id === id) || null,
@@ -236,6 +256,7 @@ module.exports = {
     const rec = {
       id: payload.id || mock.uuid(),
       name: payload.name,
+      archived: payload.archived || false,
       unit: payload.unit,
       shelfLifeDays: payload.shelfLifeDays,
       createdAt: mock.nowIso()
@@ -265,6 +286,9 @@ module.exports = {
     mock.mealIngredients.filter((mi) => mi.mealId === mealId),
 
   addMealIngredient: async (payload) => {
+    if (mock.mealIngredients.some((link) => link.mealId === payload.mealId && link.ingredientId === payload.ingredientId)) {
+      throw require('./catalogValidation').fieldError('ingredientId', 'This ingredient is already in the recipe.', 409);
+    }
     const rec = {
       id: payload.id || mock.uuid(),
       mealId: payload.mealId,

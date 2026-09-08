@@ -27,7 +27,7 @@ async function api(method, url, body, status = 200) {
       await api('post', '/api/shelf/check', { items: [{ ingredientId: eggs.id, quantity: 20, expiresAt: '2099-01-01' }] });
       for (const [weekStart, childrenCount] of [['2026-09-07', 4], ['2026-09-14', 8]]) {
         const calculated = await api('post', `/api/menu/plans/${weekStart}/preview`, {
-          version: 0, week: draft.week.slice(0, 3), childrenCount, staffCount: 1, inHouse: { [eggs.id]: 2 },
+          version: 0, week: draft.week.slice(0, 3).map((day) => ({ day: day.day, menu: { breakfast: day.menu.breakfast } })), childrenCount, staffCount: 1, inHouse: { [eggs.id]: 2 },
         });
         await api('put', `/api/menu/plans/${weekStart}`, { previewToken: calculated.previewToken });
       }

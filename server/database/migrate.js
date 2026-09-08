@@ -2,6 +2,7 @@ const { DataTypes, QueryTypes } = require('sequelize');
 const migrations = [
   { name: '001-persistent-meals', ...require('./migrations/001-persistent-meals') },
   { name: '002-weekly-plans', ...require('./migrations/002-weekly-plans') },
+  { name: '003-catalog-corrections', ...require('./migrations/003-catalog-corrections') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

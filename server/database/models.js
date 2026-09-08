@@ -6,11 +6,13 @@ module.exports = (sequelize) => {
     id: id(), name: { type: DataTypes.STRING, allowNull: false },
     type: { type: DataTypes.STRING, allowNull: false },
     description: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' },
+    archived: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   });
   const Ingredient = sequelize.define('Ingredient', {
     id: id(), name: { type: DataTypes.STRING, allowNull: false },
     unit: { type: DataTypes.STRING, allowNull: false },
     shelfLifeDays: { type: DataTypes.INTEGER, validate: { min: 0 } },
+    archived: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   });
   const MealIngredient = sequelize.define('MealIngredient', {
     id: id(), mealId: { type: DataTypes.STRING, allowNull: false },

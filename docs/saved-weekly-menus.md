@@ -5,6 +5,8 @@ child/staff counts, recipe ingredients and quantities, and in-house stock in one
 atomic snapshot. Reopening a week restores that snapshot, including historical
 ingredient names and units. Later recipe edits do not rewrite it.
 
+For catalog edits and archiving, see [Correcting meals and recipes (SKAO-19)](catalog-corrections.md).
+
 ## Update your existing Ubuntu installation
 
 After bringing this branch into `~/workspace/ska_organizer`, stop both running
@@ -73,7 +75,9 @@ undated records remain available and are never assigned a guessed date.
 For a saved week, an unchanged meal in the same day/meal period retains its saved
 recipe even if the catalog recipe changes or the meal is later deleted. Changing
 headcounts scales that recipe. A newly selected meal uses its current catalog
-recipe. A new calendar week also uses current recipes. Conflicting units for the
+recipe. **Use current recipes** explicitly adopts catalog corrections in a saved
+week’s draft; the saved week changes only after Save. A newly generated menu or
+new calendar week also uses current recipes. Conflicting units for the
 same ingredient are rejected instead of being added together.
 
 ## Errors and concurrent edits
@@ -96,7 +100,7 @@ All success responses wrap the result in `{ "data": ... }`. Validation returns
 | Request | Behavior |
 | --- | --- |
 | `GET /api/menu/plans/:weekStart` | Complete saved snapshot, or `null` for a new week |
-| `POST /api/menu/plans/:weekStart/preview` | Read-only draft calculation and signed `previewToken` |
+| `POST /api/menu/plans/:weekStart/preview` | Read-only calculation; signed `previewToken` only when recipes are complete |
 | `PUT /api/menu/plans/:weekStart` | Atomically saves `{ "previewToken": "..." }` |
 | `GET /api/menu/plans/:weekStart/shopping` | Saved quantities and saved headcounts, independent of today's recipes |
 | `GET /api/shelf/final?weekStart=YYYY-MM-DD` | Same dated saved-shopping result |
@@ -115,6 +119,9 @@ All success responses wrap the result in `{ "data": ... }`. Validation returns
   "inHouse": { "saved-ingredient-id": 2 }
 }
 ```
+
+Optional `refreshRecipes: true` adopts current catalog recipes for a saved week.
+A preview with incomplete recipes returns named `warnings` and no save token.
 
 Use version `0` for a new week, or the version returned by GET for an existing
 week. Week arrays contain one to five distinct weekdays and valid meal slots.

@@ -92,15 +92,16 @@ const convertFromUS = (
   return quantity;
 };
 
-const MealPlanner = ({ active = true }: { active?: boolean }) => {
-  const planner = useWeeklyPlan();
+const MealPlanner = ({ active = true, onEditRecipe }: { active?: boolean; onEditRecipe?: (id: string) => void }) => {
+  const planner = useWeeklyPlan(active);
   const { entry, update, isBusy, actionLoading, ready } = planner;
   const { week: weeklyMenu, childrenCount, staffCount, inHouse: inStock } = entry.draft;
   const { message, messageType } = entry;
   const hasSaved = !!entry.savedAt && !entry.dirty;
   const shoppingItems = entry.preview?.items || [];
   const finalShoppingItems = ready ? shoppingItems : [];
-  const shoppingLoading = entry.loaded && weeklyMenu.length > 0 && !ready && !entry.calculationError && !planner.invalid;
+  const shoppingLoading = entry.loaded && weeklyMenu.length > 0 && !planner.calculated && !entry.calculationError && !planner.invalid;
+  const recipeWarnings = planner.calculated ? entry.preview?.warnings || [] : [];
   const [availableMeals, setAvailableMeals] = useState<Meal[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
@@ -189,6 +190,21 @@ const MealPlanner = ({ active = true }: { active?: boolean }) => {
       {entry.calculationError && <div className="print:hidden">
         <MessageBox message={entry.calculationError} type="error" />
         <button type="button" onClick={planner.recalculate} className="mt-2 font-semibold text-emerald-700">Retry calculation</button>
+      </div>}
+      {entry.draft.version > 0 && <div className="print:hidden rounded-xl border bg-white p-4 text-sm">
+        <p>Saved selections retain their original recipes. Use current recipes to review catalog corrections for this draft.</p>
+        <button type="button" className="mt-2 font-semibold text-emerald-700 disabled:text-gray-500"
+          disabled={isBusy || entry.draft.refreshRecipes} onClick={() => update({ refreshRecipes: true })}>
+          {entry.draft.refreshRecipes ? 'Using current recipes' : 'Use current recipes'}
+        </button>
+      </div>}
+      {recipeWarnings.length > 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+        <p className="font-bold">Complete the recipes before saving or printing this shopping list.</p>
+        <ul className="mt-2 space-y-2">{recipeWarnings.map((warning, index) => <li key={index}>
+          <span>{warning.day} — {warning.mealName}: {warning.message}</span>{' '}
+          {onEditRecipe && <button type="button" className="print:hidden font-semibold underline"
+            onClick={() => onEditRecipe(warning.mealId)}>Edit recipe for {warning.mealName}</button>}
+        </li>)}</ul>
       </div>}
       {message && <MessageBox message={message} type={messageType} />}
 

@@ -1,32 +1,15 @@
-const ingredientsService = require("../services/ingredientsService");
-
+const service = require('../services/ingredientsService');
 exports.listIngredients = async (req, res, next) => {
-  try {
-    const ingredients = await ingredientsService.listIngredients();
-    res.json({ data: ingredients });
-  } catch (err) {
-    next(err);
-  }
+  try { res.json({ data: await service.listIngredients({
+    type: req.query.type, includeArchived: req.query.includeArchived === 'true',
+  }) }); } catch (error) { next(error); }
 };
-
 exports.createIngredient = async (req, res, next) => {
-  try {
-    const { name, unit, shelfLifeDays } = req.body;
-
-    if (!name || !unit) {
-      return res.status(400).json({
-        error: { message: "name and unit are required" }
-      });
-    }
-
-    const ingredient = await ingredientsService.createIngredient({
-      name,
-      unit,
-      shelfLifeDays
-    });
-
-    res.status(201).json({ data: ingredient });
-  } catch (err) {
-    next(err);
-  }
+  try { res.status(201).json({ data: await service.createIngredient(req.body) }); } catch (error) { next(error); }
+};
+exports.updateIngredient = async (req, res, next) => {
+  try { res.json({ data: await service.updateIngredient(req.params.id, req.body) }); } catch (error) { next(error); }
+};
+exports.archiveIngredient = async (req, res, next) => {
+  try { res.json({ data: await service.updateIngredient(req.params.id, { archived: true }) }); } catch (error) { next(error); }
 };
