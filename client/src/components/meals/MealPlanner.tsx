@@ -12,43 +12,9 @@ import {
 } from 'lucide-react';
 import { API_BASE_URL } from '../../lib/api';
 
-const MEAL_TYPES = ['breakfast', 'snack', 'lunch', 'afternoonSnack'] as const;
-
-type MealType = (typeof MEAL_TYPES)[number];
-
-type Meal = {
-  id: string;
-  name: string;
-  type: MealType;
-  description?: string;
-};
-
-type MenuDay = {
-  day: string;
-  menu: Record<MealType, Meal>;
-};
-
-type ShoppingItem = {
-  ingredient?: {
-    id?: string;
-    name?: string;
-    unit?: string;
-  };
-  ingredientId?: string;
-  name?: string;
-  unit?: string;
-  quantity: number;
-};
-
-type FinalShoppingItem = ShoppingItem & {
-  inStorage: number;
-  toBuy: number;
-};
-
-type ShelfItemInput = {
-  ingredientId: string;
-  quantity: number;
-};
+import { MEAL_TYPES } from './weeklyPlan';
+import type { Meal, MealType, ShoppingItem } from './weeklyPlan';
+import { useWeeklyPlan } from './useWeeklyPlan';
 
 type MessageType = 'success' | 'error' | 'info';
 
@@ -70,14 +36,9 @@ const getErrorMessage = (err: unknown, fallback: string) => {
   return err instanceof Error ? err.message : fallback;
 };
 
-const getIngredientId = (item: ShoppingItem) =>
-  item.ingredient?.id || item.ingredientId || item.name || 'unknown-item';
-
-const getIngredientName = (item: ShoppingItem) =>
-  item.ingredient?.name || item.name || item.ingredientId || 'Unnamed item';
-
-const getIngredientUnit = (item: ShoppingItem) =>
-  item.ingredient?.unit || item.unit || '';
+const getIngredientId = (item: ShoppingItem) => item.ingredient.id;
+const getIngredientName = (item: ShoppingItem) => item.ingredient.name;
+const getIngredientUnit = (item: ShoppingItem) => item.ingredient.unit;
 
 const convertToUS = (
   quantity: number,
@@ -131,253 +92,41 @@ const convertFromUS = (
   return quantity;
 };
 
-const MealPlanner = () => {
+const MealPlanner = ({ active = true }: { active?: boolean }) => {
+  const planner = useWeeklyPlan();
+  const { entry, update, isBusy, actionLoading, ready } = planner;
+  const { week: weeklyMenu, childrenCount, staffCount, inHouse: inStock } = entry.draft;
+  const { message, messageType } = entry;
+  const hasSaved = !!entry.savedAt && !entry.dirty;
+  const shoppingItems = entry.preview?.items || [];
+  const finalShoppingItems = ready ? shoppingItems : [];
+  const shoppingLoading = entry.loaded && weeklyMenu.length > 0 && !ready && !entry.calculationError && !planner.invalid;
   const [availableMeals, setAvailableMeals] = useState<Meal[]>([]);
-  const [weeklyMenu, setWeeklyMenu] = useState<MenuDay[]>([]);
-  const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
-  const [inStock, setInStock] = useState<Record<string, number>>({});
-  const [childrenCount, setChildrenCount] = useState(20);
-  const [staffCount, setStaffCount] = useState(5);
-  const [actionLoading, setActionLoading] = useState<'generate' | 'save' | null>(
-    null
-  );
   const [catalogLoading, setCatalogLoading] = useState(true);
-  const [shoppingLoading, setShoppingLoading] = useState(false);
   const [catalogError, setCatalogError] = useState('');
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState<MessageType>('info');
-  const [hasSaved, setHasSaved] = useState(false);
-
-  const isBusy = actionLoading !== null;
-
-  const mealsByType = useMemo(() => {
-    const groups: Record<MealType, Meal[]> = {
-      breakfast: [],
-      snack: [],
-      lunch: [],
-      afternoonSnack: [],
-    };
-
-    availableMeals.forEach((meal) => {
-      if (isMealType(meal.type)) {
-        groups[meal.type].push(meal);
-      }
-    });
-
-    return groups;
-  }, [availableMeals]);
-
-  const finalShoppingItems = useMemo<FinalShoppingItem[]>(() => {
-    return shoppingItems.map((item) => {
-      const itemId = getIngredientId(item);
-      const stockQuantity = Number(inStock[itemId]) || 0;
-
-      return {
-        ...item,
-        inStorage: stockQuantity,
-        toBuy: Math.max(Number(item.quantity) - stockQuantity, 0),
-      };
-    });
-  }, [shoppingItems, inStock]);
-
-  const showMessage = (text: string, type: MessageType = 'info') => {
-    setMessage(text);
-    setMessageType(type);
-  };
-
   useEffect(() => {
-    let active = true;
-
-    const loadMeals = async () => {
-      setCatalogLoading(true);
-      setCatalogError('');
-
-      try {
-        const response = await axios.get<{ data: Meal[] }>(
-          `${API_BASE_URL}/api/meals`
-        );
-        const meals = Array.isArray(response.data.data) ? response.data.data : [];
-
-        if (active) {
-          setAvailableMeals(meals);
-        }
-      } catch (err) {
-        console.error('Failed to load meal catalog:', err);
-        if (active) {
-          setCatalogError(getErrorMessage(err, 'Failed to load the meal catalog.'));
-        }
-      } finally {
-        if (active) {
-          setCatalogLoading(false);
-        }
-      }
-    };
-
-    loadMeals();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (weeklyMenu.length === 0) return;
-
+    if (!active) return;
+    let current = true;
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      setShoppingLoading(true);
-
-      try {
-        const response = await axios.post<{ data: { items: ShoppingItem[] } }>(
-          `${API_BASE_URL}/api/shopping/generate`,
-          {
-            week: weeklyMenu,
-            childrenCount,
-            staffCount,
-          },
-          { signal: controller.signal }
-        );
-
-        const items = Array.isArray(response.data.data.items)
-          ? response.data.data.items
-          : [];
-
-        setShoppingItems(items);
-        setInStock((previous) => {
-          const next: Record<string, number> = {};
-          items.forEach((item) => {
-            const itemId = getIngredientId(item);
-            next[itemId] = previous[itemId] || 0;
-          });
-          return next;
-        });
-      } catch (err) {
-        if (!axios.isCancel(err)) {
-          console.error('Failed to refresh shopping list:', err);
-          showMessage(
-            getErrorMessage(err, 'Failed to refresh the shopping list.'),
-            'error'
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setShoppingLoading(false);
-        }
-      }
-    }, 300);
-
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [weeklyMenu, childrenCount, staffCount]);
-
-  const generateMenu = async () => {
-    setActionLoading('generate');
-    setMessage('');
-    setHasSaved(false);
-
-    try {
-      const response = await axios.get<{ data: { week: MenuDay[] } }>(
-        `${API_BASE_URL}/api/menu/generate`
-      );
-      const week = response.data.data.week || [];
-
-      if (week.length === 0) {
-        throw new Error('The server returned an empty weekly menu.');
-      }
-
-      setWeeklyMenu(week);
-      setShoppingItems([]);
-      setInStock({});
-      showMessage(
-        'Menu generated. Adjust any meal below; the shopping list will update automatically.',
-        'success'
-      );
-    } catch (err) {
-      console.error('Failed to generate menu:', err);
-      showMessage(getErrorMessage(err, 'Failed to generate the menu.'), 'error');
-    } finally {
-      setActionLoading(null);
-    }
+    setCatalogLoading(true);
+    axios.get(`${API_BASE_URL}/api/meals`, { signal: controller.signal }).then(({ data }) => {
+      if (current) { setAvailableMeals(data.data); setCatalogError(''); }
+    }).catch((error: unknown) => {
+      if (current) setCatalogError(getErrorMessage(error, 'Could not load the meal catalog.'));
+    }).finally(() => { if (current) setCatalogLoading(false); });
+    return () => { current = false; controller.abort(); };
+  }, [active]);
+  const mealsByType = useMemo(() => Object.fromEntries(MEAL_TYPES.map((type) =>
+    [type, availableMeals.filter((meal) => isMealType(meal.type) && meal.type === type)]
+  )) as Record<MealType, Meal[]>, [availableMeals]);
+  const updateMealSelection = (dayIndex: number, type: MealType, id: string) => {
+    const meal = availableMeals.find((option) => option.id === id && option.type === type);
+    if (!meal) return;
+    update({ week: weeklyMenu.map((day, index) => index === dayIndex ? { ...day, menu: { ...day.menu, [type]: meal } } : day) });
   };
-
-  const updateMealSelection = (
-    dayIndex: number,
-    mealType: MealType,
-    mealId: string
-  ) => {
-    const selectedMeal = mealsByType[mealType].find((meal) => meal.id === mealId);
-    if (!selectedMeal) return;
-
-    setWeeklyMenu((previous) =>
-      previous.map((day, index) =>
-        index === dayIndex
-          ? {
-              ...day,
-              menu: {
-                ...day.menu,
-                [mealType]: selectedMeal,
-              },
-            }
-          : day
-      )
-    );
-    setHasSaved(false);
-  };
-
-  const updatePeopleCount = (
-    setter: (value: number) => void,
-    value: number
-  ) => {
-    setter(Math.max(0, value));
-    setHasSaved(false);
-  };
-
-  const clearInStock = () => {
-    const cleared: Record<string, number> = {};
-    shoppingItems.forEach((item) => {
-      cleared[getIngredientId(item)] = 0;
-    });
-
-    setInStock(cleared);
-    setHasSaved(false);
-  };
-
-  const saveMenu = async () => {
-    if (weeklyMenu.length === 0) {
-      showMessage('Please generate a menu first.', 'error');
-      return;
-    }
-
-    setActionLoading('save');
-    setMessage('');
-
-    try {
-      await axios.post(`${API_BASE_URL}/api/menu/confirm`, {
-        week: weeklyMenu,
-      });
-
-      const shelfItems: ShelfItemInput[] = Object.entries(inStock).map(
-        ([ingredientId, quantity]) => ({
-          ingredientId,
-          quantity: Number(quantity) || 0,
-        })
-      );
-
-      await axios.post(`${API_BASE_URL}/api/shelf/check`, {
-        items: shelfItems,
-      });
-
-      setHasSaved(true);
-      showMessage('Menu and in-house quantities saved.', 'success');
-    } catch (err) {
-      console.error('Failed to save menu:', err);
-      showMessage(getErrorMessage(err, 'Failed to save the menu.'), 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
+  const clearInStock = () => update({ inHouse: {} });
+  const generateMenu = () => { void planner.generate(); };
+  const saveMenu = () => { void planner.save(); };
 
   return (
     <div className="space-y-6">
@@ -386,14 +135,13 @@ const MealPlanner = () => {
           <div>
             <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
               <Database size={17} />
-              Database-backed planner
+              Weekly meal planner
             </div>
             <h3 className="mt-2 text-2xl font-bold text-gray-900">
               Generate, adjust, save, and print
             </h3>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Every dropdown keeps the selected meal ID, so recipe ingredients and
-              shopping calculations remain accurate.
+              Choose a week to reopen its menu, headcounts and stock. Drafts stay here when you switch weeks or tabs.
             </p>
           </div>
 
@@ -409,20 +157,39 @@ const MealPlanner = () => {
               label="Save Menu"
               icon={<Save size={18} />}
               loading={actionLoading === 'save'}
-              disabled={isBusy || shoppingLoading || weeklyMenu.length === 0}
+              disabled={isBusy || !ready}
               onClick={saveMenu}
             />
             <ActionButton
               label="Print List"
               icon={<Printer size={18} />}
               loading={false}
-              disabled={finalShoppingItems.length === 0}
+              disabled={isBusy || !ready || finalShoppingItems.length === 0}
               onClick={() => window.print()}
             />
           </div>
         </div>
       </section>
 
+      <section className="rounded-2xl bg-white p-5 shadow-sm flex flex-wrap items-end gap-4 print:hidden">
+        <label className="text-sm font-semibold text-gray-700">
+          Week starting Monday
+          <input type="date" aria-label="Week starting Monday" value={planner.weekStart}
+            disabled={actionLoading !== null} onChange={(event) => planner.selectWeek(event.target.value)}
+            className="mt-2 block rounded-xl border border-gray-200 px-4 py-2" />
+        </label>
+        <button type="button" disabled={actionLoading !== null} onClick={planner.reopen}
+          className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold">
+          {entry.loadError ? 'Retry loading week' : 'Reopen saved week'}
+        </button>
+        <p className="text-xs text-gray-500">Choose any date; the plan starts on that week’s Monday.</p>
+      </section>
+      {entry.loadError && <MessageBox message={entry.loadError} type="error" />}
+      {planner.invalid && <MessageBox message={planner.invalid} type="error" />}
+      {entry.calculationError && <div className="print:hidden">
+        <MessageBox message={entry.calculationError} type="error" />
+        <button type="button" onClick={planner.recalculate} className="mt-2 font-semibold text-emerald-700">Retry calculation</button>
+      </div>}
       {message && <MessageBox message={message} type={messageType} />}
 
       {catalogError && <MessageBox message={catalogError} type="error" />}
@@ -431,19 +198,19 @@ const MealPlanner = () => {
         <InfoCard
           title="Children"
           value={childrenCount}
-          onChange={(value) => updatePeopleCount(setChildrenCount, value)}
+          onChange={(value) => update({ childrenCount: value })}
           disabled={isBusy}
         />
         <InfoCard
           title="Staff"
           value={staffCount}
-          onChange={(value) => updatePeopleCount(setStaffCount, value)}
+          onChange={(value) => update({ staffCount: value })}
           disabled={isBusy}
         />
         <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
           <p className="text-sm text-gray-500">Status</p>
           <p className="mt-2 text-lg font-bold text-gray-800">
-            {hasSaved ? 'Saved' : weeklyMenu.length > 0 ? 'Draft' : 'Not started'}
+            {!entry.loaded ? 'Loading week…' : hasSaved ? 'Saved' : entry.dirty ? 'Draft — unsaved changes' : 'Not started'}
           </p>
           <p className="mt-1 text-xs text-gray-500">
             {shoppingLoading
@@ -461,7 +228,7 @@ const MealPlanner = () => {
                 Editable Weekly Menu
               </h3>
               <p className="text-sm text-gray-500">
-                Choose a database meal for every day and meal period.
+                Choose a saved meal for every day and meal period.
               </p>
             </div>
             {catalogLoading && (
@@ -473,10 +240,13 @@ const MealPlanner = () => {
           </div>
 
           {weeklyMenu.length === 0 ? (
-            <EmptyState
-              title="No menu yet"
-              description="Click Generate Menu to create the weekly plan."
-            />
+            <div>
+              <EmptyState title="No menu yet" description="Click Generate Menu to create this week’s plan." />
+              <button type="button" disabled={isBusy} onClick={() => { void planner.generate(true); }}
+                className="mt-4 text-sm font-semibold text-emerald-700 disabled:opacity-50">
+                Use earlier undated menu
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {weeklyMenu.map((day, dayIndex) => (
@@ -564,7 +334,7 @@ const MealPlanner = () => {
                           {getIngredientName(item)}
                         </p>
                         <p className="mt-1 text-xs text-gray-500">
-                          Needed: {needed.value} {needed.unit}
+                          Needed: {ready ? `${needed.value} ${needed.unit}` : 'Awaiting calculation'}
                         </p>
                         <p
                           className={`mt-1 text-xs font-semibold ${
@@ -573,7 +343,7 @@ const MealPlanner = () => {
                               : 'text-gray-400 line-through'
                           }`}
                         >
-                          Buy: {buy.value} {buy.unit}
+                          Buy: {ready ? `${buy.value} ${buy.unit}` : 'Awaiting calculation'}
                         </p>
                       </div>
 
@@ -587,18 +357,13 @@ const MealPlanner = () => {
                             min="0"
                             step="0.01"
                             disabled={isBusy}
-                            value={Number(stock.value)}
+                            aria-label={`${getIngredientName(item)} in house (${needed.unit})`}
+                            value={inStock[itemId] === '' ? '' : Number(stock.value)}
                             onChange={(event) => {
-                              const displayedQuantity = Number(event.target.value);
-                              setHasSaved(false);
-                              setInStock((previous) => ({
-                                ...previous,
-                                [itemId]: convertFromUS(
-                                  displayedQuantity,
-                                  needed.unit,
-                                  sourceUnit
-                                ),
-                              }));
+                              const value = event.target.value;
+                              update({ inHouse: { ...inStock, [itemId]: value === '' ? '' : convertFromUS(
+                                Number(value), needed.unit, sourceUnit,
+                              ) } });
                             }}
                             className="w-24 rounded-xl border border-gray-200 px-3 py-2 text-right font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
                           />
@@ -622,14 +387,14 @@ const MealPlanner = () => {
               <h3 className="text-2xl font-bold">Printable Shopping List</h3>
             </div>
             <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
-              Final quantities after subtracting what is already in house.
+              Week of {planner.weekStart} · {childrenCount} children · {staffCount} staff. Quantities after subtracting stock.
             </p>
           </div>
 
           <div className="flex items-center gap-2 print:hidden">
             <PackageCheck size={18} className="text-emerald-300" />
             <span className="rounded-full bg-emerald-400 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-950">
-              Live updated
+              {ready ? 'Up to date' : 'Not ready'}
             </span>
           </div>
         </div>
@@ -638,7 +403,7 @@ const MealPlanner = () => {
           <div className="rounded-2xl bg-white/10 p-5 print:bg-gray-100">
             <p className="font-semibold">Shopping list not ready</p>
             <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
-              Generate a menu to create the shopping list.
+              Complete the menu and wait for a successful calculation before printing.
             </p>
           </div>
         ) : (
@@ -734,8 +499,8 @@ const InfoCard = ({
   disabled,
 }: {
   title: string;
-  value: number;
-  onChange: (value: number) => void;
+  value: string;
+  onChange: (value: string) => void;
   disabled: boolean;
 }) => (
   <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -743,9 +508,11 @@ const InfoCard = ({
     <input
       type="number"
       min="0"
+      step="1"
+      aria-label={title}
       value={value}
       disabled={disabled}
-      onChange={(event) => onChange(Number(event.target.value))}
+      onChange={(event) => onChange(event.target.value)}
       className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-lg font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
     />
   </div>
@@ -787,7 +554,7 @@ const MealSelectLine = ({
         ) : (
           options.map((meal) => (
             <option key={meal.id} value={meal.id}>
-              {meal.name}
+              {currentMeal?.id === meal.id ? currentMeal.name : meal.name}
             </option>
           ))
         )}
@@ -832,4 +599,3 @@ const MessageBox = ({
 };
 
 export default MealPlanner;
-

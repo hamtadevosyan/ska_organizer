@@ -89,6 +89,29 @@ exports.saveShelfCheck = async (items) => {
 };
 exports.getShelf = async () => (await get('ShelfCheck', 'current'))?.items || [];
 
+const unpackPlan = (row) => row ? {
+  ...row.snapshot, weekStart: row.weekStart, version: row.version,
+  savedAt: new Date(row.savedAt).toISOString(),
+} : null;
+exports.getWeeklyPlan = async (weekStart) => unpackPlan(await get('WeeklyPlan', weekStart));
+exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
+  const { problem } = require('./planValidation');
+  const entity = model('WeeklyPlan');
+  return sequelize.transaction(async (transaction) => {
+    // Serialize even the first insert, when there is no row to lock yet.
+    await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:schema), hashtext(:week))', {
+      replacements: { schema: sequelize.options.define.schema, week: `plan:${snapshot.weekStart}` }, transaction,
+    });
+    const previous = await entity.findByPk(snapshot.weekStart, { transaction, lock: transaction.LOCK.UPDATE });
+    if ((previous?.version || 0) !== expectedVersion) {
+      throw problem('This week was saved elsewhere. Reopen the saved week before saving again.', 409);
+    }
+    const values = { weekStart: snapshot.weekStart, version: expectedVersion + 1, snapshot, savedAt: new Date() };
+    const row = previous ? await previous.update(values, { transaction }) : await entity.create(values, { transaction });
+    return unpackPlan(plain(row));
+  });
+};
+
 exports.listChildren = ({ q, page = 1, pageSize = 50 } = {}) => list('Child', {
   where: q ? { [Op.or]: [{ firstName: { [Op.iLike]: `%${q}%` } }, { lastName: { [Op.iLike]: `%${q}%` } }] } : {},
   limit: pageSize, offset: (page - 1) * pageSize,

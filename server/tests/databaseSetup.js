@@ -20,7 +20,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   if (!connection) { db.reset(); return; }
-  const tables = ['MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'Children', 'Attendances', 'Activities'];
+  const tables = ['MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'Attendances', 'Activities'];
   await connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`);
 });
 

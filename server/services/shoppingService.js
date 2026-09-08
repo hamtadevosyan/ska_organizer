@@ -27,21 +27,10 @@ exports.generateShoppingList = async ({
     throw new Error("Menu week must be an array");
   }
 
-  const parsedChildrenCount = Number(childrenCount);
-  const parsedStaffCount = Number(staffCount);
-  const totalPeople = parsedChildrenCount + parsedStaffCount;
-
-  if (
-    !Number.isFinite(parsedChildrenCount) ||
-    !Number.isFinite(parsedStaffCount) ||
-    parsedChildrenCount < 0 ||
-    parsedStaffCount < 0 ||
-    totalPeople <= 0
-  ) {
-    throw new Error(
-      "childrenCount and staffCount must be non-negative with a total greater than 0"
-    );
-  }
+  require('./planValidation').validateCounts(childrenCount, staffCount);
+  const parsedChildrenCount = childrenCount;
+  const parsedStaffCount = staffCount;
+  const totalPeople = childrenCount + staffCount;
 
   const totals = {};
 

@@ -1,4 +1,8 @@
-# PostgreSQL setup and restart verification (SKAO-17)
+# PostgreSQL setup and restart verification
+
+For an existing installation upgrading to dated menus, follow
+[Saved weekly menus (SKAO-18)](saved-weekly-menus.md). Run `npm run db:migrate`
+for the added weekly-plan table; keep the existing databases and credentials.
 
 The server now stores meals, ingredients, recipe links, the current confirmed menu,
 and the latest shelf check in PostgreSQL. Draft shopping calculations still work

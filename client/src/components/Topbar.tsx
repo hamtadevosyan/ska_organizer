@@ -1,13 +1,13 @@
 // src/components/Topbar.tsx
-import React from "react";
 import { Menu } from "lucide-react";
 
-const Topbar = ({ onToggleSidebar }) => {
+const Topbar = ({ onToggleSidebar }: { onToggleSidebar: () => void }) => {
   return (
-    <header className="flex justify-between items-center px-6 py-4 bg-white shadow-sm border-b">
+    <header className="print:hidden flex justify-between items-center px-6 py-4 bg-white shadow-sm border-b">
       <div className="flex items-center space-x-4">
         {/* Hamburger Icon (Mobile) */}
         <button
+          aria-label="Toggle navigation"
           onClick={onToggleSidebar}
           className="md:hidden p-2 text-gray-700 hover:bg-gray-200 rounded"
         >

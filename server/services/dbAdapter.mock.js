@@ -21,6 +21,7 @@ const mock = {
   ],
   shelf: [],
   confirmedMenu: null,
+  weeklyPlans: {},
   uuid: () => Math.random().toString(36).substring(2, 10),
   nowIso: () => new Date().toISOString()
 };
@@ -38,6 +39,17 @@ module.exports = {
     mock.mealIngredients = [];
     mock.shelf = [];
     mock.confirmedMenu = null;
+    mock.weeklyPlans = {};
+  },
+
+  getWeeklyPlan: async (weekStart) => structuredClone(mock.weeklyPlans[weekStart] || null),
+  saveWeeklyPlan: async (snapshot, version) => {
+    if ((mock.weeklyPlans[snapshot.weekStart]?.version || 0) !== version) {
+      throw require('./planValidation').problem('This week was saved elsewhere. Reopen the saved week before saving again.', 409);
+    }
+    const saved = structuredClone({ ...snapshot, version: version + 1, savedAt: mock.nowIso() });
+    mock.weeklyPlans[snapshot.weekStart] = saved;
+    return structuredClone(saved);
   },
 
   // ------------------------------------------------------
@@ -301,4 +313,3 @@ module.exports = {
 
   getShelf: async () => mock.shelf
 };
-

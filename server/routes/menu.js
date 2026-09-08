@@ -3,6 +3,12 @@
 const express = require("express");
 const router = express.Router();
 const menuController = require("../controllers/menuController");
+const plans = require('../controllers/weeklyPlanController');
+router.get('/plans/:weekStart', plans.get);
+router.post('/plans/:weekStart/preview', plans.preview);
+router.post('/plans/:weekStart/import-preview', plans.importLegacy);
+router.put('/plans/:weekStart', plans.save);
+router.get('/plans/:weekStart/shopping', plans.shopping);
 
 // Suggest menu
 router.get("/generate", menuController.generateWeeklyMenu);
@@ -14,4 +20,3 @@ router.post("/confirm", menuController.confirmWeeklyMenu);
 router.get("/current", menuController.getCurrentMenu);
 
 module.exports = router;
-
