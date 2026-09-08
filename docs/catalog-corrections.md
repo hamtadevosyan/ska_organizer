@@ -156,3 +156,18 @@ GitHub CI before merging. No test should connect to the application database.
 - Two Chromium flows are configured and discoverable. Full browser execution,
   all 55 native PostgreSQL tests and the database restart check remain Ubuntu/CI
   delivery gates. Embedded PostgreSQL results do not replace those gates.
+
+### Native Ubuntu verification — September 7, 2026
+
+- Node 22.17.1 and native PostgreSQL 14: all 50 mock tests and all 55 PostgreSQL
+  tests passed, with no exclusions. Tests used the existing separate test database.
+- Production build, all 22 React tests, and both full Chromium flows passed.
+  ESLint passed with the existing `MealsManagement.tsx` warning.
+- With the backend stopped, a custom-format application database backup was
+  taken before migration `003-catalog-corrections` applied successfully.
+  Existing databases and `.env` files were preserved; no reseeding was performed.
+- Browser verification covered incomplete-recipe repair, explicit adoption of
+  corrected quantities, cancellation/confirmation of removal, archiving with
+  saved history retained, and the existing independent-week save/reload flow.
+- PostgreSQL 16 restart verification and final-commit CI results are checked in
+  GitHub Actions before merge.
