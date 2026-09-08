@@ -5,6 +5,8 @@ import MealSetup from '../components/meals/MealSetup';
 
 const Meals = () => {
   const [activeTab, setActiveTab] = useState<'planner' | 'setup'>('planner');
+  const [recipeMealId, setRecipeMealId] = useState<string>();
+  const [catalogBusy, setCatalogBusy] = useState(false);
 
   return (
     <div className="p-6 space-y-6">
@@ -24,6 +26,7 @@ const Meals = () => {
 
       <div className="print:hidden rounded-2xl bg-white p-2 shadow-sm border border-gray-100 flex gap-2 w-fit">
         <button
+          disabled={catalogBusy}
           onClick={() => setActiveTab('planner')}
           className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold ${
             activeTab === 'planner'
@@ -36,7 +39,8 @@ const Meals = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('setup')}
+          disabled={catalogBusy}
+          onClick={() => { setRecipeMealId(undefined); setActiveTab('setup'); }}
           className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold ${
             activeTab === 'setup'
               ? 'bg-orange-500 text-white'
@@ -48,8 +52,9 @@ const Meals = () => {
         </button>
       </div>
 
-      <div hidden={activeTab !== 'planner'}><MealPlanner active={activeTab === 'planner'} /></div>
-      {activeTab === 'setup' && <MealSetup />}
+      <div hidden={activeTab !== 'planner'}><MealPlanner active={activeTab === 'planner'}
+        onEditRecipe={(id) => { setRecipeMealId(id); setActiveTab('setup'); }} /></div>
+      {activeTab === 'setup' && <MealSetup initialMealId={recipeMealId} onBusyChange={setCatalogBusy} />}
     </div>
   );
 };

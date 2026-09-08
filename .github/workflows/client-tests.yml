@@ -2,10 +2,10 @@ name: Client build and planner tests
 
 on:
   push:
-    branches: [development, 'feature/SKAO-18-*']
-    paths: ['client/**', '.github/workflows/client-tests.yml']
+    branches: [development, 'feature/SKAO-18-*', 'feature/SKAO-19-*']
+    paths: ['client/**', 'server/**', '.github/workflows/client-tests.yml']
   pull_request:
-    paths: ['client/**', '.github/workflows/client-tests.yml']
+    paths: ['client/**', 'server/**', '.github/workflows/client-tests.yml']
   workflow_dispatch:
 
 permissions:

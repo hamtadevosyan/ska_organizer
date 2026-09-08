@@ -22,7 +22,7 @@ const rememberedWeek = () => {
   return currentMonday();
 };
 
-export function useWeeklyPlan() {
+export function useWeeklyPlan(enabled = true) {
   const [weekStart, setWeekStart] = useState(rememberedWeek);
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [actionLoading, setActionLoading] = useState<'generate' | 'save' | 'import' | null>(null);
@@ -32,9 +32,18 @@ export function useWeeklyPlan() {
   const entry = entries[weekStart] || empty();
   const inputKey = keyOf(entry.draft);
   const invalid = validationError(entry.draft);
-  const ready = entry.loaded && entry.draft.week.length > 0 && !invalid &&
+  const calculated = entry.calculatedKey === inputKey;
+  const ready = enabled && entry.loaded && entry.draft.week.length > 0 && !invalid &&
     !entry.calculationError && entry.calculatedKey === inputKey && !!entry.preview?.previewToken;
   const patch = (week: string, fn: (old: Entry) => Entry) => setEntries((old) => ({ ...old, [week]: fn(old[week] || empty()) }));
+
+  useEffect(() => {
+    if (!enabled) {
+      sequence.current++;
+      setEntries((old) => Object.fromEntries(Object.entries(old).map(([week, value]) =>
+        [week, { ...value, calculatedKey: undefined }])));
+    }
+  }, [enabled]);
 
   useEffect(() => {
     try { localStorage.setItem('skao.planner.week', weekStart); } catch { /* Optional preference. */ }
@@ -60,7 +69,7 @@ export function useWeeklyPlan() {
 
   useEffect(() => {
     const request = ++sequence.current;
-    if (!loaded || invalid) return;
+    if (!enabled || !loaded || invalid) return;
     const draft: Draft = JSON.parse(inputKey);
     if (!draft.week.length) return;
     let active = true;
@@ -80,7 +89,7 @@ export function useWeeklyPlan() {
       }
     }, 300);
     return () => { active = false; window.clearTimeout(timer); controller.abort(); };
-  }, [weekStart, inputKey, loaded, invalid, retry]);
+  }, [weekStart, inputKey, loaded, invalid, retry, enabled]);
 
   const anyDirty = Object.values(entries).some((value) => value.dirty);
   useEffect(() => {
@@ -120,7 +129,7 @@ export function useWeeklyPlan() {
         update(fromPlan(data.data));
       } else {
         const { data } = await axios.get(`${API_BASE_URL}/api/menu/generate`);
-        update({ week: data.data.week, inHouse: {} });
+        update({ week: data.data.week, inHouse: {}, refreshRecipes: true });
       }
       patch(weekStart, (old) => ({ ...old, message: importLegacy
         ? 'Earlier menu copied into this draft. Check the week, counts and stock, then save.'
@@ -143,7 +152,7 @@ export function useWeeklyPlan() {
         messageType: 'error', ...(conflict ? { calculatedKey: undefined, calculationError: 'Recalculate to refresh an expired calculation, or reopen if this week was saved elsewhere.' } : {}) }));
     } finally { setActionLoading(null); }
   };
-  return { weekStart, selectWeek, reopen, entry, update, ready, invalid, actionLoading,
+  return { weekStart, selectWeek, reopen, entry, update, ready, calculated, invalid, actionLoading,
     isBusy: actionLoading !== null || !entry.loaded, generate, save,
     recalculate: () => { sequence.current++; patch(weekStart, (old) => ({ ...old, calculatedKey: undefined, calculationError: '' })); setRetry((n) => n + 1); },
   };

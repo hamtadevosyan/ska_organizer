@@ -1,6 +1,6 @@
 export const MEAL_TYPES = ['breakfast', 'snack', 'lunch', 'afternoonSnack'] as const;
 export type MealType = (typeof MEAL_TYPES)[number];
-export type Meal = { id: string; name: string; type: MealType; description?: string };
+export type Meal = { id: string; name: string; type: MealType; description?: string; archived?: boolean };
 export type MenuDay = { day: string; menu: Partial<Record<MealType, Meal>> };
 export type ShoppingItem = {
   ingredient: { id: string; name: string; unit: string };
@@ -10,10 +10,12 @@ export type Plan = {
   weekStart: string; week: MenuDay[]; childrenCount: number; staffCount: number;
   inHouse: Record<string, number>; items: ShoppingItem[]; version: number;
   savedAt?: string; previewToken?: string;
+  warnings?: { day: string; slot: MealType; mealId: string; mealName: string; message: string }[];
 };
 export type Draft = {
   week: MenuDay[]; childrenCount: string; staffCount: string;
   inHouse: Record<string, number | ''>; version: number;
+  refreshRecipes?: boolean;
 };
 export function mondayOf(date: string) {
   const day = new Date(`${date}T12:00:00Z`);

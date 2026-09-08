@@ -1,5 +1,8 @@
 # PostgreSQL setup and restart verification
 
+For catalog corrections and migration 003, follow
+[Correcting meals and recipes (SKAO-19)](catalog-corrections.md).
+
 For an existing installation upgrading to dated menus, follow
 [Saved weekly menus (SKAO-18)](saved-weekly-menus.md). Run `npm run db:migrate`
 for the added weekly-plan table; keep the existing databases and credentials.

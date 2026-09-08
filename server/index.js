@@ -49,7 +49,7 @@ app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 ///});
 // dev-only global error handler (put at end of index.js)
 app.use((err, req, res, next) => {
-  if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message } });
+  if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields } });
   console.error('Unhandled error:', err && err.stack ? err.stack : err);
   res.status(500).json({ error: 'Internal server error', message: err && err.message });
 });

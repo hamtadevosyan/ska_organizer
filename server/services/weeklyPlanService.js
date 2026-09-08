@@ -27,9 +27,10 @@ function decode(token) {
 
 exports.get = async (weekStart) => db.getWeeklyPlan(validateWeekStart(weekStart));
 
-exports.preview = async (weekStart, input) => {
+exports.preview = (weekStart, input) => db.withCatalogLock(async () => {
   validateWeekStart(weekStart);
-  const { week, childrenCount, staffCount, version, inHouse = {} } = input;
+  const { week, childrenCount, staffCount, version, inHouse = {}, refreshRecipes = false } = input;
+  if (typeof refreshRecipes !== 'boolean') throw problem('refreshRecipes must be true or false.');
   validateCounts(childrenCount, staffCount);
   validateVersion(version);
   if (!inHouse || typeof inHouse !== 'object' || Array.isArray(inHouse) ||
@@ -44,6 +45,7 @@ exports.preview = async (weekStart, input) => {
   const canonicalWeek = [];
   const catalogRecipes = new Map();
   const totals = new Map();
+  const warnings = [];
   for (const day of week) {
     if (!day || !DAYS.includes(day.day) || daysSeen.has(day.day) || !day.menu ||
         typeof day.menu !== 'object' || Array.isArray(day.menu) || !Object.keys(day.menu).length) {
@@ -55,26 +57,36 @@ exports.preview = async (weekStart, input) => {
     for (const [slot, selection] of Object.entries(day.menu)) {
       if (!SLOTS.includes(slot) || typeof selection?.id !== 'string') throw problem('Invalid meal selection.');
       const historic = previous?.recipes?.[day.day]?.[slot];
-      let recipe = historic?.meal.id === selection.id ? historic : catalogRecipes.get(selection.id);
+      let recipe = !refreshRecipes && historic?.meal.id === selection.id ? historic : catalogRecipes.get(selection.id);
       if (!recipe) {
         const meal = await db.getMealById(selection.id);
         if (!meal || meal.type !== slot) throw problem('A selected meal is unavailable or has the wrong meal type.');
         const ingredients = [];
+        const problems = meal.archived ? ['This meal is archived. Restore it or choose another meal.'] : [];
         for (const link of await db.listMealIngredients(meal.id)) {
           const ingredient = await db.getIngredientById(link.ingredientId);
           const quantityPerPerson = Number(link.quantity);
-          if (!ingredient || !Number.isFinite(quantityPerPerson) || quantityPerPerson < 0) {
-            throw problem(`Review the ingredients for ${meal.name} before continuing.`);
+          if (!ingredient || !Number.isFinite(quantityPerPerson) || quantityPerPerson <= 0) {
+            problems.push('Correct or remove an ingredient with a missing or invalid quantity.');
+            continue;
           }
+          if (ingredient.archived) problems.push(`${ingredient.name} is archived. Restore it or replace it in the recipe.`);
           ingredients.push({ ingredient: { id: ingredient.id, name: ingredient.name, unit: ingredient.unit }, quantityPerPerson });
         }
-        recipe = { meal: { id: meal.id, name: meal.name, type: meal.type }, ingredients };
+        recipe = { meal: { id: meal.id, name: meal.name, type: meal.type }, ingredients, problems };
         catalogRecipes.set(selection.id, recipe);
       }
       if (recipe.meal.type !== slot) throw problem('A selected meal has the wrong meal type.');
       menu[slot] = recipe.meal;
       recipes[day.day][slot] = recipe;
+      const problems = [...(recipe.problems || [])];
+      if (!recipe.ingredients.length) problems.push('Add recipe ingredients and quantities.');
+      else if (recipe.ingredients.some((item) => !Number.isFinite(item.quantityPerPerson) || item.quantityPerPerson <= 0)) {
+        problems.push('Use current recipes and correct invalid ingredient quantities.');
+      }
+      for (const message of problems) warnings.push({ day: day.day, slot, mealId: recipe.meal.id, mealName: recipe.meal.name, message });
       for (const { ingredient, quantityPerPerson } of recipe.ingredients) {
+        if (!Number.isFinite(quantityPerPerson) || quantityPerPerson <= 0) continue;
         const item = totals.get(ingredient.id) || { ingredient, quantity: 0 };
         if (item.ingredient.unit !== ingredient.unit) throw problem(`Conflicting units for ${ingredient.name}; choose a consistent recipe.`);
         item.quantity += quantityPerPerson * (childrenCount + staffCount);
@@ -93,8 +105,8 @@ exports.preview = async (weekStart, input) => {
   });
   const snapshot = { weekStart, week: canonicalWeek, childrenCount, staffCount, recipes,
     inHouse: Object.fromEntries(items.map((i) => [i.ingredient.id, i.inStorage])), items };
-  return { ...snapshot, version, previewToken: encode(snapshot, version) };
-};
+  return { ...snapshot, version, warnings, ...(warnings.length ? {} : { previewToken: encode(snapshot, version) }) };
+});
 
 exports.save = async (weekStart, { previewToken }) => {
   validateWeekStart(weekStart);

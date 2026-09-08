@@ -203,3 +203,43 @@ describe('saved weekly planner', () => {
     expect(within(table()).getByText('21 count')).toBeInTheDocument();
   });
 });
+
+it('blocks Save and Print with named recipe warnings and opens that meal for repair', async () => {
+  vi.mocked(axios.post).mockResolvedValueOnce(response({ ...savedPlan(), warnings: [{
+    day: 'Monday', slot: 'breakfast', mealId: 'eggs', mealName: 'Scrambled Eggs', message: 'Add recipe ingredients and quantities.',
+  }], previewToken: undefined }));
+  const edit = vi.fn();
+  render(<MealPlanner onEditRecipe={edit} />);
+  await flush();
+  expect(screen.getByRole('alert')).toHaveTextContent('Monday — Scrambled Eggs');
+  expect(screen.getByText('Complete the recipes before saving or printing this shopping list.')).toBeInTheDocument();
+  expect(saveButton()).toBeDisabled(); expect(printButton()).toBeDisabled();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.queryByText('Updating the shopping list…')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit recipe for Scrambled Eggs' }));
+  expect(edit).toHaveBeenCalledWith('eggs');
+});
+
+it('refreshes the catalog and calculation when returning from Meal Setup without losing the draft', async () => {
+  render(<Meals />); await flush();
+  input('Children', '6'); await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
+  vi.mocked(axios.get).mockResolvedValueOnce(response([eggMeal, { ...oats, name: 'Corrected oatmeal' }]));
+  const prior = vi.mocked(axios.post).mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Planner' }));
+  expect(saveButton()).toBeDisabled(); await flush();
+  expect(screen.getByLabelText('Children')).toHaveValue(6);
+  expect(vi.mocked(axios.post).mock.calls.length).toBeGreaterThan(prior);
+  expect(screen.getAllByRole('option', { name: 'Corrected oatmeal' })).toHaveLength(3);
+  expect(saveButton()).toBeEnabled();
+});
+
+it('keeps recipe refresh explicit for saved weeks and recalculates before saving corrections', async () => {
+  render(<MealPlanner />); await flush();
+  expect(vi.mocked(axios.post).mock.calls.at(-1)?.[1]).not.toHaveProperty('refreshRecipes', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Use current recipes' }));
+  expect(saveButton()).toBeDisabled(); await flush();
+  expect(vi.mocked(axios.post).mock.calls.at(-1)?.[1]).toHaveProperty('refreshRecipes', true);
+  expect(screen.getByText('Draft — unsaved changes')).toBeInTheDocument();
+  expect(saveButton()).toBeEnabled();
+});

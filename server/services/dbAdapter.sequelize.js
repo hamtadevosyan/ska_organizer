@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { Op } = require('sequelize');
 const { createConnection } = require('../database/connection');
 const { assertMigrated } = require('../database/migrate');
@@ -6,6 +7,17 @@ const defineModels = require('../database/models');
 let sequelize;
 let models;
 const plain = (row) => row ? row.get({ plain: true }) : null;
+const catalogTransaction = new AsyncLocalStorage();
+const transact = (fn) => catalogTransaction.getStore()
+  ? fn(catalogTransaction.getStore()) : sequelize.transaction(fn);
+// One transaction covers validation and writes, including simultaneous recipe
+// assignments or a unit edit racing with an ingredient assignment.
+exports.withCatalogLock = (fn) => sequelize.transaction(async (transaction) => {
+  await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:schema), 17003)', {
+    replacements: { schema: sequelize.options.define.schema }, transaction,
+  });
+  return catalogTransaction.run(transaction, fn);
+});
 
 exports.setup = async (connectionString, { schema = 'public' } = {}) => {
   if (sequelize) throw new Error('Database adapter is already initialized.');
@@ -30,38 +42,52 @@ function model(name) {
   if (!models) throw new Error('Database adapter is not initialized.');
   return models[name];
 }
-const list = async (name, options = {}) => (await model(name).findAll(options)).map(plain);
-const get = async (name, id) => plain(await model(name).findByPk(id));
+const list = async (name, options = {}) => (await model(name).findAll({ transaction: catalogTransaction.getStore(), ...options })).map(plain);
+const get = async (name, id) => plain(await model(name).findByPk(id, { transaction: catalogTransaction.getStore() }));
 const create = async (name, payload) => {
   const entity = model(name);
-  return sequelize.transaction(async (transaction) => plain(await entity.create(payload, { transaction })));
+  return transact(async (transaction) => plain(await entity.create(payload, { transaction })));
 };
 const update = async (name, id, changes) => {
   const entity = model(name);
-  return sequelize.transaction(async (transaction) => {
+  return transact(async (transaction) => {
     const row = await entity.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     return row ? plain(await row.update(changes, { transaction })) : null;
   });
 };
 const remove = async (name, id) => {
   const entity = model(name);
-  return sequelize.transaction(async (transaction) => (await entity.destroy({ where: { id }, transaction })) > 0);
+  return transact(async (transaction) => (await entity.destroy({ where: { id }, transaction })) > 0);
 };
 
-exports.listMeals = async ({ type } = {}) => list('Meal', {
-  where: type ? { type } : {}, order: [['createdAt', 'ASC'], ['id', 'ASC']],
+exports.listMeals = async ({ type, includeArchived = false } = {}) => list('Meal', {
+  where: { ...(type ? { type } : {}), ...(!includeArchived ? { archived: false } : {}) }, order: [['createdAt', 'ASC'], ['id', 'ASC']],
 });
 exports.listMealsByType = (type) => exports.listMeals({ type });
 exports.getMealById = (id) => get('Meal', id);
 exports.createMeal = (payload) => create('Meal', payload);
 exports.updateMeal = (id, changes) => update('Meal', id, changes);
 exports.deleteMeal = (id) => remove('Meal', id);
-exports.listIngredients = () => list('Ingredient', { order: [['createdAt', 'ASC'], ['id', 'ASC']] });
+exports.listIngredients = ({ includeArchived = false } = {}) => list('Ingredient', {
+  where: includeArchived ? {} : { archived: false }, order: [['createdAt', 'ASC'], ['id', 'ASC']],
+});
 exports.getIngredientById = (id) => get('Ingredient', id);
 exports.createIngredient = (payload) => create('Ingredient', payload);
 exports.updateIngredient = (id, changes) => update('Ingredient', id, changes);
 exports.deleteIngredient = (id) => remove('Ingredient', id);
 exports.listMealIngredients = (mealId) => list('MealIngredient', { where: { mealId }, order: [['createdAt', 'ASC'], ['id', 'ASC']] });
+exports.getMealIngredientById = (id) => get('MealIngredient', id);
+exports.ingredientHasQuantities = async (id) => {
+  if ((await list('MealIngredient', { where: { ingredientId: id }, limit: 1 })).length) return true;
+  if ((await exports.getShelf()).some((item) => item.ingredientId === id)) return true;
+  const schema = sequelize.options.define.schema;
+  const [rows] = await sequelize.query(`SELECT 1 FROM "${schema}"."WeeklyPlans"
+    WHERE "snapshot"->'items' @> CAST(:item AS jsonb)
+      OR "snapshot"->'inHouse' ? :id LIMIT 1`, {
+    replacements: { id, item: JSON.stringify([{ ingredient: { id } }]) }, transaction: catalogTransaction.getStore(),
+  });
+  return rows.length > 0;
+};
 exports.addMealIngredient = (payload) => create('MealIngredient', payload);
 exports.updateMealIngredient = (id, changes) => update('MealIngredient', id, changes);
 exports.deleteMealIngredient = (id) => remove('MealIngredient', id);

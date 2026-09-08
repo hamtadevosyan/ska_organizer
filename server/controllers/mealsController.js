@@ -1,35 +1,15 @@
-const mealsService = require("../services/mealsService");
-
+const service = require('../services/mealsService');
 exports.listMeals = async (req, res, next) => {
-  try {
-    const meals = await mealsService.listMeals({
-      type: req.query.type
-    });
-
-    res.json({ data: meals });
-  } catch (err) {
-    next(err);
-  }
+  try { res.json({ data: await service.listMeals({
+    type: req.query.type, includeArchived: req.query.includeArchived === 'true',
+  }) }); } catch (error) { next(error); }
 };
-
 exports.createMeal = async (req, res, next) => {
-  try {
-    const { name, type, description } = req.body;
-
-    if (!name || !type) {
-      return res.status(400).json({
-        error: { message: "name and type are required" }
-      });
-    }
-
-    const meal = await mealsService.createMeal({
-      name,
-      type,
-      description
-    });
-
-    res.status(201).json({ data: meal });
-  } catch (err) {
-    next(err);
-  }
+  try { res.status(201).json({ data: await service.createMeal(req.body) }); } catch (error) { next(error); }
+};
+exports.updateMeal = async (req, res, next) => {
+  try { res.json({ data: await service.updateMeal(req.params.id, req.body) }); } catch (error) { next(error); }
+};
+exports.archiveMeal = async (req, res, next) => {
+  try { res.json({ data: await service.updateMeal(req.params.id, { archived: true }) }); } catch (error) { next(error); }
 };
