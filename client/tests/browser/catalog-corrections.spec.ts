@@ -1,6 +1,8 @@
+import { authenticatedApi } from './auth-helpers';
 import { expect, test } from '@playwright/test';
 
-test('repair a missing recipe, review corrections, confirm removal and archive without losing a saved week', async ({ page, request }) => {
+test('repair a missing recipe, review corrections, confirm removal and archive without losing a saved week', async ({ page }) => {
+  const request = await authenticatedApi(page);
   const api = 'http://127.0.0.1:3009/api';
   const created = await request.post(`${api}/meals`, { data: { name: 'Correction breakfast', type: 'breakfast' } });
   expect(created.status()).toBe(201);

@@ -1,6 +1,8 @@
+import { authenticatedApi } from './auth-helpers';
 import { expect, test } from '@playwright/test';
 
-test('save, reload, preserve drafts and reopen two independent weeks through real HTTP', async ({ page, request }) => {
+test('save, reload, preserve drafts and reopen two independent weeks through real HTTP', async ({ page }) => {
+  const request = await authenticatedApi(page);
   const api = 'http://127.0.0.1:3009/api';
   const mealResponse = await request.post(`${api}/meals`, { data: { name: 'Egg breakfast', type: 'breakfast' } });
   expect(mealResponse.status()).toBe(201);

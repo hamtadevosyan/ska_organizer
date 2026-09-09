@@ -1,7 +1,10 @@
 // server/services/dbAdapter.mock.js
 
+const { AsyncLocalStorage } = require('node:async_hooks');
+
 // In-memory mock data store
 const mock = {
+  accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [],
   attendance: [],
   activities: [],
@@ -34,13 +37,19 @@ const mock = {
   nowIso: () => new Date().toISOString()
 };
 
-let catalogQueue = Promise.resolve();
+let transactionQueue = Promise.resolve();
+const transactionContext = new AsyncLocalStorage();
+const withTransaction = (fn) => {
+  if (transactionContext.getStore()) return fn();
+  const operation = transactionQueue.then(() => transactionContext.run(true, async () => {
+    const snapshot = structuredClone(Object.fromEntries(Object.entries(mock).filter(([, value]) => typeof value !== 'function')));
+    try { return await fn(); } catch (error) { Object.assign(mock, snapshot); throw error; }
+  }));
+  transactionQueue = operation.catch(() => {});
+  return operation;
+};
 module.exports = {
-  withCatalogLock: (fn) => {
-    const operation = catalogQueue.then(fn);
-    catalogQueue = operation.catch(() => {});
-    return operation;
-  },
+  withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction,
   ingredientHasQuantities: async (id) => mock.mealIngredients.some((link) => link.ingredientId === id) ||
     mock.shelf.some((item) => item.ingredientId === id) ||
     Object.values(mock.weeklyPlans).some((plan) => plan.items.some((item) => item.ingredient.id === id) ||
@@ -50,6 +59,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = [];
     mock.attendance = [];
     mock.activities = [];
@@ -337,3 +347,35 @@ module.exports = {
 
   getShelf: async () => mock.shelf
 };
+
+const copy = (value) => structuredClone(value);
+const find = (collection, id) => copy(mock[collection].find((item) => item.id === id) || null);
+const insert = (collection, value) => { mock[collection].push(copy(value)); return copy(value); };
+const edit = (collection, id, values) => {
+  const index = mock[collection].findIndex((item) => item.id === id);
+  if (index < 0) return null;
+  mock[collection][index] = { ...mock[collection][index], ...copy(values) };
+  return copy(mock[collection][index]);
+};
+const remove = (collection, id) => { mock[collection] = mock[collection].filter((item) => item.id !== id); };
+Object.assign(module.exports, {
+  listAccounts: async () => copy(mock.accounts).sort((a, b) => a.username.localeCompare(b.username)),
+  getAccount: async (id) => find('accounts', id),
+  findAccount: async (username) => copy(mock.accounts.find((item) => item.username === username) || null),
+  createAccount: async (values) => insert('accounts', { createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
+  updateAccount: async (id, values) => edit('accounts', id, { ...values, updatedAt: mock.nowIso() }),
+  createSession: async (values) => insert('sessions', values),
+  getSession: async (id) => find('sessions', id),
+  updateSession: async (id, values) => edit('sessions', id, values),
+  deleteSession: async (id) => remove('sessions', id),
+  revokeSessions: async (accountId) => { mock.sessions = mock.sessions.filter((session) => session.accountId !== accountId); },
+  getLoginAttempt: async (id) => find('loginAttempts', id),
+  saveLoginAttempt: async (values) => edit('loginAttempts', values.id, values) || insert('loginAttempts', values),
+  deleteLoginAttempt: async (id) => remove('loginAttempts', id),
+  cleanAuthRecords: async (now) => {
+    for (const key of ['sessions', 'loginAttempts']) mock[key] = mock[key].filter((item) => new Date(item.expiresAt) > now);
+  },
+  appendAudit: async (values) => insert('auditEvents', values),
+  listAudit: async ({ limit = 50, offset = 0 } = {}) => copy(mock.auditEvents).sort((a, b) =>
+    new Date(b.occurredAt) - new Date(a.occurredAt) || b.id.localeCompare(a.id)).slice(offset, offset + limit),
+});

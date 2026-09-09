@@ -17,7 +17,7 @@ const Inventory = () => {
     axios
       .get(`${API_BASE_URL}/api/inventory`)
       .then((res) => setItems(res.data))
-      .catch((err) => console.error('Failed to fetch inventory:', err));
+      .catch(() => console.error('Failed to fetch inventory.'));
   }, []);
 
   if (!items) return <p className="p-6">Loading inventory...</p>;

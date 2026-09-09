@@ -51,7 +51,6 @@ const activitySchema = Joi.object({
 
 exports.validateActivity = (req, res, next) => {
   const { error } = activitySchema.validate(req.body, { abortEarly: false });
-  console.log("VALIDATION ERROR:", error?.details);
   if (error) return res.status(400).json({ error: 'Invalid activity payload', details: error.details.map(d => d.message) });
   next();
 };

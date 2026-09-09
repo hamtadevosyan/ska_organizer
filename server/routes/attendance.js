@@ -1,3 +1,4 @@
+const { audited } = require('../auth/middleware');
 // server/routes/attendance.js
 const express = require('express');
 const router = express.Router();
@@ -11,10 +12,10 @@ router.get('/', attendanceController.getAttendance);
 router.get('/:id', attendanceController.getAttendanceById);
 
 // Check in
-router.post('/checkin', validateCheckin, attendanceController.checkin);
+router.post('/checkin', validateCheckin, audited('attendance.check_in', attendanceController.checkin));
 
 // Check out by attendance id
-router.post('/:id/checkout', attendanceController.checkout);
+router.post('/:id/checkout', audited('attendance.check_out', attendanceController.checkout));
 
 module.exports = router;
 

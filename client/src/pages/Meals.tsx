@@ -1,9 +1,12 @@
+import { useAuth } from '../auth/context';
 import { useState } from 'react';
 import { Utensils, CalendarDays, Settings } from 'lucide-react';
 import MealPlanner from '../components/meals/MealPlanner';
 import MealSetup from '../components/meals/MealSetup';
 
 const Meals = () => {
+  const { account } = useAuth();
+  const canWrite = account?.role === 'admin' || account?.role === 'editor';
   const [activeTab, setActiveTab] = useState<'planner' | 'setup'>('planner');
   const [recipeMealId, setRecipeMealId] = useState<string>();
   const [catalogBusy, setCatalogBusy] = useState(false);
@@ -39,7 +42,7 @@ const Meals = () => {
         </button>
 
         <button
-          disabled={catalogBusy}
+          disabled={catalogBusy || !canWrite}
           onClick={() => { setRecipeMealId(undefined); setActiveTab('setup'); }}
           className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold ${
             activeTab === 'setup'
@@ -52,9 +55,10 @@ const Meals = () => {
         </button>
       </div>
 
-      <div hidden={activeTab !== 'planner'}><MealPlanner active={activeTab === 'planner'}
-        onEditRecipe={(id) => { setRecipeMealId(id); setActiveTab('setup'); }} /></div>
-      {activeTab === 'setup' && <MealSetup initialMealId={recipeMealId} onBusyChange={setCatalogBusy} />}
+      {!canWrite && <p className="text-sm text-slate-600">Read-only access: you can review and print menus. Ask an editor to save changes or update recipes.</p>}
+      <div hidden={activeTab !== 'planner'}><MealPlanner active={activeTab === 'planner'} canWrite={canWrite}
+        onEditRecipe={canWrite ? (id) => { setRecipeMealId(id); setActiveTab('setup'); } : undefined} /></div>
+      {canWrite && activeTab === 'setup' && <MealSetup initialMealId={recipeMealId} onBusyChange={setCatalogBusy} />}
     </div>
   );
 };

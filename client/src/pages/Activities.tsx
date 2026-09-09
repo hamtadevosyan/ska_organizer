@@ -34,7 +34,7 @@ const Activities = () => {
         },
       })
       .then((res) => setActivityPlan(res.data.data || []))
-      .catch((err) => console.error('Failed to fetch activity plan:', err))
+      .catch(() => console.error('Failed to fetch activity plan.'))
       .finally(() => setLoading(false));
   }, [roomId, weekStart]);
 

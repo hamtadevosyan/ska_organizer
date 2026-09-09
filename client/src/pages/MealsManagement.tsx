@@ -78,8 +78,8 @@ const MealsManagement = () => {
     try {
       setLoading(true);
       await Promise.all([loadMeals(), loadIngredients()]);
-    } catch (err) {
-      console.error('Failed to load meals management data:', err);
+    } catch {
+      console.error('Failed to load meals management data.');
       setMessage('Failed to load data.');
     } finally {
       setLoading(false);
@@ -103,8 +103,8 @@ const MealsManagement = () => {
       setMealForm(emptyMeal);
       setMessage('Meal added. Select it below to assign ingredients.');
       await loadMeals();
-    } catch (err) {
-      console.error('Failed to create meal:', err);
+    } catch {
+      console.error('Failed to create meal.');
       setMessage('Failed to create meal.');
     } finally {
       setLoading(false);
@@ -133,8 +133,8 @@ const MealsManagement = () => {
       setIngredientForm(emptyIngredient);
       setMessage('Ingredient added to catalog. You can now assign it to meals.');
       await loadIngredients();
-    } catch (err) {
-      console.error('Failed to create ingredient:', err);
+    } catch {
+      console.error('Failed to create ingredient.');
       setMessage('Failed to create ingredient.');
     } finally {
       setLoading(false);
@@ -147,8 +147,8 @@ const MealsManagement = () => {
 
     try {
       await loadMealIngredients(meal.id);
-    } catch (err) {
-      console.error('Failed to load meal ingredients:', err);
+    } catch {
+      console.error('Failed to load meal ingredients.');
       setMessage('Failed to load meal ingredients.');
     }
   };
@@ -180,8 +180,8 @@ const MealsManagement = () => {
       setAssignForm({ ingredientId: '', quantity: 1 });
       setMessage('Ingredient connected to selected meal.');
       await loadMealIngredients(selectedMeal.id);
-    } catch (err) {
-      console.error('Failed to assign ingredient:', err);
+    } catch {
+      console.error('Failed to assign ingredient.');
       setMessage('Failed to assign ingredient.');
     } finally {
       setLoading(false);

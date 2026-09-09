@@ -1,6 +1,5 @@
 // server/controllers/attendanceController.js
 const attendanceService = require('../services/attendanceService');
-console.log('attendanceService keys:', attendanceService && Object.keys(attendanceService));
 
 exports.getAttendance = async (req, res, next) => {
   try {
@@ -30,7 +29,8 @@ exports.getAttendanceById = async (req, res, next) => {
 
 exports.checkin = async (req, res, next) => {
   try {
-    const { childId, roomId, recordedBy } = req.body;
+    const { childId, roomId } = req.body;
+    const recordedBy = req.account.id;
     if (!childId || !roomId) {
       return res.status(400).json({ error: 'childId and roomId are required' });
     }

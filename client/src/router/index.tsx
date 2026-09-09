@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 
+import Accounts from "../pages/Accounts";
 import Dashboard from "../pages/Dashboard";
 import Inventory from "../pages/Inventory";
 import Activities from "../pages/Activities";
@@ -11,6 +12,7 @@ import SchedulePage from "../pages/SchedulePage";
 export default function AppRoutes() {
   return (
     <Routes>
+      <Route path="/accounts" element={<Accounts />} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/inventory" element={<Inventory />} />

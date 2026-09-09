@@ -5,13 +5,18 @@ const cors = require('cors');
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
-// simple request logger (add near top, after app.use(express.json()))
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
-  next();
-});
+app.disable('x-powered-by');
+const authConfig = require('./auth/config');
+const { originGuard, requireSession, requireOperationalAccess, clearCookie } = require('./auth/middleware');
+app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use('/api', originGuard);
+app.use(cors({ origin: (origin, done) => done(null, !!origin && authConfig.origins.has(origin)), credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
+app.use(express.json({ limit: '100kb' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.use('/api/auth', require('./auth/routes').router);
+app.use('/api/admin', require('./auth/routes').admin);
+app.use('/api', requireSession, requireOperationalAccess);
 
 // Dashboard route
 app.use('/api/dashboard', require('./routes/dashboard'));
@@ -42,16 +47,15 @@ app.use("/api/meals", require("./routes/mealIngredients"));
 // 404 handler (after all routes)
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
-///// global error handler (last middleware)
-///app.use((err, req, res, next) => {
-///  console.error('Unhandled error:', err);
-///  res.status(500).json({ error: 'Internal server error' });
-///});
-// dev-only global error handler (put at end of index.js)
+// Never serialize request bodies, cookies, database errors or credentials.
 app.use((err, req, res, next) => {
-  if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields } });
-  console.error('Unhandled error:', err && err.stack ? err.stack : err);
-  res.status(500).json({ error: 'Internal server error', message: err && err.message });
+  if (res.headersSent) return next(err);
+  if (err.status === 401 && err.code !== 'INVALID_CREDENTIALS') clearCookie(res);
+  if (err.retryAfter) res.set('Retry-After', String(err.retryAfter));
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: { message: 'Invalid JSON request.' } });
+  if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields, code: err.code } });
+  console.error('Request failed (internal server error).');
+  res.status(500).json({ error: { message: 'Internal server error.' } });
 });
 
 module.exports = app;
