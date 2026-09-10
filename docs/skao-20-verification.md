@@ -36,8 +36,8 @@ Implementation includes the source, migration, setup runbook and test updates. G
 ## Ubuntu verification — September 9, 2026
 
 The imported implementation was verified at `ef73bb0dda96875eed7ab95cf923d3d545f480ba`.
-After the browser selector follow-up, the tested revision is recorded in the
-follow-up commit.
+After the browser selector follow-up and final documentation, the tested revision
+is `346e2fa`.
 
 | Check | Measured result |
 |---|---|
@@ -47,6 +47,7 @@ follow-up commit.
 | ESLint | Passed with the existing `MealsManagement.tsx` hook-dependency warning |
 | Client React/transport tests | 31/31 passed |
 | Chromium browser suite | 4/4 passed, including sign-in, forced password change, read-only access, account disable/session revocation, catalog corrections and saved-week flows |
+| PostgreSQL restart persistence check | Passed; isolated test records survived restart and were removed afterward |
 
 Before migration, the configured application database was backed up to a private
 custom-format dump under `/tmp/SKAO-20-backup`. With the backend stopped,
