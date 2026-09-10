@@ -1,4 +1,5 @@
 // src/components/Sidebar.tsx
+import { useAuth } from "../auth/context";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -43,12 +44,14 @@ const navItems = [
 ];
 
 export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { account } = useAuth();
+  const items = account?.role === "admin" ? [...navItems, { to: "/accounts", label: "Accounts", icon: <Users size={20} /> }] : navItems;
   return (
     <>
     {isOpen && <button aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-20 bg-black/40 md:hidden" />}
     <aside className={`${isOpen ? 'block' : 'hidden'} fixed inset-y-0 left-0 z-30 w-72 min-h-screen bg-slate-950 text-white p-6 md:static md:block print:hidden`}>
       <nav className="space-y-3">
-        {navItems.map((item) => (
+        {items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

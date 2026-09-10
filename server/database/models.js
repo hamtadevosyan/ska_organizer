@@ -51,5 +51,25 @@ module.exports = (sequelize) => {
     checkOut: DataTypes.DATE, recordedBy: DataTypes.STRING,
   }, { timestamps: false });
   const Activity = require('../models/activity')(sequelize, DataTypes);
-  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity };
+  const Account = sequelize.define('Account', {
+    id: id(), username: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    displayName: { type: DataTypes.STRING(100), allowNull: false },
+    passwordHash: { type: DataTypes.TEXT, allowNull: false },
+    role: { type: DataTypes.STRING(16), allowNull: false },
+    disabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+  });
+  const Session = sequelize.define('Session', {
+    id: id(), accountId: { type: DataTypes.STRING, allowNull: false },
+    createdAt: DataTypes.DATE, lastSeenAt: DataTypes.DATE, expiresAt: DataTypes.DATE,
+  }, { timestamps: false });
+  const LoginAttempt = sequelize.define('LoginAttempt', {
+    id: id(), count: DataTypes.INTEGER, expiresAt: DataTypes.DATE,
+  }, { timestamps: false });
+  const AuditEvent = sequelize.define('AuditEvent', {
+    id: id(), actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64),
+    action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
+  }, { timestamps: false });
+  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
+    Account, Session, LoginAttempt, AuditEvent };
 };

@@ -17,7 +17,7 @@ const Dashboard = () => {
     axios
       .get(`${API_BASE_URL}/api/dashboard`)
       .then((res) => setMetrics(res.data))
-      .catch((err) => console.error('Failed to fetch metrics:', err));
+      .catch(() => console.error('Failed to fetch metrics.'));
   }, []);
 
   if (!metrics) return <p className="p-6">Loading dashboard...</p>;

@@ -1,4 +1,4 @@
-const request = require('supertest');
+const request = require('./helpers/authenticatedRequest');
 const app = require('../index'); // if index exports app; otherwise create a small test server wrapper
 
 describe('Attendance API', () => {

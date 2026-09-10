@@ -7,17 +7,19 @@ const defineModels = require('../database/models');
 let sequelize;
 let models;
 const plain = (row) => row ? row.get({ plain: true }) : null;
-const catalogTransaction = new AsyncLocalStorage();
-const transact = (fn) => catalogTransaction.getStore()
-  ? fn(catalogTransaction.getStore()) : sequelize.transaction(fn);
-// One transaction covers validation and writes, including simultaneous recipe
-// assignments or a unit edit racing with an ingredient assignment.
-exports.withCatalogLock = (fn) => sequelize.transaction(async (transaction) => {
-  await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:schema), 17003)', {
-    replacements: { schema: sequelize.options.define.schema }, transaction,
+const transactionContext = new AsyncLocalStorage();
+const transact = (fn) => transactionContext.getStore()
+  ? fn(transactionContext.getStore())
+  : sequelize.transaction((transaction) => transactionContext.run(transaction, () => fn(transaction)));
+exports.withTransaction = transact;
+const locked = (key, fn) => transact(async (transaction) => {
+  await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:schema), :key)', {
+    replacements: { schema: sequelize.options.define.schema, key }, transaction,
   });
-  return catalogTransaction.run(transaction, fn);
+  return fn();
 });
+exports.withCatalogLock = (fn) => locked(17003, fn);
+exports.withAuthLock = (fn) => locked(17004, fn);
 
 exports.setup = async (connectionString, { schema = 'public' } = {}) => {
   if (sequelize) throw new Error('Database adapter is already initialized.');
@@ -42,8 +44,8 @@ function model(name) {
   if (!models) throw new Error('Database adapter is not initialized.');
   return models[name];
 }
-const list = async (name, options = {}) => (await model(name).findAll({ transaction: catalogTransaction.getStore(), ...options })).map(plain);
-const get = async (name, id) => plain(await model(name).findByPk(id, { transaction: catalogTransaction.getStore() }));
+const list = async (name, options = {}) => (await model(name).findAll({ transaction: transactionContext.getStore(), ...options })).map(plain);
+const get = async (name, id) => plain(await model(name).findByPk(id, { transaction: transactionContext.getStore() }));
 const create = async (name, payload) => {
   const entity = model(name);
   return transact(async (transaction) => plain(await entity.create(payload, { transaction })));
@@ -84,7 +86,7 @@ exports.ingredientHasQuantities = async (id) => {
   const [rows] = await sequelize.query(`SELECT 1 FROM "${schema}"."WeeklyPlans"
     WHERE "snapshot"->'items' @> CAST(:item AS jsonb)
       OR "snapshot"->'inHouse' ? :id LIMIT 1`, {
-    replacements: { id, item: JSON.stringify([{ ingredient: { id } }]) }, transaction: catalogTransaction.getStore(),
+    replacements: { id, item: JSON.stringify([{ ingredient: { id } }]) }, transaction: transactionContext.getStore(),
   });
   return rows.length > 0;
 };
@@ -95,7 +97,7 @@ exports.deleteMealIngredient = (id) => remove('MealIngredient', id);
 exports.saveConfirmedMenu = async ({ week }) => {
   if (!Array.isArray(week)) throw new Error('week must be an array');
   const entity = model('ConfirmedMenu');
-  return sequelize.transaction(async (transaction) => {
+  return transact(async (transaction) => {
     const [record] = await entity.upsert({ id: 'current', week, confirmedAt: new Date() }, { transaction });
     const row = plain(record);
     return { week: row.week, confirmedAt: row.confirmedAt };
@@ -108,7 +110,7 @@ exports.getConfirmedMenu = async () => {
 exports.saveShelfCheck = async (items) => {
   if (!Array.isArray(items)) throw new Error('Shelf items must be an array');
   const entity = model('ShelfCheck');
-  return sequelize.transaction(async (transaction) => {
+  return transact(async (transaction) => {
     const [record] = await entity.upsert({ id: 'current', items }, { transaction });
     return plain(record).items;
   });
@@ -123,7 +125,7 @@ exports.getWeeklyPlan = async (weekStart) => unpackPlan(await get('WeeklyPlan', 
 exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
   const { problem } = require('./planValidation');
   const entity = model('WeeklyPlan');
-  return sequelize.transaction(async (transaction) => {
+  return transact(async (transaction) => {
     // Serialize even the first insert, when there is no row to lock yet.
     await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:schema), hashtext(:week))', {
       replacements: { schema: sequelize.options.define.schema, week: `plan:${snapshot.weekStart}` }, transaction,
@@ -167,3 +169,26 @@ exports.getActivityById = (id) => get('Activity', id);
 exports.createActivity = (payload) => create('Activity', { ...payload, id: payload.id || randomUUID() });
 exports.updateActivity = (id, changes) => update('Activity', id, changes);
 exports.deleteActivity = (id) => remove('Activity', id);
+
+exports.listAccounts = () => list('Account', { order: [['username', 'ASC']] });
+exports.getAccount = (id) => get('Account', id);
+exports.findAccount = async (username) => (await list('Account', { where: { username }, limit: 1 }))[0] || null;
+exports.createAccount = (values) => create('Account', values);
+exports.updateAccount = (id, values) => update('Account', id, values);
+exports.createSession = (values) => create('Session', values);
+exports.getSession = (id) => get('Session', id);
+exports.updateSession = (id, values) => update('Session', id, values);
+exports.deleteSession = (id) => remove('Session', id);
+exports.revokeSessions = (accountId) => transact((transaction) => model('Session').destroy({ where: { accountId }, transaction }));
+exports.getLoginAttempt = (id) => get('LoginAttempt', id);
+exports.saveLoginAttempt = (values) => transact((transaction) => model('LoginAttempt').upsert(values, { transaction }));
+exports.deleteLoginAttempt = (id) => remove('LoginAttempt', id);
+exports.cleanAuthRecords = (now) => transact(async (transaction) => {
+  for (const name of ['Session', 'LoginAttempt']) {
+    await model(name).destroy({ where: { expiresAt: { [Op.lte]: now } }, transaction });
+  }
+});
+exports.appendAudit = (values) => create('AuditEvent', values);
+exports.listAudit = ({ limit = 50, offset = 0 } = {}) => list('AuditEvent', {
+  order: [['occurredAt', 'DESC'], ['id', 'DESC']], limit, offset,
+});

@@ -1,3 +1,4 @@
+import { SignedIn } from '../../tests/authFixture';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
@@ -98,7 +99,7 @@ describe('catalog corrections', () => {
 it('waits for a catalog write before allowing a return to Planner', async () => {
   let complete!: (value: ReturnType<typeof response>) => void;
   vi.mocked(axios.put).mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));
-  render(<Meals />);
+  render(<SignedIn><Meals /></SignedIn>);
   fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
   await waitFor(() => expect(screen.getByLabelText('Choose meal')).toBeEnabled());
   change('Choose meal', 'meal');

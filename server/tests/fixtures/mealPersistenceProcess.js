@@ -1,10 +1,14 @@
+// Keep test HTTP origins independent of the development VM configuration.
+process.env.APP_ORIGINS = 'http://localhost:5173';
 // Invoked in separate Node processes to verify persistence through the real API.
 const request = require('supertest');
 const app = require('../../index');
 const db = require('../../services/dbAdapter');
+const auth = require('../../auth/service');
+let credentials;
 
 async function api(method, url, body, status = 200) {
-  const response = await request(app)[method](url).send(body);
+  const response = await request(app)[method](url).set('Origin', 'http://localhost:5173').set('Cookie', credentials.cookie).set('X-CSRF-Token', credentials.csrf).set('Content-Type', 'application/json').send(body);
   if (response.status !== status) throw new Error(`${method} ${url}: expected ${status}, got ${response.status}`);
   return response.body.data;
 }
@@ -12,6 +16,14 @@ async function api(method, url, body, status = 200) {
 (async () => {
   try {
     await db.setup(process.env.DATABASE_URL, { schema: process.env.DB_SCHEMA });
+    const identity = { username: 'restart-admin', displayName: 'Restart Test', password: 'Synthetic restart passphrase 20!' };
+    if (!await db.findAccount(identity.username)) {
+      const { hashPassword } = require('../../auth/passwords');
+      await db.createAccount({ id: require('node:crypto').randomUUID(), username: identity.username, displayName: identity.displayName,
+        passwordHash: await hashPassword(identity.password), role: 'admin', disabled: false, mustChangePassword: false });
+    }
+    const signedIn = await auth.login(identity, 'restart-test');
+    credentials = { cookie: `skao_session=${signedIn.token}`, csrf: signedIn.csrfToken };
     if (process.argv[2] === 'write') {
       const meal = await api('post', '/api/meals', { name: 'Egg Breakfast', type: 'breakfast' }, 201);
       for (const type of ['snack', 'lunch', 'afternoonSnack']) {

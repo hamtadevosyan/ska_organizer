@@ -1,3 +1,4 @@
+import { SignedIn } from '../../tests/authFixture';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
@@ -51,7 +52,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('saved weekly planner', () => {
   it('reopens counts and stock with 15 needed and 13 to buy, including a browser reload', async () => {
-    const view = render(<MealPlanner />);
+    const view = render(<MealPlanner canWrite />);
     expect(saveButton()).toBeDisabled();
     await flush();
     expect(screen.getByLabelText('Children')).toHaveValue(4);
@@ -62,14 +63,14 @@ describe('saved weekly planner', () => {
     expect(within(table()).getByText('13 count')).toBeInTheDocument();
     expect(saveButton()).toBeEnabled();
     view.unmount();
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     expect(screen.getByLabelText('Children')).toHaveValue(4);
     expect(within(table()).getByText('13 count')).toBeInTheDocument();
   });
 
   it('blocks stale Save and Print immediately, including the debounce interval', async () => {
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     input('Children', '6');
     expect(saveButton()).toBeDisabled();
@@ -83,7 +84,7 @@ describe('saved weekly planner', () => {
   });
 
   it('ignores a late older calculation even when transport cancellation is ignored', async () => {
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     const older = deferred<ReturnType<typeof response>>();
     const newer = deferred<ReturnType<typeof response>>();
@@ -101,7 +102,7 @@ describe('saved weekly planner', () => {
   });
 
   it('keeps edits through both week selection and Meal Setup tabs', async () => {
-    render(<Meals />);
+    render(<SignedIn><Meals /></SignedIn>);
     await flush();
     input('Children', '6');
     input('Eggs in house (count)', '3');
@@ -125,7 +126,7 @@ describe('saved weekly planner', () => {
     const older = deferred<ReturnType<typeof response>>();
     vi.mocked(axios.get).mockImplementation((path) => path.endsWith('/api/meals') ? Promise.resolve(response([eggMeal]))
       : path.endsWith(firstWeek) ? older.promise : Promise.resolve(response({ ...savedPlan(secondWeek), childrenCount: 9 })));
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await act(async () => {});
     input('Week starting Monday', secondWeek);
     await flush();
@@ -135,7 +136,7 @@ describe('saved weekly planner', () => {
   });
 
   it('keeps failed calculations disabled until a successful retry', async () => {
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     vi.mocked(axios.post).mockRejectedValueOnce(new Error('Preview unavailable'));
     input('Children', '7');
@@ -150,7 +151,7 @@ describe('saved weekly planner', () => {
   });
 
   it('preserves the editable draft after a failed atomic save', async () => {
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     input('Children', '6');
     input('Eggs in house (count)', '8');
@@ -167,7 +168,7 @@ describe('saved weekly planner', () => {
   });
 
   it.each(['-1', '1.5', ''])('rejects invalid headcount %s and negative stock without requests', async (value) => {
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     const previous = vi.mocked(axios.post).mock.calls.length;
     input('Children', value);
@@ -183,7 +184,7 @@ describe('saved weekly planner', () => {
   });
 
   it('asks before discarding a draft and keeps it if the user cancels', async () => {
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     input('Children', '6');
     vi.mocked(window.confirm).mockReturnValue(false);
@@ -193,7 +194,7 @@ describe('saved weekly planner', () => {
   });
 
   it('accepts another date in the same week without stranding a pending calculation', async () => {
-    render(<MealPlanner />);
+    render(<MealPlanner canWrite />);
     await flush();
     input('Children', '6');
     input('Week starting Monday', '2026-09-09');
@@ -209,7 +210,7 @@ it('blocks Save and Print with named recipe warnings and opens that meal for rep
     day: 'Monday', slot: 'breakfast', mealId: 'eggs', mealName: 'Scrambled Eggs', message: 'Add recipe ingredients and quantities.',
   }], previewToken: undefined }));
   const edit = vi.fn();
-  render(<MealPlanner onEditRecipe={edit} />);
+  render(<MealPlanner canWrite onEditRecipe={edit} />);
   await flush();
   expect(screen.getByRole('alert')).toHaveTextContent('Monday — Scrambled Eggs');
   expect(screen.getByText('Complete the recipes before saving or printing this shopping list.')).toBeInTheDocument();
@@ -221,7 +222,7 @@ it('blocks Save and Print with named recipe warnings and opens that meal for rep
 });
 
 it('refreshes the catalog and calculation when returning from Meal Setup without losing the draft', async () => {
-  render(<Meals />); await flush();
+  render(<SignedIn><Meals /></SignedIn>); await flush();
   input('Children', '6'); await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
   vi.mocked(axios.get).mockResolvedValueOnce(response([eggMeal, { ...oats, name: 'Corrected oatmeal' }]));
@@ -235,7 +236,7 @@ it('refreshes the catalog and calculation when returning from Meal Setup without
 });
 
 it('keeps recipe refresh explicit for saved weeks and recalculates before saving corrections', async () => {
-  render(<MealPlanner />); await flush();
+  render(<MealPlanner canWrite />); await flush();
   expect(vi.mocked(axios.post).mock.calls.at(-1)?.[1]).not.toHaveProperty('refreshRecipes', true);
   fireEvent.click(screen.getByRole('button', { name: 'Use current recipes' }));
   expect(saveButton()).toBeDisabled(); await flush();

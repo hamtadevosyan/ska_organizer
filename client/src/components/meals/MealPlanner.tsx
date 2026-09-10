@@ -92,7 +92,7 @@ const convertFromUS = (
   return quantity;
 };
 
-const MealPlanner = ({ active = true, onEditRecipe }: { active?: boolean; onEditRecipe?: (id: string) => void }) => {
+const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWrite?: boolean; active?: boolean; onEditRecipe?: (id: string) => void }) => {
   const planner = useWeeklyPlan(active);
   const { entry, update, isBusy, actionLoading, ready } = planner;
   const { week: weeklyMenu, childrenCount, staffCount, inHouse: inStock } = entry.draft;
@@ -158,7 +158,7 @@ const MealPlanner = ({ active = true, onEditRecipe }: { active?: boolean; onEdit
               label="Save Menu"
               icon={<Save size={18} />}
               loading={actionLoading === 'save'}
-              disabled={isBusy || !ready}
+              disabled={isBusy || !ready || !canWrite}
               onClick={saveMenu}
             />
             <ActionButton

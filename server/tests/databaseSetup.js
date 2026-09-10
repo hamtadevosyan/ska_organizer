@@ -1,3 +1,5 @@
+// Keep test HTTP origins independent of the development VM configuration.
+process.env.APP_ORIGINS = 'http://localhost:5173';
 const { randomUUID } = require('node:crypto');
 const db = require('../services/dbAdapter');
 const { createConnection, validateDatabaseUrl } = require('../database/connection');
@@ -19,9 +21,12 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  if (!connection) { db.reset(); return; }
-  const tables = ['MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'Attendances', 'Activities'];
+  if (!connection) db.reset();
+  else {
+  const tables = ['MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'Attendances', 'Activities', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
   await connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`);
+  }
+  await require('./helpers/authenticatedRequest').initialize(require('../index'));
 });
 
 afterAll(async () => {

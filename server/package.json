@@ -9,9 +9,12 @@
     "db:seed": "node scripts/database.js seed",
     "test:postgres": "node scripts/test-postgres.js",
     "test:restart:prepare": "node scripts/verify-restart.js prepare",
-    "test:restart:verify": "node scripts/verify-restart.js verify"
+    "test:restart:verify": "node scripts/verify-restart.js verify",
+    "admin:create": "node scripts/create-admin.js"
   },
-  "engines": { "node": ">=20.19.0" },
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

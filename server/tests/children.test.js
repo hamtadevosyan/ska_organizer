@@ -1,5 +1,5 @@
 // server/tests/children.test.js
-const request = require('supertest');
+const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
 
 describe('Children API', () => {

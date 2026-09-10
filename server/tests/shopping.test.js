@@ -1,4 +1,4 @@
-const request = require("supertest");
+const request = require('./helpers/authenticatedRequest');
 const app = require("../index");
 const db = require("../services/dbAdapter");
 

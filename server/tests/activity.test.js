@@ -1,5 +1,5 @@
 // server/tests/activity.test.js
-const request = require('supertest');
+const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
 
 describe('Activity API', () => {

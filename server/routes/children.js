@@ -1,3 +1,4 @@
+const { audited } = require('../auth/middleware');
 // server/routes/children.js (example)
 const express = require('express');
 const router = express.Router();
@@ -6,8 +7,8 @@ const { validateChild } = require('../middleware/validate'); // if you have vali
 
 router.get('/', childrenController.listChildren);
 router.get('/:id', childrenController.getChildById);
-router.post('/', validateChild, childrenController.createChild);
-router.put('/:id', validateChild, childrenController.updateChild);
-router.delete('/:id', childrenController.deleteChild);
+router.post('/', validateChild, audited('child.create', childrenController.createChild));
+router.put('/:id', validateChild, audited('child.update', childrenController.updateChild));
+router.delete('/:id', audited('child.delete', childrenController.deleteChild));
 
 module.exports = router;

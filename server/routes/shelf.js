@@ -1,3 +1,4 @@
+const { audited } = require('../auth/middleware');
 // server/routes/shelf.js
 
 const express = require("express");
@@ -5,7 +6,7 @@ const router = express.Router();
 const shelfController = require("../controllers/shelfController");
 
 // POST /api/shelf/check
-router.post("/check", shelfController.saveShelfCheck);
+router.post("/check", audited('shelf.save', shelfController.saveShelfCheck));
 
 // GET /api/shelf/final
 router.get("/final", shelfController.generateFinalShoppingList);

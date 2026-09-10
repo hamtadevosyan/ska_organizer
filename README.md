@@ -1,3 +1,9 @@
+> **Sign-in is now required (SKAO-20).** After updating an existing checkout, follow
+> [authentication setup](docs/authentication.md) to configure the frontend origin,
+> run the additive migration and create the first administrator. Preserve your
+> existing `.env` and database. Existing curl/API examples now need a session cookie;
+> writes also need the CSRF token and allowed Origin described in that guide.
+
 # ska_organizer
 📚 Smart Kids Organizer (ska_organizer)
 

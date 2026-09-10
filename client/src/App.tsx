@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { BrowserRouter } from "react-router-dom";
 
+import AuthProvider from "./auth/AuthProvider";
+import AuthGate from "./auth/AuthGate";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 import AppRoutes from "./router"; // router file
@@ -10,7 +12,7 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <BrowserRouter>
+    <AuthProvider><AuthGate><BrowserRouter>
       <div className="h-screen flex flex-col">
         <Topbar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
@@ -22,7 +24,7 @@ const App = () => {
           </main>
         </div>
       </div>
-    </BrowserRouter>
+    </BrowserRouter></AuthGate></AuthProvider>
   );
 };
 

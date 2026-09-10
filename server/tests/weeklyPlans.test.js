@@ -1,4 +1,4 @@
-const request = require('supertest');
+const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
 const db = require('../services/dbAdapter');
 const A = '/api/menu/plans/2026-09-07';
@@ -95,8 +95,13 @@ test('rejects tampered, wrong-week and expired calculations', async () => {
   await api('put', A, { previewToken: `${plan.previewToken}x` }, 409);
   await api('put', B, { previewToken: plan.previewToken }, 400);
   const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 3600001);
-  await api('put', A, { previewToken: plan.previewToken }, 409);
-  clock.mockRestore();
+  try {
+    // Keep the account active while expiring only the menu calculation.
+    const { digest } = require('../auth/service');
+    const session = require('./helpers/authenticatedRequest').credentials();
+    await db.updateSession(digest(session.cookie.split('=')[1]), { lastSeenAt: new Date(Date.now()) });
+    await api('put', A, { previewToken: plan.previewToken }, 409);
+  } finally { clock.mockRestore(); }
   expect(await api('get', A)).toBeNull();
 });
 test('imports the earlier undated menu into an explicit week without overwriting legacy data', async () => {
