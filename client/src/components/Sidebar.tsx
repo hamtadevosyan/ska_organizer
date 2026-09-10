@@ -8,9 +8,11 @@ import {
   Utensils,
   Users,
   FileText,
+  Building2,
 } from "lucide-react";
 
 const navItems = [
+  { to: "/rooms", label: "Rooms & Classes", icon: <Building2 size={20} /> },
   {
     to: "/dashboard",
     label: "Dashboard",

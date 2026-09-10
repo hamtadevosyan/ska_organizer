@@ -40,10 +40,15 @@ module.exports = (sequelize) => {
     items: { type: DataTypes.JSONB, allowNull: false },
   }, { timestamps: false });
   // Preserve the earlier adapter contracts; later stories complete these modules.
+  const Room = sequelize.define('Room', {
+    id: id(), name: { type: DataTypes.STRING(100), allowNull: false },
+    ageMinMonths: DataTypes.INTEGER, ageMaxMonths: DataTypes.INTEGER, capacity: DataTypes.INTEGER,
+    active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+  });
   const Child = sequelize.define('Child', {
     id: id(), firstName: DataTypes.STRING, lastName: DataTypes.STRING,
     dateOfBirth: DataTypes.DATEONLY, preferredName: DataTypes.STRING,
-    photoConsent: DataTypes.BOOLEAN, notes: DataTypes.TEXT,
+    photoConsent: DataTypes.BOOLEAN, notes: DataTypes.TEXT, roomId: DataTypes.STRING,
   });
   const Attendance = sequelize.define('Attendance', {
     id: id(), childId: { type: DataTypes.STRING, allowNull: false },
@@ -51,6 +56,7 @@ module.exports = (sequelize) => {
     checkOut: DataTypes.DATE, recordedBy: DataTypes.STRING,
   }, { timestamps: false });
   const Activity = require('../models/activity')(sequelize, DataTypes);
+  const ScheduleEntry = require('../models/scheduleEntry')(sequelize, DataTypes);
   const Account = sequelize.define('Account', {
     id: id(), username: { type: DataTypes.STRING(64), allowNull: false, unique: true },
     displayName: { type: DataTypes.STRING(100), allowNull: false },
@@ -71,5 +77,5 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry };
 };

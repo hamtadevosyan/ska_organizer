@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const API_BASE = "/api/schedule";
+import { API_BASE_URL } from "../lib/api";
+const API_BASE = API_BASE_URL + "/api/schedule";
 
 export async function getWeek(roomId, weekStart) {
   const res = await axios.get(`${API_BASE}/week`, {
@@ -24,4 +25,3 @@ export async function saveWeek(roomId, weekStart, entries) {
   });
   return res.data;
 }
-

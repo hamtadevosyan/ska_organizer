@@ -19,7 +19,9 @@ const childSchema = Joi.object({
   dateOfBirth: Joi.date().iso().optional(),
   preferredName: Joi.string().trim().optional().allow(''),
   photoConsent: Joi.boolean().optional(),
-  notes: Joi.string().trim().optional().allow('')
+  notes: Joi.string().trim().optional().allow(''),
+  roomId: Joi.string().max(255).allow(null).optional(),
+  confirmOverCapacity: Joi.boolean().strict().optional()
 });
 
 exports.validateChild = (req, res, next) => {
@@ -31,9 +33,6 @@ exports.validateChild = (req, res, next) => {
 const activitySchema = Joi.object({
   name: Joi.string().trim().required(),
   description: Joi.string().trim().optional().allow(''),
-  roomId: Joi.string().trim().optional(),
-  startTime: Joi.string().isoDate().optional(),
-  endTime: Joi.string().isoDate().optional(),
   category: Joi.string().valid('foundational', 'thematic').required(),
   repeatWindowWeeks: Joi.number().integer().min(1).required(),
   type: Joi.string().required(),
@@ -44,7 +43,7 @@ const activitySchema = Joi.object({
   estimatedCost: Joi.number().min(0).optional(),
   materialsLinks: Joi.array().items(Joi.string().uri()).optional(),
   materialsNotes: Joi.string().allow('').optional(),
-  roomId: Joi.string().optional(),
+  roomId: Joi.string().max(255).allow(null).optional(),
   startTime: Joi.date().iso().optional(),
   endTime: Joi.date().iso().optional()
 });
@@ -54,4 +53,3 @@ exports.validateActivity = (req, res, next) => {
   if (error) return res.status(400).json({ error: 'Invalid activity payload', details: error.details.map(d => d.message) });
   next();
 };
-

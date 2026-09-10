@@ -50,7 +50,7 @@ async function requireAdmin(req, res, next) {
 }
 // Existing controllers use status/json/send. Buffer the response until both the
 // mutation and audit insert commit; never acknowledge a change before its audit.
-function audited(action, controller) {
+function audited(action, controller, { adminOnly = false } = {}) {
   return async (req, res, next) => {
     const response = {
       statusCode: 200, kind: 'json', body: undefined,
@@ -62,6 +62,7 @@ function audited(action, controller) {
       await db.withAuthLock(async () => {
         req.account = await auth.sessionAccount(req.sessionToken);
         auth.operationalPermission(req.account, true);
+        if (adminOnly && req.account.role !== 'admin') throw auth.problem('Administrator access is required.', 403, 'FORBIDDEN');
         await controller(req, response, (error) => { throw error || new Error('Controller did not complete.'); });
         if (response.statusCode >= 400) throw Object.assign(new Error('Controller rejected request.'), { bufferedResponse: true });
         const id = response.body?.data?.id || response.body?.id || req.params.id || req.params.weekStart || req.params.mealId || null;

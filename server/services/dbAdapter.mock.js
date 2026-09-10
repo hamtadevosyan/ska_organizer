@@ -4,6 +4,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 
 // In-memory mock data store
 const mock = {
+  rooms: [], scheduleEntries: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [],
   attendance: [],
@@ -38,6 +39,15 @@ const mock = {
 };
 
 let transactionQueue = Promise.resolve();
+const filteredChildren = ({ q, roomId } = {}) => mock.children
+  .filter((c) => (roomId === undefined || c.roomId === roomId) &&
+    (!q || [c.firstName, c.lastName].some((name) => (name || '').toLowerCase().includes(q.toLowerCase()))))
+  .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || '') || (a.lastName || '').localeCompare(b.lastName || '') || a.id.localeCompare(b.id));
+const inScheduleWeek = (entry, roomId, weekStart) => {
+  const end = new Date(weekStart + 'T00:00:00Z');
+  end.setUTCDate(end.getUTCDate() + 7);
+  return entry.roomId === roomId && entry.date >= weekStart && entry.date < end.toISOString().slice(0, 10);
+};
 const transactionContext = new AsyncLocalStorage();
 const withTransaction = (fn) => {
   if (transactionContext.getStore()) return fn();
@@ -49,7 +59,33 @@ const withTransaction = (fn) => {
   return operation;
 };
 module.exports = {
-  withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction,
+  withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction,
+  listRooms: async ({ includeArchived = false } = {}) => structuredClone(mock.rooms.filter((room) => includeArchived || room.active).sort((a, b) => a.name.localeCompare(b.name))),
+  getRoomById: async (id) => structuredClone(mock.rooms.find((room) => room.id === id) || null),
+  createRoom: async (payload) => {
+    const room = { id: mock.uuid(), active: true, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...payload };
+    mock.rooms.push(room);
+    return structuredClone(room);
+  },
+  updateRoom: async (id, changes) => {
+    const room = mock.rooms.find((row) => row.id === id);
+    if (!room) return null;
+    Object.assign(room, changes, { updatedAt: mock.nowIso() });
+    return structuredClone(room);
+  },
+  roomChildCounts: async () => {
+    const counts = Object.create(null);
+    for (const child of mock.children) if (child.roomId != null) counts[child.roomId] = (counts[child.roomId] || 0) + 1;
+    return counts;
+  },
+  countChildren: async (filters) => filteredChildren(filters).length,
+  listScheduleEntries: async (roomId, weekStart) => structuredClone(mock.scheduleEntries.filter((row) => inScheduleWeek(row, roomId, weekStart))),
+  saveScheduleEntries: async (roomId, weekStart, entries) => {
+    mock.scheduleEntries = mock.scheduleEntries.filter((row) => !inScheduleWeek(row, roomId, weekStart));
+    const created = entries.map((entry) => ({ ...entry, roomId, id: mock.uuid(), createdAt: mock.nowIso(), updatedAt: mock.nowIso() }));
+    mock.scheduleEntries.push(...created);
+    return structuredClone(created);
+  },
   ingredientHasQuantities: async (id) => mock.mealIngredients.some((link) => link.ingredientId === id) ||
     mock.shelf.some((item) => item.ingredientId === id) ||
     Object.values(mock.weeklyPlans).some((plan) => plan.items.some((item) => item.ingredient.id === id) ||
@@ -59,6 +95,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.rooms = []; mock.scheduleEntries = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = [];
     mock.attendance = [];
@@ -84,7 +121,8 @@ module.exports = {
   // ------------------------------------------------------
   // CHILDREN
   // ------------------------------------------------------
-  listChildren: async () => mock.children,
+  listChildren: async ({ page = 1, pageSize = 50, ...filters } = {}) =>
+    structuredClone(filteredChildren(filters).slice((page - 1) * pageSize, page * pageSize)),
 
   getChildById: async (id) =>
     mock.children.find((c) => c.id === id) || null,
@@ -112,7 +150,9 @@ module.exports = {
   // ------------------------------------------------------
   // ATTENDANCE  (YOUR ORIGINAL FUNCTIONS — RESTORED)
   // ------------------------------------------------------
-  listAttendance: async () => mock.attendance,
+  listAttendance: async ({ roomId, childId, date } = {}) => structuredClone(mock.attendance.filter((row) =>
+    (!roomId || row.roomId === roomId) && (!childId || row.childId === childId) &&
+    (!date || row.checkIn?.slice(0, 10) === date))),
 
   getAttendanceById: async (id) =>
     mock.attendance.find((a) => a.id === id) || null,
@@ -120,9 +160,9 @@ module.exports = {
   createAttendance: async (payload) => {
     const rec = {
       id: mock.uuid(),
-      ...payload,
       checkIn: mock.nowIso(),
-      checkOut: null
+      checkOut: null,
+      ...payload
     };
     mock.attendance.push(rec);
     return rec;
@@ -190,6 +230,7 @@ module.exports = {
 
   createActivity: async (payload) => {
     const rec = {
+      ...payload,
       id: payload.id || mock.uuid(),
       name: payload.name,
       description: payload.description || "",

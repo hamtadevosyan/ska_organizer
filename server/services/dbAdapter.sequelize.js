@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { AsyncLocalStorage } = require('node:async_hooks');
-const { Op } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 const { createConnection } = require('../database/connection');
 const { assertMigrated } = require('../database/migrate');
 const defineModels = require('../database/models');
@@ -20,6 +20,7 @@ const locked = (key, fn) => transact(async (transaction) => {
 });
 exports.withCatalogLock = (fn) => locked(17003, fn);
 exports.withAuthLock = (fn) => locked(17004, fn);
+exports.withRoomLock = (fn) => locked(17005, fn);
 
 exports.setup = async (connectionString, { schema = 'public' } = {}) => {
   if (sequelize) throw new Error('Database adapter is already initialized.');
@@ -140,10 +141,41 @@ exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
   });
 };
 
-exports.listChildren = ({ q, page = 1, pageSize = 50 } = {}) => list('Child', {
-  where: q ? { [Op.or]: [{ firstName: { [Op.iLike]: `%${q}%` } }, { lastName: { [Op.iLike]: `%${q}%` } }] } : {},
-  limit: pageSize, offset: (page - 1) * pageSize,
+const childWhere = ({ q, roomId } = {}) => ({
+  ...(roomId !== undefined ? { roomId } : {}),
+  ...(q ? { [Op.or]: [{ firstName: { [Op.iLike]: '%' + q + '%' } }, { lastName: { [Op.iLike]: '%' + q + '%' } }] } : {}),
 });
+exports.listChildren = ({ page = 1, pageSize = 50, ...filters } = {}) => list('Child', {
+  where: childWhere(filters), limit: pageSize, offset: (page - 1) * pageSize,
+  order: [['firstName', 'ASC'], ['lastName', 'ASC'], ['id', 'ASC']],
+});
+exports.countChildren = (filters) => model('Child').count({ where: childWhere(filters), transaction: transactionContext.getStore() });
+exports.roomChildCounts = async () => Object.fromEntries((await model('Child').findAll({
+  attributes: ['roomId', [fn('COUNT', col('id')), 'count']], where: { roomId: { [Op.ne]: null } },
+  group: ['roomId'], raw: true, transaction: transactionContext.getStore(),
+})).map((row) => [row.roomId, Number(row.count)]));
+exports.listRooms = ({ includeArchived = false } = {}) => list('Room', {
+  where: includeArchived ? {} : { active: true }, order: [['name', 'ASC'], ['id', 'ASC']],
+});
+exports.getRoomById = (id) => get('Room', id);
+exports.createRoom = (payload) => create('Room', payload);
+exports.updateRoom = (id, payload) => update('Room', id, payload);
+const scheduleWhere = (roomId, weekStart) => {
+  const end = new Date(weekStart + 'T00:00:00Z');
+  end.setUTCDate(end.getUTCDate() + 7);
+  return { roomId, date: { [Op.gte]: weekStart, [Op.lt]: end.toISOString().slice(0, 10) } };
+};
+exports.listScheduleEntries = (roomId, weekStart) => list('ScheduleEntry', {
+  where: scheduleWhere(roomId, weekStart), order: [['date', 'ASC'], ['timeBlock', 'ASC'], ['id', 'ASC']],
+});
+exports.saveScheduleEntries = (roomId, weekStart, entries) => transact(async (transaction) => {
+  await model('ScheduleEntry').destroy({ where: scheduleWhere(roomId, weekStart), transaction });
+  if (entries.length) await model('ScheduleEntry').bulkCreate(entries.map((entry) => ({
+    ...entry, roomId, id: randomUUID(),
+  })), { transaction });
+  return exports.listScheduleEntries(roomId, weekStart);
+});
+
 exports.getChildById = (id) => get('Child', id);
 exports.createChild = (payload) => create('Child', payload);
 exports.updateChild = (id, changes) => update('Child', id, changes);

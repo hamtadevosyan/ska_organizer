@@ -1,0 +1,37 @@
+import { expect, test } from '@playwright/test';
+import { api, signIn } from './auth-helpers';
+
+test('manage a room, select it for activities, and preserve it after archival', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await signIn(page);
+  await page.getByRole('link', { name: 'Rooms & Classes', exact: true }).click();
+  await page.getByRole('button', { name: 'Add room', exact: true }).click();
+  await page.getByLabel('Room name', { exact: true }).fill('Browser Sunflower');
+  await page.getByLabel('Minimum age (months)', { exact: true }).fill('24');
+  await page.getByLabel('Maximum age (months)', { exact: true }).fill('60');
+  await page.getByLabel('Configured capacity', { exact: true }).fill('12');
+  await page.getByRole('button', { name: 'Save room', exact: true }).click();
+  await expect(page.getByRole('article', { name: 'Browser Sunflower', exact: true })).toBeVisible();
+  const roomResponse = await page.request.get(api + '/rooms');
+  const saved = (await roomResponse.json()).data.find((room: { name: string }) => room.name === 'Browser Sunflower');
+  expect(saved.id).toBeTruthy();
+  await page.getByRole('button', { name: 'Edit Browser Sunflower', exact: true }).click();
+  await page.getByLabel('Configured capacity', { exact: true }).fill('14');
+  await page.getByRole('button', { name: 'Save room', exact: true }).click();
+  await expect(page.getByRole('article', { name: 'Browser Sunflower' })).toContainText('14 children assigned');
+  await page.reload();
+  await expect(page.getByRole('article', { name: 'Browser Sunflower' })).toContainText('14 children assigned');
+  await page.getByRole('link', { name: 'Activity Planner', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(saved.id);
+  await expect(page.getByText('No activities available for this room and week.')).toBeVisible();
+  await page.getByRole('link', { name: 'Rooms & Classes', exact: true }).click();
+  page.once('dialog', (dialog) => { void dialog.accept(); });
+  await page.getByRole('button', { name: 'Archive Browser Sunflower', exact: true }).click();
+  await expect(page.getByRole('article', { name: 'Browser Sunflower' })).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Show archived rooms', exact: true }).check();
+  await expect(page.getByRole('article', { name: 'Browser Sunflower' })).toContainText('Archived');
+  const archived = await page.request.get(api + '/rooms/' + saved.id);
+  expect((await archived.json()).data).toMatchObject({ id: saved.id, active: false, capacity: 14 });
+  expect(errors).toEqual([]);
+});

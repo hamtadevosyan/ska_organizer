@@ -1,110 +1,48 @@
-// server/services/childrenService.js
-const mock = require('../mockData');
-const { children, enrollments, attendance, uuid } = mock;
+const db = require('./dbAdapter');
+const rooms = require('./roomService');
+const { problem } = require('./planValidation');
+const { roomId } = require('./roomValidation');
 
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-/**
- * List children with optional filters and pagination
- * Returns { items, total, page, pageSize }
- */
-exports.listChildren = async ({ q, roomId, page = 1, pageSize = 50 } = {}) => {
-  await delay(5);
-  let items = children.slice();
-
-  if (q) {
-    const term = q.toLowerCase();
-    items = items.filter(c => `${c.firstName} ${c.lastName}`.toLowerCase().includes(term));
+const values = (payload) => Object.fromEntries(
+  ['firstName', 'lastName', 'dateOfBirth', 'preferredName', 'photoConsent', 'notes', 'roomId']
+    .filter((key) => Object.hasOwn(payload, key)).map((key) => [key, payload[key]]),
+);
+exports.listChildren = async ({ q, roomId: selectedRoom, page = 1, pageSize = 50 } = {}) => {
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+    throw problem('Use a positive page number and a page size from 1 to 200.');
   }
-
-  if (roomId) {
-    const childIds = enrollments
-      .filter(e => e.roomId === roomId && e.status === 'active')
-      .map(e => e.childId);
-    items = items.filter(c => childIds.includes(c.id));
+  if (q !== undefined && (typeof q !== 'string' || q.length > 100)) throw problem('Search must be at most 100 characters.');
+  if (selectedRoom !== undefined) roomId(selectedRoom);
+  const filters = { q: q?.trim(), roomId: selectedRoom };
+  const [items, total] = await Promise.all([db.listChildren({ ...filters, page, pageSize }), db.countChildren(filters)]);
+  return { items, total, page, pageSize };
+};
+exports.getById = (id) => db.getChildById(id);
+exports.createChild = (payload) => db.withRoomLock(async () => {
+  await rooms.checkAssignment(payload.roomId ?? null, null, payload.confirmOverCapacity === true);
+  return db.createChild({ preferredName: '', photoConsent: false, notes: '', roomId: null, ...values(payload) });
+});
+exports.updateChild = (id, payload) => db.withRoomLock(async () => {
+  const previous = await db.getChildById(id);
+  if (!previous) return null;
+  if (Object.hasOwn(payload, 'roomId')) await rooms.checkAssignment(payload.roomId, previous.roomId, payload.confirmOverCapacity === true);
+  return db.updateChild(id, values(payload));
+});
+exports.assignRoom = (id, payload) => db.withRoomLock(async () => {
+  if (!payload || !Object.hasOwn(payload, 'roomId') || Object.keys(payload).some((key) => !['roomId', 'confirmOverCapacity'].includes(key)) ||
+      (Object.hasOwn(payload, 'confirmOverCapacity') && typeof payload.confirmOverCapacity !== 'boolean')) {
+    throw problem('Supply roomId and an optional capacity confirmation.');
   }
-
-  const total = items.length;
-  const start = (page - 1) * pageSize;
-  const paged = items.slice(start, start + pageSize);
-
-  return { items: paged, total, page, pageSize };
-};
-
-/**
- * Get child by id
- */
-exports.getById = async (id) => {
-  await delay(5);
-  return children.find(c => c.id === id) || null;
-};
-
-/**
- * Create a new child
- * Minimal validation here; move business rules into service as needed
- */
-exports.createChild = async (payload) => {
-  await delay(5);
-  const newChild = {
-    id: uuid(),
-    firstName: payload.firstName,
-    lastName: payload.lastName,
-    dateOfBirth: payload.dateOfBirth,
-    preferredName: payload.preferredName || '',
-    photoConsent: !!payload.photoConsent,
-    notes: payload.notes || '',
-    createdAt: new Date().toISOString()
-  };
-  children.push(newChild);
-  return newChild;
-};
-
-/**
- * Update child
- * Returns updated object or null if not found
- */
-exports.updateChild = async (id, payload) => {
-  await delay(5);
-  const idx = children.findIndex(c => c.id === id);
-  if (idx === -1) return null;
-  Object.assign(children[idx], payload);
-  children[idx].updatedAt = new Date().toISOString();
-  return children[idx];
-};
-
-/**
- * Delete child
- * Returns true if deleted, false if not found
- * Also cleans up enrollments and attendance in the mock
- */
-exports.deleteChild = async (id) => {
-  await delay(5);
-  const idx = children.findIndex(c => c.id === id);
-  if (idx === -1) return false;
-  children.splice(idx, 1);
-
-  for (let i = enrollments.length - 1; i >= 0; i--) {
-    if (enrollments[i].childId === id) enrollments.splice(i, 1);
-  }
-  for (let i = attendance.length - 1; i >= 0; i--) {
-    if (attendance[i].childId === id) attendance.splice(i, 1);
-  }
-
-  return true;
-};
-
-/**
- * Get profile for a child: child, enrollments, recent attendance
- */
+  const previous = await db.getChildById(id);
+  if (!previous) throw problem('Child not found.', 404);
+  await rooms.checkAssignment(payload.roomId, previous.roomId, payload.confirmOverCapacity === true);
+  return db.updateChild(id, { roomId: payload.roomId });
+});
+exports.deleteChild = (id) => db.withRoomLock(() => db.deleteChild(id));
 exports.getProfile = async (id) => {
-  await delay(5);
-  const child = children.find(c => c.id === id);
+  const child = await db.getChildById(id);
   if (!child) return null;
-  const childEnrollments = enrollments.filter(e => e.childId === id);
-  const recentAttendance = attendance
-    .filter(a => a.childId === id)
-    .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
-    .slice(0, 10);
-  return { child, enrollments: childEnrollments, recentAttendance };
+  const recentAttendance = (await db.listAttendance({ childId: id }))
+    .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn)).slice(0, 10);
+  return { child, room: child.roomId ? await db.getRoomById(child.roomId) : null, recentAttendance };
 };
-

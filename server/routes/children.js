@@ -7,6 +7,7 @@ const { validateChild } = require('../middleware/validate'); // if you have vali
 
 router.get('/', childrenController.listChildren);
 router.get('/:id', childrenController.getChildById);
+router.put('/:id/room', audited('child.assign_room', childrenController.assignRoom));
 router.post('/', validateChild, audited('child.create', childrenController.createChild));
 router.put('/:id', validateChild, audited('child.update', childrenController.updateChild));
 router.delete('/:id', audited('child.delete', childrenController.deleteChild));
