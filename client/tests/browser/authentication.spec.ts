@@ -9,7 +9,7 @@ test('administrator creates an account, first sign-in changes its password, and 
   await page.getByRole('link', { name: 'Accounts', exact: true }).click();
   await page.getByLabel('Username', { exact: true }).fill('browser-viewer');
   await page.getByLabel('Display name', { exact: true }).fill('Browser Viewer');
-  await page.getByLabel('Access', { exact: true }).selectOption('viewer');
+  await page.getByRole('combobox', { name: 'Access', exact: true }).selectOption('viewer');
   await page.getByLabel('Temporary password', { exact: true }).fill('Browser temporary passphrase 20!');
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Account created.');
@@ -54,7 +54,7 @@ test('an administrator disables a signed-in account and the next request clears 
     await other.getByRole('button', { name: 'Save password', exact: true }).click();
     await other.getByRole('link', { name: 'Meals', exact: true }).click();
     await expect(other.getByRole('button', { name: 'Generate Menu' })).toBeEnabled();
-    await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Disable Example (browser-disabled)' });
+    await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption({ label: 'Disable Example (browser-disabled)' });
     await page.getByLabel('Disabled', { exact: true }).check();
     page.once('dialog', (dialog) => { void dialog.accept(); });
     await page.getByRole('button', { name: 'Save account', exact: true }).click();

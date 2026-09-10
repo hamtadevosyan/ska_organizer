@@ -32,3 +32,26 @@ The full embedded run preceded the added reconnect and concurrent-disable tests;
 6. Record the exact tested commit and native results, push the feature branch and open a PR to `development`. Merge after review and passing CI; then close SKAO-20 and its subtasks.
 
 Implementation includes the source, migration, setup runbook and test updates. GitHub push, native/Chromium verification and merge are not claimed by this handoff.
+
+## Ubuntu verification — September 9, 2026
+
+The imported implementation was verified at `ef73bb0dda96875eed7ab95cf923d3d545f480ba`.
+After the browser selector follow-up, the tested revision is recorded in the
+follow-up commit.
+
+| Check | Measured result |
+|---|---|
+| Server mock API suite | 67/67 passed |
+| Native PostgreSQL suite | 73/73 passed across 16 suites; no exclusions |
+| Client production build | Passed |
+| ESLint | Passed with the existing `MealsManagement.tsx` hook-dependency warning |
+| Client React/transport tests | 31/31 passed |
+| Chromium browser suite | 4/4 passed, including sign-in, forced password change, read-only access, account disable/session revocation, catalog corrections and saved-week flows |
+
+Before migration, the configured application database was backed up to a private
+custom-format dump under `/tmp/SKAO-20-backup`. With the backend stopped,
+`004-accounts-and-sessions` applied successfully. Existing database contents and
+`.env` files were preserved; no accounts were created automatically, and no
+reseed or database recreation was performed. `server/.env` now contains the
+development origin `http://192.168.33.132:5173`, matching the existing client API
+host `http://192.168.33.132:3001`.
