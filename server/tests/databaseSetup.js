@@ -23,7 +23,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   if (!connection) db.reset();
   else {
-  const tables = ['MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'Attendances', 'Activities', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
+  const tables = ['MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'Attendances', 'Activities', 'ScheduleEntries', 'Rooms', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
   await connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`);
   }
   await require('./helpers/authenticatedRequest').initialize(require('../index'));

@@ -5,7 +5,7 @@ export function generateEmptyWeek(weekStart) {
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(start);
-    d.setDate(start.getDate() + i);
+    d.setUTCDate(start.getUTCDate() + i);
     const iso = d.toISOString().slice(0, 10);
 
     grid[iso] = {

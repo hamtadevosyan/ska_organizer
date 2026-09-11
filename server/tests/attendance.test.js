@@ -2,6 +2,12 @@ const request = require('./helpers/authenticatedRequest');
 const app = require('../index'); // if index exports app; otherwise create a small test server wrapper
 
 describe('Attendance API', () => {
+  beforeEach(async () => {
+    const db = require('../services/dbAdapter');
+    await db.createRoom({ id: 'test-room', name: 'Test room', ageMinMonths: 24, ageMaxMonths: 72, capacity: 20, active: true });
+    await db.createChild({ id: 'test-child', firstName: 'Test', lastName: 'Child' });
+    await db.createChild({ id: 'test-child-2', firstName: 'Second', lastName: 'Child' });
+  });
   it('GET /api/attendance returns array', async () => {
     const res = await request(app).get('/api/attendance');
     expect(res.statusCode).toBe(200);
@@ -25,4 +31,3 @@ describe('Attendance API', () => {
     expect(res.body.checkOut).not.toBeNull();
   });
 });
-

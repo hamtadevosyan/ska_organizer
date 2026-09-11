@@ -4,6 +4,7 @@ const migrations = [
   { name: '002-weekly-plans', ...require('./migrations/002-weekly-plans') },
   { name: '003-catalog-corrections', ...require('./migrations/003-catalog-corrections') },
   { name: '004-accounts-and-sessions', ...require('./migrations/004-accounts-and-sessions') },
+  { name: '005-rooms-and-classes', ...require('./migrations/005-rooms-and-classes') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

@@ -7,7 +7,7 @@ exports.listChildren = async (req, res, next) => {
       q: req.query.q,
       roomId: req.query.roomId,
       page: req.query.page ? Number(req.query.page) : 1,
-      pageSize: req.query.pageSize ? Number(req.querySize) : 50
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : 50
     };
     const items = await childrenService.listChildren(opts);
     res.json(items);
@@ -63,3 +63,7 @@ exports.deleteChild = async (req, res, next) => {
   }
 };
 
+exports.assignRoom = async (req, res, next) => {
+  try { res.json(await childrenService.assignRoom(req.params.id, req.body)); }
+  catch (error) { next(error); }
+};
