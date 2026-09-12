@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { AsyncLocalStorage } = require('node:async_hooks');
-const { Op, fn, col } = require('sequelize');
+const { Op, fn, col, where: sqlWhere } = require('sequelize');
 const { createConnection } = require('../database/connection');
 const { assertMigrated } = require('../database/migrate');
 const defineModels = require('../database/models');
@@ -141,17 +141,27 @@ exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
   });
 };
 
-const childWhere = ({ q, roomId } = {}) => ({
+const literalLike = (value) => value.replace(/[\\%_]/g, '\\$&');
+const childWhere = ({ q, roomId, active } = {}) => ({
   ...(roomId !== undefined ? { roomId } : {}),
-  ...(q ? { [Op.or]: [{ firstName: { [Op.iLike]: '%' + q + '%' } }, { lastName: { [Op.iLike]: '%' + q + '%' } }] } : {}),
+  ...(active !== undefined ? { active } : {}),
+  ...(q ? { [Op.and]: q.split(/\s+/).map((part) => sqlWhere(fn('concat_ws', ' ', col('firstName'), col('lastName'), col('preferredName')),
+    { [Op.iLike]: '%' + literalLike(part) + '%' })) } : {}),
 });
 exports.listChildren = ({ page = 1, pageSize = 50, ...filters } = {}) => list('Child', {
   where: childWhere(filters), limit: pageSize, offset: (page - 1) * pageSize,
   order: [['firstName', 'ASC'], ['lastName', 'ASC'], ['id', 'ASC']],
 });
 exports.countChildren = (filters) => model('Child').count({ where: childWhere(filters), transaction: transactionContext.getStore() });
+exports.findChildDuplicates = (firstName, lastName, excludeId) => list('Child', {
+  where: {
+    ...(excludeId ? { id: { [Op.ne]: excludeId } } : {}),
+    [Op.and]: [['firstName', firstName], ['lastName', lastName]].map(([key, value]) =>
+      sqlWhere(fn('lower', fn('regexp_replace', fn('btrim', col(key)), '\\s+', ' ', 'g')), value.toLowerCase())),
+  }, order: [['createdAt', 'ASC'], ['id', 'ASC']], limit: 20,
+});
 exports.roomChildCounts = async () => Object.fromEntries((await model('Child').findAll({
-  attributes: ['roomId', [fn('COUNT', col('id')), 'count']], where: { roomId: { [Op.ne]: null } },
+  attributes: ['roomId', [fn('COUNT', col('id')), 'count']], where: { roomId: { [Op.ne]: null }, active: true },
   group: ['roomId'], raw: true, transaction: transactionContext.getStore(),
 })).map((row) => [row.roomId, Number(row.count)]));
 exports.listRooms = ({ includeArchived = false } = {}) => list('Room', {

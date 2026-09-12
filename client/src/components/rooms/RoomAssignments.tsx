@@ -27,7 +27,7 @@ export function RoomAssignments({ rooms, onChanged }: { rooms: Room[]; onChanged
     setLoadingChildren(true);
     const timer = window.setTimeout(() => {
       void axios.get<{ items: ChildOption[]; total: number }>(API_BASE_URL + '/api/children', {
-        params: { q, page, pageSize: 50 }, signal: controller.signal,
+        params: { q, page, pageSize: 50, active: 'true' }, signal: controller.signal,
       }).then((response) => {
         if (!controller.signal.aborted) { setChildren(response.data.items); setTotal(response.data.total); }
       }).catch((failure) => {
@@ -74,7 +74,7 @@ export function RoomAssignments({ rooms, onChanged }: { rooms: Room[]; onChanged
   }
   return <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
     <h2 className="text-xl font-bold">Assign an existing child</h2>
-    <p className="mt-1 text-sm text-slate-600">Check the proposed room count before saving an assignment.</p>
+    <p className="mt-1 text-sm text-slate-600">Choose an actively enrolled child and check the proposed room count before saving.</p>
     {error && <p role="alert" className="mt-3 rounded bg-red-50 p-3 text-red-800">{error}</p>}
     {message && <p role="status" className="mt-3 rounded bg-emerald-50 p-3 text-emerald-800">{message}</p>}
     <form onSubmit={submit}><fieldset disabled={busy} className="mt-4 space-y-4">

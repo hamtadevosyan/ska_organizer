@@ -10,7 +10,7 @@ async function room(values = {}) {
   return result.body.data;
 }
 async function child(values = {}) {
-  const result = await request(app).post('/api/children').send({ firstName: 'Synthetic', lastName: 'Child', ...values });
+  const result = await request(app).post('/api/children').send({ firstName: 'Synthetic', lastName: 'Child', dateOfBirth: '2022-01-15', confirmDuplicate: true, ...values });
   expect(result.status).toBe(201);
   return result.body;
 }
@@ -91,8 +91,8 @@ test('archival preserves children, attendance, activities and schedules and reje
   expect((await request(app).get('/api/schedule/week?roomId=' + target.id + '&start=2026-09-07')).body).toHaveLength(1);
   expect((await request(app).get('/api/activity/' + activity.body.data.id)).status).toBe(200);
   expect((await request(app).put('/api/children/' + unassigned.id + '/room').send({ roomId: target.id })).status).toBe(409);
-  expect((await request(app).post('/api/children').send({ firstName: 'New', lastName: 'Child', roomId: target.id })).status).toBe(409);
-  expect((await request(app).put('/api/children/' + unassigned.id).send({ firstName: 'New', lastName: 'Child', roomId: target.id })).status).toBe(409);
+  expect((await request(app).post('/api/children').send({ firstName: 'New', lastName: 'Child', dateOfBirth: '2022-01-15', roomId: target.id })).status).toBe(409);
+  expect((await request(app).put('/api/children/' + unassigned.id).send({ firstName: 'New', lastName: 'Child', dateOfBirth: '2022-01-15', roomId: target.id })).status).toBe(409);
   expect((await request(app).post('/api/activity').send({ ...activityValues, roomId: target.id })).status).toBe(409);
   expect((await request(app).post('/api/schedule/week').send(week)).status).toBe(409);
   expect((await request(app).post('/api/activity/week').send({ roomId: target.id, weekStart: week.weekStart, week: week.entries })).status).toBe(409);

@@ -7,7 +7,9 @@ exports.listAttendance = (filters) => db.listAttendance(filters);
 exports.getById = (id) => db.getAttendanceById(id);
 exports.checkIn = ({ childId, roomId, recordedBy }) => db.withRoomLock(async () => {
   await rooms.requireRoom(roomId, { active: true });
-  if (!await db.getChildById(childId)) throw problem('Child not found.', 404);
+  const child = await db.getChildById(childId);
+  if (!child) throw problem('Child not found.', 404);
+  if (!child.active) throw Object.assign(problem('This child is not actively enrolled. Reactivate enrollment before checking in.', 409), { code: 'CHILD_INACTIVE' });
   return db.createAttendance({ childId, roomId, recordedBy, checkIn: new Date().toISOString() });
 });
 

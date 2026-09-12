@@ -5,12 +5,12 @@
 - The Rooms & Classes page at `/rooms` lists persisted rooms, their age ranges, configured capacities, active status and assigned-child counts.
 - Administrators create, edit, archive and reactivate rooms. Editors can assign existing children; read-only accounts can view rooms and counts.
 - Ages are entered as whole months, from 0 to 216. Minimum age cannot exceed maximum age. Capacity is a positive integer. These capacities are operational settings, not a determination of licensing compliance.
-- An assignment that would exceed capacity returns a warning and requires explicit acknowledgement before it is saved. Transfers and removal of assignments update the counts. Counts include all assigned children, regardless of pagination.
+- An assignment that would exceed capacity returns a warning and requires explicit acknowledgement before it is saved. Transfers and removal of assignments update the counts. After SKAO-22, counts include all actively enrolled assigned children, regardless of pagination. Ending enrollment frees the place while preserving the room reference.
 - Archived rooms remain available for history. Existing child assignments, attendance, activities and schedule records remain attached. New child assignments, new activity room assignments, check-ins and schedule writes to archived rooms are rejected.
 - A child or activity already assigned to an archived room can keep that same reference while other details are edited. Children can be moved out of archived rooms, and existing attendance can be checked out.
 - The Activity Planner and existing `/schedule` page load room choices from the database. The schedule page also supports viewing archived-room history.
 
-The child API previously read a separate in-memory demo store. It now uses the configured database adapter, including the existing Children table, with a nullable current `roomId`. This change does not import hardcoded demo children or demo enrollments. The complete Children page and enrollment lifecycle remain SKAO-22.
+The child API previously read a separate in-memory demo store. It now uses the configured database adapter, including the existing Children table, with a nullable current `roomId`. This change does not import hardcoded demo children or demo enrollments. The Children page and enrollment lifecycle are documented in [child-roster.md](child-roster.md).
 
 The existing schedule page depended on missing service/adapter methods. This change supplies the minimum room-aware persistence and validation needed by that page. The full activity planning story remains SKAO-27.
 

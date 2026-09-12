@@ -49,6 +49,7 @@ module.exports = (sequelize) => {
     id: id(), firstName: DataTypes.STRING, lastName: DataTypes.STRING,
     dateOfBirth: DataTypes.DATEONLY, preferredName: DataTypes.STRING,
     photoConsent: DataTypes.BOOLEAN, notes: DataTypes.TEXT, roomId: DataTypes.STRING,
+    active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   });
   const Attendance = sequelize.define('Attendance', {
     id: id(), childId: { type: DataTypes.STRING, allowNull: false },

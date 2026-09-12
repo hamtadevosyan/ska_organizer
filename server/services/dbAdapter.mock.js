@@ -39,9 +39,11 @@ const mock = {
 };
 
 let transactionQueue = Promise.resolve();
-const filteredChildren = ({ q, roomId } = {}) => mock.children
-  .filter((c) => (roomId === undefined || c.roomId === roomId) &&
-    (!q || [c.firstName, c.lastName].some((name) => (name || '').toLowerCase().includes(q.toLowerCase()))))
+const searchName = (child) => [child.firstName, child.lastName, child.preferredName].filter(Boolean).join(' ').toLowerCase();
+const normalizeName = (name) => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+const filteredChildren = ({ q, roomId, active } = {}) => mock.children
+  .filter((c) => (roomId === undefined || c.roomId === roomId) && (active === undefined || c.active === active) &&
+    (!q || q.toLowerCase().split(/\s+/).every((part) => searchName(c).includes(part))))
   .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || '') || (a.lastName || '').localeCompare(b.lastName || '') || a.id.localeCompare(b.id));
 const inScheduleWeek = (entry, roomId, weekStart) => {
   const end = new Date(weekStart + 'T00:00:00Z');
@@ -75,7 +77,7 @@ module.exports = {
   },
   roomChildCounts: async () => {
     const counts = Object.create(null);
-    for (const child of mock.children) if (child.roomId != null) counts[child.roomId] = (counts[child.roomId] || 0) + 1;
+    for (const child of mock.children) if (child.active && child.roomId != null) counts[child.roomId] = (counts[child.roomId] || 0) + 1;
     return counts;
   },
   countChildren: async (filters) => filteredChildren(filters).length,
@@ -124,11 +126,14 @@ module.exports = {
   listChildren: async ({ page = 1, pageSize = 50, ...filters } = {}) =>
     structuredClone(filteredChildren(filters).slice((page - 1) * pageSize, page * pageSize)),
 
+  findChildDuplicates: async (firstName, lastName, excludeId) => structuredClone(mock.children.filter((child) =>
+    child.id !== excludeId && normalizeName(child.firstName) === normalizeName(firstName) && normalizeName(child.lastName) === normalizeName(lastName)).slice(0, 20)),
+
   getChildById: async (id) =>
     mock.children.find((c) => c.id === id) || null,
 
   createChild: async (payload) => {
-    const rec = { id: payload.id || mock.uuid(), ...payload };
+    const rec = { id: payload.id || mock.uuid(), active: true, roomId: null, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...payload };
     mock.children.push(rec);
     return rec;
   },
@@ -136,7 +141,7 @@ module.exports = {
   updateChild: async (id, changes) => {
     const idx = mock.children.findIndex((c) => c.id === id);
     if (idx === -1) return null;
-    mock.children[idx] = { ...mock.children[idx], ...changes };
+    mock.children[idx] = { ...mock.children[idx], ...changes, updatedAt: mock.nowIso() };
     return mock.children[idx];
   },
 
