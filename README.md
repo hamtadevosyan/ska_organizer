@@ -165,3 +165,9 @@ node index.js
 
 3. Open Browser
 http://localhost:5173 or http://YOUR_IP:5173
+
+
+Child roster and enrollment
+
+- [Feature and API documentation](docs/child-roster.md)
+- [SKAO-22 manual Ubuntu installation and verification](docs/SKAO-22-manual-install.md)

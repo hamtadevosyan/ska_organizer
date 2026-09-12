@@ -13,23 +13,6 @@ exports.validateCheckin = (req, res, next) => {
   next();
 };
 
-const childSchema = Joi.object({
-  firstName: Joi.string().trim().required(),
-  lastName: Joi.string().trim().required(),
-  dateOfBirth: Joi.date().iso().optional(),
-  preferredName: Joi.string().trim().optional().allow(''),
-  photoConsent: Joi.boolean().optional(),
-  notes: Joi.string().trim().optional().allow(''),
-  roomId: Joi.string().max(255).allow(null).optional(),
-  confirmOverCapacity: Joi.boolean().strict().optional()
-});
-
-exports.validateChild = (req, res, next) => {
-  const { error } = childSchema.validate(req.body, { abortEarly: false, convert: true });
-  if (error) return res.status(400).json({ error: 'Invalid child payload', details: error.details.map(d => d.message) });
-  next();
-};
-
 const activitySchema = Joi.object({
   name: Joi.string().trim().required(),
   description: Joi.string().trim().optional().allow(''),

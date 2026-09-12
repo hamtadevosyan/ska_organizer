@@ -71,7 +71,7 @@ export default function Rooms() {
   const fieldError = (name: string) => fields[name] && <p id={'room-error-' + name} className="mt-1 text-sm text-red-700">{fields[name]}</p>;
   return <div className="mx-auto max-w-6xl space-y-6 p-2 sm:p-6">
     <header className="flex flex-wrap items-center justify-between gap-4">
-      <div><h1 className="text-3xl font-bold text-slate-900">Rooms &amp; Classes</h1><p className="mt-2 text-slate-600">Manage room settings and see where children are assigned.</p></div>
+      <div><h1 className="text-3xl font-bold text-slate-900">Rooms &amp; Classes</h1><p className="mt-2 text-slate-600">Manage room settings and see where actively enrolled children are assigned.</p></div>
       <div className="flex gap-3"><button disabled={busy || loading} onClick={() => void refresh()} className="rounded-lg border bg-white px-4 py-2 disabled:opacity-50">Refresh rooms</button>
         {admin && <button disabled={busy} onClick={() => open(null)} className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white"><Plus size={18} />Add room</button>}</div>
     </header>

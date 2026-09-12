@@ -20,18 +20,19 @@ exports.listRooms = async ({ includeArchived = false } = {}) => {
   const [rooms, counts] = await Promise.all([db.listRooms({ includeArchived }), db.roomChildCounts()]);
   return rooms.map((room) => summarize(room, Object.hasOwn(counts, room.id) ? counts[room.id] : 0));
 };
-exports.getRoom = async (id) => summarize(await requireRoom(id), await db.countChildren({ roomId: id }));
+exports.getRoom = async (id) => summarize(await requireRoom(id), await db.countChildren({ roomId: id, active: true }));
 exports.createRoom = (payload) => db.withRoomLock(async () => summarize(await db.createRoom(validateRoom(payload)), 0));
 exports.updateRoom = (id, payload) => db.withRoomLock(async () => {
   const previous = await requireRoom(id);
   const room = await db.updateRoom(id, validateRoom(payload, previous));
-  return summarize(room, await db.countChildren({ roomId: id }));
+  return summarize(room, await db.countChildren({ roomId: id, active: true }));
 });
 exports.assignmentPreview = (id, childId) => db.withRoomLock(async () => {
   const child = await db.getChildById(childId);
   if (!child) throw problem('Child not found.', 404);
+  if (!child.active) throw Object.assign(problem('Reactivate enrollment before assigning a room.', 409), { code: 'CHILD_INACTIVE' });
   const room = await requireRoom(id, { active: child.roomId !== id });
-  const count = await db.countChildren({ roomId: id });
+  const count = await db.countChildren({ roomId: id, active: true });
   const proposedChildCount = count + (child.roomId === id ? 0 : 1);
   return {
     room: summarize(room, count), childId, proposedChildCount,
@@ -45,7 +46,7 @@ exports.checkAssignment = async (id, previousId, confirmOverCapacity = false) =>
   roomId(id, true);
   if (id === null || id === previousId) return;
   const room = await requireRoom(id, { active: true });
-  const count = await db.countChildren({ roomId: id });
+  const count = await db.countChildren({ roomId: id, active: true });
   if (count + 1 > room.capacity && !confirmOverCapacity) {
     throw Object.assign(problem('This assignment would exceed the configured capacity. Confirm the capacity warning to continue.', 409), {
       code: 'ROOM_CAPACITY_WARNING',

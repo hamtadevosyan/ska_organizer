@@ -49,7 +49,7 @@ test('rooms, current assignments and archived history survive reconnecting to Po
   const created = await request(app).post('/api/rooms').send({ name: 'Persistent room', ageMinMonths: 24, ageMaxMonths: 60, capacity: 10 });
   expect(created.status).toBe(201);
   const roomId = created.body.data.id;
-  const child = await request(app).post('/api/children').send({ firstName: 'Persistent', lastName: 'Child', roomId });
+  const child = await request(app).post('/api/children').send({ firstName: 'Persistent', lastName: 'Child', dateOfBirth: '2022-01-15', roomId });
   expect(child.status).toBe(201);
   expect((await request(app).put('/api/rooms/' + roomId).send({ active: false })).status).toBe(200);
   await db.close();
