@@ -75,5 +75,5 @@ exports.getProfile = async (id) => {
   if (!child) return null;
   const recentAttendance = (await db.listAttendance({ childId: id }))
     .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn)).slice(0, 10);
-  return { child, room: child.roomId ? await db.getRoomById(child.roomId) : null, recentAttendance };
+  return { child, room: child.roomId ? await db.getRoomById(child.roomId) : null, recentAttendance, timeZone: require('./facilityTime').timeZone() };
 };

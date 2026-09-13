@@ -55,6 +55,16 @@ module.exports = (sequelize) => {
     id: id(), childId: { type: DataTypes.STRING, allowNull: false },
     roomId: DataTypes.STRING, checkIn: DataTypes.DATE,
     checkOut: DataTypes.DATE, recordedBy: DataTypes.STRING,
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    voided: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    needsReview: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    requestId: DataTypes.STRING(100),
+  }, { timestamps: false });
+  const AttendanceCorrection = sequelize.define('AttendanceCorrection', {
+    id: id(), attendanceId: { type: DataTypes.STRING, allowNull: false },
+    before: { type: DataTypes.JSONB, allowNull: false }, after: { type: DataTypes.JSONB, allowNull: false },
+    reason: { type: DataTypes.STRING(1000), allowNull: false }, actorId: { type: DataTypes.STRING, allowNull: false },
+    actorUsername: { type: DataTypes.STRING(64), allowNull: false }, occurredAt: { type: DataTypes.DATE, allowNull: false },
   }, { timestamps: false });
   const Activity = require('../models/activity')(sequelize, DataTypes);
   const ScheduleEntry = require('../models/scheduleEntry')(sequelize, DataTypes);
@@ -78,5 +88,5 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection };
 };

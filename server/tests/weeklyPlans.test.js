@@ -114,3 +114,29 @@ test('imports the earlier undated menu into an explicit week without overwriting
   await save(A, imported);
   expect(await db.getConfirmedMenu()).toEqual(legacy);
 });
+
+test('a daily attendance count changes only that day and survives save/reload without affecting another week', async () => {
+  const otherWeek = await save(B, await preview(B));
+  const counts = { '2026-09-08': 2 };
+  const calculated = await preview(A, { dailyChildrenCounts: counts });
+  // Monday 4+1, Tuesday 2+1, Wednesday 4+1 = 13 eggs; stock stays 2.
+  expect(calculated).toMatchObject({ childrenCount: 4, staffCount: 1, dailyChildrenCounts: counts, items: [{ quantity: 13, toBuy: 11 }] });
+  expect(await api('get', A)).toBeNull();
+  const saved = await save(A, calculated);
+  expect(await api('get', A)).toEqual(saved);
+  expect((await api('get', A + '/shopping')).meta.dailyChildrenCounts).toEqual(counts);
+  expect(await api('get', B)).toEqual(otherWeek);
+  const changedDefault = await preview(A, { version: 1, childrenCount: 6, dailyChildrenCounts: counts });
+  expect(changedDefault.items[0].quantity).toBe(17);
+  const zeroPresent = await preview(A, { version: 1, staffCount: 0, dailyChildrenCounts: { '2026-09-08': 0 } });
+  expect(zeroPresent.items[0].quantity).toBe(8);
+});
+
+test.each([
+  [], '2', { '2026-09-08': -1 }, { '2026-09-08': 1.5 }, { '2026-09-08': '2' },
+  { '2026-09-08': null }, { '2026-09-08': true }, { '2026-09-08': Number.MAX_SAFE_INTEGER },
+  { '2026-09-12': 2 }, { '2026-09-15': 2 }, { 'invalid-date': 2 },
+])('rejects invalid daily child counts %p without saving a plan', async (dailyChildrenCounts) => {
+  await api('post', A + '/preview', { ...draft, dailyChildrenCounts }, 400);
+  expect(await api('get', A)).toBeNull();
+});

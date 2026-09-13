@@ -4,7 +4,9 @@ const Joi = require('joi');
 const checkinSchema = Joi.object({
   childId: Joi.string().trim().required(),
   roomId: Joi.string().trim().required(),
-  recordedBy: Joi.string().trim().optional()
+  recordedBy: Joi.string().trim().optional(),
+  date: Joi.string().optional(),
+  requestId: Joi.string().optional()
 });
 
 exports.validateCheckin = (req, res, next) => {

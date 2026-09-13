@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 const navItems = [
+  { to: "/attendance", label: "Attendance", icon: <CalendarDays size={20} /> },
   { to: "/children", label: "Children", icon: <Users size={20} /> },
   { to: "/rooms", label: "Rooms & Classes", icon: <Building2 size={20} /> },
   {

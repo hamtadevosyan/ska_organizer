@@ -29,6 +29,50 @@ const saveButton = () => screen.getByRole('button', { name: 'Save Menu' });
 const printButton = () => screen.getByRole('button', { name: 'Print List' });
 const table = () => screen.getByRole('table');
 
+it('reviews attendance explicitly, changes only today, and preserves other daily drafts and future weeks', async () => {
+  render(<MealPlanner canWrite />);
+  await flush();
+  input('Children for Wednesday', '6');
+  fireEvent.click(screen.getByRole('button', { name: 'Review today’s attendance count' }));
+  await act(async () => {});
+  expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(4);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply count to 2026-09-08 only' }));
+  await flush();
+  expect(screen.getByLabelText('Children')).toHaveValue(4);
+  expect(screen.getByLabelText('Staff')).toHaveValue(1);
+  expect(screen.getByLabelText('Children for Monday')).toHaveValue(4);
+  expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(2);
+  expect(screen.getByLabelText('Children for Wednesday')).toHaveValue(6);
+  expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/preview'), expect.objectContaining({ dailyChildrenCounts: { '2026-09-08': 2, '2026-09-09': 6 } }), expect.anything());
+  expect(axios.put).not.toHaveBeenCalled();
+  input('Week starting Monday', secondWeek);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Review today’s attendance count' })).toBeDisabled();
+  expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(4);
+  input('Children', '9');
+  input('Week starting Monday', firstWeek); await flush();
+  expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(2);
+  expect(screen.getByLabelText('Children for Wednesday')).toHaveValue(6);
+});
+
+it('rejects a midnight attendance sample and ignores a response from a week that was left', async () => {
+  render(<MealPlanner canWrite />); await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Review today’s attendance count' }));
+  await act(async () => {});
+  vi.mocked(axios.get).mockResolvedValueOnce({ data: { today: '2026-09-09', timeZone: 'America/Los_Angeles' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply count to 2026-09-08 only' }));
+  await act(async () => {});
+  expect(screen.getByText('The facility date changed. Read today’s attendance again.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(4);
+  const late = deferred<{ data: { date: string; timeZone: string; takenAt: string; childrenCount: number } }>();
+  vi.mocked(axios.get).mockReturnValueOnce(late.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Review today’s attendance count' }));
+  input('Week starting Monday', secondWeek); await flush();
+  await act(async () => late.resolve({ data: { date: '2026-09-08', timeZone: 'America/Los_Angeles', takenAt: '2026-09-08T17:00:00Z', childrenCount: 2 } }));
+  expect(screen.queryByRole('button', { name: 'Apply count to 2026-09-08 only' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(4);
+});
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.resetAllMocks();
@@ -36,11 +80,18 @@ beforeEach(() => {
   localStorage.setItem('skao.planner.week', firstWeek);
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   vi.mocked(axios.isAxiosError).mockImplementation((error): error is import('axios').AxiosError => !!error && typeof error === 'object' && 'response' in error);
-  vi.mocked(axios.get).mockImplementation(async (path) => path.endsWith('/api/meals')
-    ? response([eggMeal, oats]) : response(savedPlan(path.endsWith(secondWeek) ? secondWeek : firstWeek)));
+  vi.mocked(axios.get).mockImplementation(async (path) => path.endsWith('/attendance/config')
+    ? { data: { today: '2026-09-08', timeZone: 'America/Los_Angeles' } }
+    : path.endsWith('/attendance/today-headcount')
+      ? { data: { date: '2026-09-08', timeZone: 'America/Los_Angeles', takenAt: '2026-09-08T17:00:00Z', childrenCount: 2 } }
+      : path.endsWith('/api/meals') ? response([eggMeal, oats]) : response(savedPlan(path.endsWith(secondWeek) ? secondWeek : firstWeek)));
   vi.mocked(axios.post).mockImplementation(async (path, body) => {
-    const draft = body as { childrenCount: number; staffCount: number; inHouse: Record<string, number> };
-    const quantity = (draft.childrenCount + draft.staffCount) * 3;
+    const draft = body as { childrenCount: number; staffCount: number; inHouse: Record<string, number>; dailyChildrenCounts?: Record<string, number> };
+    const monday = path.includes(secondWeek) ? secondWeek : firstWeek;
+    const quantity = [0, 1, 2].reduce((sum, offset) => {
+      const date = new Date(monday + 'T12:00:00Z'); date.setUTCDate(date.getUTCDate() + offset);
+      return sum + (draft.dailyChildrenCounts?.[date.toISOString().slice(0, 10)] ?? draft.childrenCount) + draft.staffCount;
+    }, 0);
     const inStorage = draft.inHouse.egg || 0;
     return response({ ...savedPlan(path.includes(secondWeek) ? secondWeek : firstWeek), ...draft,
       previewToken: `reviewed-${draft.childrenCount}-${inStorage}`,
