@@ -171,3 +171,8 @@ Child roster and enrollment
 
 - [Feature and API documentation](docs/child-roster.md)
 - [SKAO-22 manual Ubuntu installation and verification](docs/SKAO-22-manual-install.md)
+
+Daily attendance
+
+- [Arrivals, departures, corrections and meal counts](docs/daily-attendance.md)
+- [SKAO-23 manual Ubuntu installation and verification](docs/SKAO-23-manual-install.md)

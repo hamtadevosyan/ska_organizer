@@ -11,7 +11,8 @@ export type ChildSettings = Pick<ChildRecord, 'firstName' | 'lastName' | 'prefer
 export type ChildMatch = Pick<ChildRecord, 'id' | 'firstName' | 'lastName' | 'dateOfBirth' | 'active' | 'roomId'>;
 export type ChildProfile = {
   child: ChildRecord; room: Pick<Room, 'id' | 'name' | 'active'> | null;
-  recentAttendance: { id: string; roomId: string | null; checkIn: string; checkOut: string | null }[];
+  timeZone: string;
+  recentAttendance: { id: string; roomId: string | null; checkIn: string | null; checkOut: string | null; voided?: boolean }[];
 };
 export type RosterFilters = { q: string; roomId?: string; active: 'true' | 'false' | 'all'; page: number; pageSize: number };
 const url = API_BASE_URL + '/api/children';

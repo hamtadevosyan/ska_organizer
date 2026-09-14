@@ -8,6 +8,7 @@ export type ShoppingItem = {
 };
 export type Plan = {
   weekStart: string; week: MenuDay[]; childrenCount: number; staffCount: number;
+  dailyChildrenCounts?: Record<string, number>;
   inHouse: Record<string, number>; items: ShoppingItem[]; version: number;
   savedAt?: string; previewToken?: string;
   warnings?: { day: string; slot: MealType; mealId: string; mealName: string; message: string }[];
@@ -16,6 +17,7 @@ export type Draft = {
   week: MenuDay[]; childrenCount: string; staffCount: string;
   inHouse: Record<string, number | ''>; version: number;
   refreshRecipes?: boolean;
+  dailyChildrenCounts?: Record<string, string>;
 };
 export function mondayOf(date: string) {
   const day = new Date(`${date}T12:00:00Z`);
@@ -30,6 +32,7 @@ export function currentMonday() {
 }
 export const fromPlan = (plan: Plan): Draft => ({ week: plan.week,
   childrenCount: String(plan.childrenCount), staffCount: String(plan.staffCount),
+  ...(plan.dailyChildrenCounts ? { dailyChildrenCounts: Object.fromEntries(Object.entries(plan.dailyChildrenCounts).map(([date, count]) => [date, String(count)])) } : {}),
   inHouse: plan.inHouse, version: plan.version });
 export function validationError(draft: Draft) {
   const counts = [draft.childrenCount, draft.staffCount];
@@ -40,5 +43,15 @@ export function validationError(draft: Draft) {
   if (!Object.values(draft.inHouse).every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0)) {
     return 'In-house quantities must be non-negative numbers.';
   }
+  if (!Object.values(draft.dailyChildrenCounts || {}).every((n) => n.trim() !== '' && Number.isSafeInteger(Number(n)) && Number(n) >= 0 && Number.isSafeInteger(Number(n) + Number(draft.staffCount)))) {
+    return 'Daily child counts must be non-negative whole numbers.';
+  }
   return '';
+}
+export function dateOfDay(weekStart: string, day: string) {
+  const index = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].indexOf(day);
+  if (index < 0) return '';
+  const date = new Date(weekStart + 'T12:00:00Z');
+  date.setUTCDate(date.getUTCDate() + index);
+  return date.toISOString().slice(0, 10);
 }

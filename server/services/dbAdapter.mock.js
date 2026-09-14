@@ -7,7 +7,7 @@ const mock = {
   rooms: [], scheduleEntries: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [],
-  attendance: [],
+  attendance: [], attendanceCorrections: [],
   activities: [],
   meals: [
     { id: "meal-1", name: "Oatmeal", type: "breakfast", description: "" },
@@ -101,6 +101,7 @@ module.exports = {
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = [];
     mock.attendance = [];
+    mock.attendanceCorrections = [];
     mock.activities = [];
     mock.meals = [];
     mock.ingredients = [];
@@ -155,9 +156,24 @@ module.exports = {
   // ------------------------------------------------------
   // ATTENDANCE  (YOUR ORIGINAL FUNCTIONS — RESTORED)
   // ------------------------------------------------------
-  listAttendance: async ({ roomId, childId, date } = {}) => structuredClone(mock.attendance.filter((row) =>
-    (!roomId || row.roomId === roomId) && (!childId || row.childId === childId) &&
-    (!date || row.checkIn?.slice(0, 10) === date))),
+  listAttendance: async ({ roomId, childId, date, from, to, openOnly = false, includeVoided = true, needsReview } = {}) => {
+    if (date) ({ from, to } = require('./facilityTime').dayBounds(date));
+    return structuredClone(mock.attendance.filter((row) =>
+      (!roomId || row.roomId === roomId) && (!childId || row.childId === childId) &&
+      (includeVoided || !row.voided) && (!openOnly || !row.checkOut) &&
+      (needsReview === undefined || row.needsReview === needsReview) &&
+      (!to || (row.checkIn && new Date(row.checkIn) < new Date(to))) &&
+      (!from || !row.checkOut || new Date(row.checkOut) > new Date(from) || new Date(row.checkIn) >= new Date(from)))
+      .sort((a, b) => new Date(a.checkIn || 0) - new Date(b.checkIn || 0) || a.id.localeCompare(b.id)));
+  },
+  getAttendanceByRequestId: async (requestId) => structuredClone(mock.attendance.find((row) => row.requestId === requestId) || null),
+  createAttendanceCorrection: async (values) => {
+    const record = { id: mock.uuid(), ...structuredClone(values) };
+    mock.attendanceCorrections.push(record);
+    return structuredClone(record);
+  },
+  listAttendanceCorrections: async (attendanceId) => structuredClone(mock.attendanceCorrections.filter((row) => row.attendanceId === attendanceId)
+    .sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt) || a.after.version - b.after.version)),
 
   getAttendanceById: async (id) =>
     mock.attendance.find((a) => a.id === id) || null,
@@ -167,6 +183,7 @@ module.exports = {
       id: mock.uuid(),
       checkIn: mock.nowIso(),
       checkOut: null,
+      version: 1, voided: false, needsReview: false, requestId: null,
       ...payload
     };
     mock.attendance.push(rec);

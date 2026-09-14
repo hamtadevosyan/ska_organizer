@@ -78,6 +78,7 @@ export function useWeeklyPlan(enabled = true) {
       try {
         const { data } = await axios.post(`${url(weekStart)}/preview`, {
           ...draft, childrenCount: Number(draft.childrenCount), staffCount: Number(draft.staffCount),
+          ...(draft.dailyChildrenCounts ? { dailyChildrenCounts: Object.fromEntries(Object.entries(draft.dailyChildrenCounts).map(([date, count]) => [date, Number(count)])) } : {}),
         }, { signal: controller.signal });
         if (!active || request !== sequence.current) return;
         patch(weekStart, (old) => keyOf(old.draft) !== inputKey ? old : {
@@ -99,10 +100,10 @@ export function useWeeklyPlan(enabled = true) {
     return () => window.removeEventListener('beforeunload', guard);
   }, [anyDirty]);
 
-  const update = (change: Partial<Draft>) => {
+  const update = (change: Partial<Draft> | ((draft: Draft) => Partial<Draft>)) => {
     sequence.current++;
     patch(weekStart, (old) => ({ ...old,
-      draft: { ...old.draft, ...change }, dirty: true, calculatedKey: undefined,
+      draft: { ...old.draft, ...(typeof change === 'function' ? change(old.draft) : change) }, dirty: true, calculatedKey: undefined,
       calculationError: '', message: '', messageType: 'info',
     }));
   };

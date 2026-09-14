@@ -12,9 +12,10 @@ import {
 } from 'lucide-react';
 import { API_BASE_URL } from '../../lib/api';
 
-import { MEAL_TYPES } from './weeklyPlan';
+import { MEAL_TYPES, dateOfDay } from './weeklyPlan';
 import type { Meal, MealType, ShoppingItem } from './weeklyPlan';
 import { useWeeklyPlan } from './useWeeklyPlan';
+import { AttendanceHeadcount } from './AttendanceHeadcount';
 
 type MessageType = 'success' | 'error' | 'info';
 
@@ -95,7 +96,7 @@ const convertFromUS = (
 const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWrite?: boolean; active?: boolean; onEditRecipe?: (id: string) => void }) => {
   const planner = useWeeklyPlan(active);
   const { entry, update, isBusy, actionLoading, ready } = planner;
-  const { week: weeklyMenu, childrenCount, staffCount, inHouse: inStock } = entry.draft;
+  const { week: weeklyMenu, childrenCount, staffCount, inHouse: inStock, dailyChildrenCounts = {} } = entry.draft;
   const { message, messageType } = entry;
   const hasSaved = !!entry.savedAt && !entry.dirty;
   const shoppingItems = entry.preview?.items || [];
@@ -236,6 +237,10 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
         </div>
       </section>
 
+      {active && canWrite && !isBusy && <AttendanceHeadcount key={planner.weekStart} disabled={isBusy}
+        dates={weeklyMenu.map((day) => dateOfDay(planner.weekStart, day.day))}
+        onApply={(date, count) => update((draft) => ({ dailyChildrenCounts: { ...draft.dailyChildrenCounts, [date]: String(count) } }))} />}
+
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr] print:hidden">
         <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -273,6 +278,15 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
                   <h4 className="mb-4 text-lg font-bold text-emerald-700">
                     {day.day}
                   </h4>
+                  <label className="mb-3 block text-sm text-slate-600">Children for {day.day}
+                    <input type="number" min="0" step="1" disabled={isBusy}
+                      value={dailyChildrenCounts[dateOfDay(planner.weekStart, day.day)] ?? childrenCount}
+                      onChange={(event) => update({ dailyChildrenCounts: { ...dailyChildrenCounts, [dateOfDay(planner.weekStart, day.day)]: event.target.value } })}
+                      className="mt-1 block w-full rounded-lg border border-emerald-100 bg-white px-3 py-2 text-slate-900" />
+                  </label>
+                  {dailyChildrenCounts[dateOfDay(planner.weekStart, day.day)] !== undefined && <button type="button" disabled={isBusy}
+                    onClick={() => { const counts = { ...dailyChildrenCounts }; delete counts[dateOfDay(planner.weekStart, day.day)]; update({ dailyChildrenCounts: counts }); }}
+                    className="mb-3 text-xs font-semibold text-emerald-800 underline">Use weekly default ({childrenCount})</button>}
 
                   {MEAL_SLOTS.map((slot) => (
                     <MealSelectLine
@@ -403,8 +417,11 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
               <h3 className="text-2xl font-bold">Printable Shopping List</h3>
             </div>
             <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
-              Week of {planner.weekStart} · {childrenCount} children · {staffCount} staff. Quantities after subtracting stock.
+              Week of {planner.weekStart} · Default: {childrenCount} children · {staffCount} staff. Quantities after subtracting stock.
             </p>
+            {Object.entries(dailyChildrenCounts).length > 0 && <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
+              Daily child counts: {Object.entries(dailyChildrenCounts).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => `${date}: ${count}`).join(' · ')}.
+            </p>}
           </div>
 
           <div className="flex items-center gap-2 print:hidden">

@@ -38,7 +38,7 @@ Responses retain the existing children API shape, without an extra `data` envelo
 | GET | `/api/children?active=false` | Inactive roster |
 | GET | `/api/children?active=all&roomId=unassigned` | All unassigned children |
 | GET | `/api/children/:id` | Active or inactive child record |
-| GET | `/api/children/:id/profile` | `{ child, room, recentAttendance }` |
+| GET | `/api/children/:id/profile` | `{ child, room, recentAttendance, timeZone }`; attendance uses the facility time zone |
 | POST | `/api/children` | Create; returns 201 |
 | PUT | `/api/children/:id` | Update supplied profile/enrollment fields |
 | PUT | `/api/children/:id/enrollment` | Change `active`, with optional `roomId` and capacity confirmation |
@@ -55,4 +55,4 @@ New coverage is supplied in `server/tests/childRoster.test.js`, `server/tests/ch
 
 Run the automated and manual checks in [SKAO-22-manual-install.md](SKAO-22-manual-install.md). Final tests, PostgreSQL integration and merge are performed by the user. No new dependencies or environment variables are required.
 
-The separate room age-range defect remains tracked in SKAO-43. Full attendance entry, parent onboarding, billing and document collection remain later work.
+The separate room age-range defect remains tracked in SKAO-43. Daily attendance entry is described in [Daily attendance](daily-attendance.md). Parent onboarding, billing and document collection remain later work.

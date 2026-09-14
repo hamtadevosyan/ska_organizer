@@ -32,6 +32,17 @@ exports.preview = (weekStart, input) => db.withCatalogLock(async () => {
   const { week, childrenCount, staffCount, version, inHouse = {}, refreshRecipes = false } = input;
   if (typeof refreshRecipes !== 'boolean') throw problem('refreshRecipes must be true or false.');
   validateCounts(childrenCount, staffCount);
+  const dailyChildrenCounts = input.dailyChildrenCounts ?? {};
+  const dayDate = (day) => {
+    const date = new Date(weekStart + 'T12:00:00Z');
+    date.setUTCDate(date.getUTCDate() + DAYS.indexOf(day));
+    return date.toISOString().slice(0, 10);
+  };
+  if (typeof dailyChildrenCounts !== 'object' || Array.isArray(dailyChildrenCounts) ||
+      Object.entries(dailyChildrenCounts).some(([date, count]) => !DAYS.some((day) => dayDate(day) === date) ||
+        !Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(count + staffCount))) {
+    throw problem('Daily child counts must be non-negative whole numbers for weekdays in this plan.');
+  }
   validateVersion(version);
   if (!inHouse || typeof inHouse !== 'object' || Array.isArray(inHouse) ||
       !Object.values(inHouse).every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0)) {
@@ -89,7 +100,7 @@ exports.preview = (weekStart, input) => db.withCatalogLock(async () => {
         if (!Number.isFinite(quantityPerPerson) || quantityPerPerson <= 0) continue;
         const item = totals.get(ingredient.id) || { ingredient, quantity: 0 };
         if (item.ingredient.unit !== ingredient.unit) throw problem(`Conflicting units for ${ingredient.name}; choose a consistent recipe.`);
-        item.quantity += quantityPerPerson * (childrenCount + staffCount);
+        item.quantity += quantityPerPerson * ((dailyChildrenCounts[dayDate(day.day)] ?? childrenCount) + staffCount);
         if (!Number.isFinite(item.quantity)) throw problem('The required quantity is too large.');
         totals.set(ingredient.id, item);
       }
@@ -104,6 +115,7 @@ exports.preview = (weekStart, input) => db.withCatalogLock(async () => {
     return { ...item, quantity, inStorage, toBuy: Math.max(0, Math.round((quantity - inStorage) * 1e6) / 1e6) };
   });
   const snapshot = { weekStart, week: canonicalWeek, childrenCount, staffCount, recipes,
+    ...(Object.keys(dailyChildrenCounts).length ? { dailyChildrenCounts } : {}),
     inHouse: Object.fromEntries(items.map((i) => [i.ingredient.id, i.inStorage])), items };
   return { ...snapshot, version, warnings, ...(warnings.length ? {} : { previewToken: encode(snapshot, version) }) };
 });
@@ -119,7 +131,8 @@ exports.shopping = async (weekStart) => {
   const plan = await exports.get(weekStart);
   if (!plan) throw problem('No saved menu for this week.', 404);
   return { weekStart, version: plan.version, generatedAt: plan.savedAt, items: plan.items,
-    meta: { childrenCount: plan.childrenCount, staffCount: plan.staffCount, totalPeople: plan.childrenCount + plan.staffCount } };
+    meta: { childrenCount: plan.childrenCount, staffCount: plan.staffCount, totalPeople: plan.childrenCount + plan.staffCount,
+      ...(plan.dailyChildrenCounts ? { dailyChildrenCounts: plan.dailyChildrenCounts } : {}) } };
 };
 
 exports.importLegacy = async (weekStart) => {

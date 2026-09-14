@@ -4,8 +4,9 @@ import { childName, getChildProfile } from '../../api/children';
 import type { ChildProfile as Profile } from '../../api/children';
 import type { Room } from '../../api/rooms';
 import { authError } from '../../auth/transport';
+import { attendanceTime } from '../../api/attendance';
 
-export function ChildProfile({ id, rooms, onClose }: { id: string; rooms: Room[]; onClose: () => void }) {
+export function ChildProfile({ id, rooms, onClose }: { id: string; rooms: Pick<Room, 'id' | 'name'>[]; onClose: () => void }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -28,12 +29,12 @@ export function ChildProfile({ id, rooms, onClose }: { id: string; rooms: Room[]
         <div><dt className="text-slate-500">Room</dt><dd>{profile.room ? profile.room.name + (profile.room.active ? '' : ' (archived)') : 'Unassigned'}</dd></div>
       </dl>
       <div><h3 className="font-semibold">Operational notes</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{profile.child.notes || 'No notes recorded.'}</p></div>
-      <div><h3 className="font-semibold">Recent attendance</h3><p className="mt-1 text-sm text-slate-500">The 10 most recent records, including attendance before room or enrollment changes.</p>
+      <div><h3 className="font-semibold">Recent attendance</h3><p className="mt-1 text-sm text-slate-500">The 10 most recent records, including attendance before room or enrollment changes. Times use {profile.timeZone}.</p>
         {!profile.recentAttendance.length ? <p className="mt-3 text-sm">No attendance recorded.</p> : <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-sm">
           <thead><tr className="border-b"><th className="py-2 pr-3">Room</th><th className="py-2 pr-3">Check-in</th><th className="py-2">Check-out</th></tr></thead>
           <tbody>{profile.recentAttendance.map((record) => <tr key={record.id} className="border-b">
-            <td className="py-2 pr-3">{rooms.find((room) => room.id === record.roomId)?.name || 'Historical room'}</td>
-            <td className="py-2 pr-3">{new Date(record.checkIn).toLocaleString()}</td><td className="py-2">{record.checkOut ? new Date(record.checkOut).toLocaleString() : 'Not checked out'}</td>
+            <td className="py-2 pr-3">{rooms.find((room) => room.id === record.roomId)?.name || 'Historical room'}{record.voided ? ' · Voided' : ''}</td>
+            <td className="py-2 pr-3">{attendanceTime(record.checkIn, profile.timeZone)}</td><td className="py-2">{record.checkOut ? attendanceTime(record.checkOut, profile.timeZone) : record.voided ? 'Voided visit' : 'Not checked out'}</td>
           </tr>)}</tbody></table></div>}
       </div>
     </>}

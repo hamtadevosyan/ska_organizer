@@ -190,16 +190,22 @@ exports.getChildById = (id) => get('Child', id);
 exports.createChild = (payload) => create('Child', payload);
 exports.updateChild = (id, changes) => update('Child', id, changes);
 exports.deleteChild = (id) => remove('Child', id);
-exports.listAttendance = ({ roomId, childId, date } = {}) => {
+exports.listAttendance = ({ roomId, childId, date, from, to, openOnly = false, includeVoided = true, needsReview } = {}) => {
   const where = {};
   if (roomId) where.roomId = roomId;
   if (childId) where.childId = childId;
-  if (date) {
-    const start = new Date(`${date}T00:00:00Z`);
-    where.checkIn = { [Op.gte]: start, [Op.lt]: new Date(start.getTime() + 86400000) };
-  }
-  return list('Attendance', { where });
+  if (date) ({ from, to } = require('./facilityTime').dayBounds(date));
+  if (to) where.checkIn = { [Op.lt]: new Date(to) };
+  if (from) where[Op.or] = [{ checkOut: null }, { checkOut: { [Op.gt]: new Date(from) } }, { checkIn: { [Op.gte]: new Date(from) } }];
+  if (openOnly) where.checkOut = null;
+  if (!includeVoided) where.voided = false;
+  if (needsReview !== undefined) where.needsReview = needsReview;
+  return list('Attendance', { where, order: [['checkIn', 'ASC'], ['id', 'ASC']] });
 };
+exports.getAttendanceByRequestId = async (requestId) => (await list('Attendance', { where: { requestId }, limit: 1 }))[0] || null;
+exports.createAttendanceCorrection = (values) => create('AttendanceCorrection', values);
+exports.listAttendanceCorrections = async (attendanceId) => (await list('AttendanceCorrection', { where: { attendanceId } }))
+  .sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt) || a.after.version - b.after.version);
 exports.getAttendanceById = (id) => get('Attendance', id);
 exports.createAttendance = (payload) => create('Attendance', { checkIn: new Date(), checkOut: null, ...payload });
 exports.updateAttendance = (id, changes) => update('Attendance', id, changes);

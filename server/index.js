@@ -64,6 +64,7 @@ if (require.main === module) {
   const db = require('./services/dbAdapter');
   (async () => {
     try {
+      require('./services/facilityTime').timeZone();
       if (db.setup) {
         await db.setup(process.env.DATABASE_URL, { schema: process.env.DB_SCHEMA || 'public' });
         console.log('PostgreSQL storage initialized');
@@ -92,7 +93,7 @@ if (require.main === module) {
       process.once('SIGTERM', shutdown);
     } catch (error) {
       // Do not print connection URLs, passwords or Sequelize connection objects.
-      const message = /^(DATABASE_URL|Database migrations|Invalid database schema)/.test(error.message)
+      const message = /^(DATABASE_URL|Database migrations|Invalid database schema|FACILITY_TIME_ZONE)/.test(error.message)
         ? error.message : 'Could not initialize PostgreSQL. Check DATABASE_URL and database availability.';
       console.error(`Server startup failed: ${message}`);
       await db.close?.();
