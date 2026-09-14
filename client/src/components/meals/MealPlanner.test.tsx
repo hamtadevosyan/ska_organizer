@@ -59,18 +59,39 @@ it('rejects a midnight attendance sample and ignores a response from a week that
   render(<MealPlanner canWrite />); await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Review today’s attendance count' }));
   await act(async () => {});
-  vi.mocked(axios.get).mockResolvedValueOnce({ data: { today: '2026-09-09', timeZone: 'America/Los_Angeles' } });
+  const beforeMidnight = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/attendance/config')
+    ? Promise.resolve({ data: { today: '2026-09-09', timeZone: 'America/Los_Angeles' } })
+    : beforeMidnight(path, config));
   fireEvent.click(screen.getByRole('button', { name: 'Apply count to 2026-09-08 only' }));
   await act(async () => {});
   expect(screen.getByText('The facility date changed. Read today’s attendance again.')).toBeInTheDocument();
   expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(4);
+  expect(screen.queryByRole('button', { name: 'Apply count to 2026-09-08 only' })).not.toBeInTheDocument();
   const late = deferred<{ data: { date: string; timeZone: string; takenAt: string; childrenCount: number } }>();
-  vi.mocked(axios.get).mockReturnValueOnce(late.promise);
+  const beforeSlowRequest = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/attendance/today-headcount')
+    ? late.promise : beforeSlowRequest(path, config));
   fireEvent.click(screen.getByRole('button', { name: 'Review today’s attendance count' }));
   input('Week starting Monday', secondWeek); await flush();
   await act(async () => late.resolve({ data: { date: '2026-09-08', timeZone: 'America/Los_Angeles', takenAt: '2026-09-08T17:00:00Z', childrenCount: 2 } }));
   expect(screen.queryByRole('button', { name: 'Apply count to 2026-09-08 only' })).not.toBeInTheDocument();
   expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(4);
+});
+
+it('explains an attendance sample outside the selected menu without changing its counts', async () => {
+  render(<MealPlanner canWrite />); await flush();
+  const defaultGet = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/attendance/today-headcount')
+    ? Promise.resolve({ data: { date: secondWeek, timeZone: 'America/Los_Angeles', takenAt: '2026-09-14T17:00:00Z', childrenCount: 2 } })
+    : defaultGet(path, config));
+  fireEvent.click(screen.getByRole('button', { name: 'Review today’s attendance count' }));
+  await act(async () => {});
+  expect(screen.getByText('Choose the week containing today and generate its menu before using attendance.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Apply count to/ })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(4);
+  expect(screen.getByLabelText('Week starting Monday')).toHaveValue(firstWeek);
+  expect(axios.put).not.toHaveBeenCalled();
 });
 
 beforeEach(() => {
@@ -175,8 +196,10 @@ describe('saved weekly planner', () => {
 
   it('ignores a slow load for a week the user has left', async () => {
     const older = deferred<ReturnType<typeof response>>();
-    vi.mocked(axios.get).mockImplementation((path) => path.endsWith('/api/meals') ? Promise.resolve(response([eggMeal]))
-      : path.endsWith(firstWeek) ? older.promise : Promise.resolve(response({ ...savedPlan(secondWeek), childrenCount: 9 })));
+    const defaultGet = vi.mocked(axios.get).getMockImplementation()!;
+    vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/api/menu/plans/' + firstWeek) ? older.promise
+      : path.endsWith('/api/menu/plans/' + secondWeek) ? Promise.resolve(response({ ...savedPlan(secondWeek), childrenCount: 9 }))
+        : defaultGet(path, config));
     render(<MealPlanner canWrite />);
     await act(async () => {});
     input('Week starting Monday', secondWeek);
@@ -276,13 +299,19 @@ it('refreshes the catalog and calculation when returning from Meal Setup without
   render(<SignedIn><Meals /></SignedIn>); await flush();
   input('Children', '6'); await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
-  vi.mocked(axios.get).mockResolvedValueOnce(response([eggMeal, { ...oats, name: 'Corrected oatmeal' }]));
+  const defaultGet = vi.mocked(axios.get).getMockImplementation()!;
+  // The attendance panel also loads on return; match the catalog by URL, not request order.
+  vi.mocked(axios.get).mockImplementation((path, config) =>
+    path.endsWith('/api/meals')
+      ? Promise.resolve(response([eggMeal, { ...oats, name: 'Corrected oatmeal' }]))
+      : defaultGet(path, config));
   const prior = vi.mocked(axios.post).mock.calls.length;
   fireEvent.click(screen.getByRole('button', { name: 'Planner' }));
   expect(saveButton()).toBeDisabled(); await flush();
   expect(screen.getByLabelText('Children')).toHaveValue(6);
   expect(vi.mocked(axios.post).mock.calls.length).toBeGreaterThan(prior);
   expect(screen.getAllByRole('option', { name: 'Corrected oatmeal' })).toHaveLength(3);
+  expect(screen.getByRole('button', { name: 'Review today’s attendance count' })).toBeEnabled();
   expect(saveButton()).toBeEnabled();
 });
 

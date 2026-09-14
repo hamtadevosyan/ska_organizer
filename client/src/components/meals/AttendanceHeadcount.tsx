@@ -34,7 +34,9 @@ export function AttendanceHeadcount({ dates, disabled, onApply }: {
         if (request.signal.aborted) return;
         setConfig(data);
         if (data.today !== sample.date || !dates.includes(sample.date)) {
-          setSample(null); throw new Error('The facility date changed. Read today’s attendance again.');
+          setSample(null);
+          setError('The facility date changed. Read today’s attendance again.');
+          return;
         }
         onApply(sample.date, sample.childrenCount);
         setMessage(`${sample.childrenCount} children applied to ${sample.date}. Save Menu to keep this change.`);
@@ -44,7 +46,10 @@ export function AttendanceHeadcount({ dates, disabled, onApply }: {
         const result = await getTodayHeadcount(request.signal);
         if (request.signal.aborted) return;
         setConfig({ today: result.date, timeZone: result.timeZone });
-        if (!dates.includes(result.date)) throw new Error('Choose the week containing today and generate its menu before using attendance.');
+        if (!dates.includes(result.date)) {
+          setError('Choose the week containing today and generate its menu before using attendance.');
+          return;
+        }
         setSample(result);
       }
     } catch (failure) { if (!request.signal.aborted) setError(authError(failure, 'Could not read today’s attendance.')); }
