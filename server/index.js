@@ -32,6 +32,7 @@ app.use('/api/activity', require('./routes/activity'));
 app.use('/api/children', require('./routes/children'));
 // Rooms route
 app.use('/api/rooms', require('./routes/rooms'));
+app.use('/api/staff', require('./routes/staff'));
 // Menu route
 app.use("/api/menu", require("./routes/menu"));
 // Shopping route

@@ -142,6 +142,21 @@ exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
 };
 
 const literalLike = (value) => value.replace(/[\\%_]/g, '\\$&');
+const staffWhere = ({ q, roomId, active } = {}) => ({
+  ...(roomId !== undefined ? { roomId } : {}),
+  ...(active !== undefined ? { active } : {}),
+  ...(q ? { [Op.and]: q.split(/\s+/).map((part) => sqlWhere(col('name'),
+    { [Op.iLike]: '%' + literalLike(part) + '%' })) } : {}),
+});
+exports.listStaff = ({ page = 1, pageSize = 50, ...filters } = {}) => list('StaffMember', {
+  where: staffWhere(filters), limit: pageSize, offset: (page - 1) * pageSize,
+  order: [['name', 'ASC'], ['id', 'ASC']],
+});
+exports.countStaff = (filters) => model('StaffMember').count({ where: staffWhere(filters), transaction: transactionContext.getStore() });
+exports.getStaffById = (id) => get('StaffMember', id);
+exports.createStaff = (payload) => create('StaffMember', payload);
+exports.updateStaff = (id, changes) => update('StaffMember', id, changes);
+
 const childWhere = ({ q, roomId, active } = {}) => ({
   ...(roomId !== undefined ? { roomId } : {}),
   ...(active !== undefined ? { active } : {}),

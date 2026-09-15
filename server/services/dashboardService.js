@@ -1,8 +1,9 @@
-exports.getMetrics = () => {
-  // later, replace with database queries
+const db = require('./dbAdapter');
+exports.getMetrics = async () => {
+  // Other dashboard metrics are completed separately in SKAO-28.
   return {
     totalStudents: 42,
-    totalStaff: 6,
+    totalStaff: await db.countStaff({ active: true }),
     inventoryCount: 120,
     recentActivities: [
       'Outdoor playtime completed',

@@ -7,6 +7,7 @@ const migrations = [
   { name: '005-rooms-and-classes', ...require('./migrations/005-rooms-and-classes') },
   { name: '006-child-enrollment', ...require('./migrations/006-child-enrollment') },
   { name: '007-daily-attendance', ...require('./migrations/007-daily-attendance') },
+  { name: '008-staff-directory', ...require('./migrations/008-staff-directory') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

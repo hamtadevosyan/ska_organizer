@@ -4,7 +4,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [],
+  rooms: [], scheduleEntries: [], staff: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [],
   attendance: [], attendanceCorrections: [],
@@ -41,6 +41,10 @@ const mock = {
 let transactionQueue = Promise.resolve();
 const searchName = (child) => [child.firstName, child.lastName, child.preferredName].filter(Boolean).join(' ').toLowerCase();
 const normalizeName = (name) => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+const filteredStaff = ({ q, roomId, active } = {}) => mock.staff
+  .filter((person) => (roomId === undefined || person.roomId === roomId) && (active === undefined || person.active === active) &&
+    (!q || q.toLowerCase().split(/\s+/).every((part) => person.name.toLowerCase().includes(part))))
+  .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 const filteredChildren = ({ q, roomId, active } = {}) => mock.children
   .filter((c) => (roomId === undefined || c.roomId === roomId) && (active === undefined || c.active === active) &&
     (!q || q.toLowerCase().split(/\s+/).every((part) => searchName(c).includes(part))))
@@ -62,6 +66,20 @@ const withTransaction = (fn) => {
 };
 module.exports = {
   withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction,
+  listStaff: async ({ page = 1, pageSize = 50, ...filters } = {}) => structuredClone(filteredStaff(filters).slice((page - 1) * pageSize, page * pageSize)),
+  countStaff: async (filters) => filteredStaff(filters).length,
+  getStaffById: async (id) => structuredClone(mock.staff.find((person) => person.id === id) || null),
+  createStaff: async (payload) => {
+    const person = { id: mock.uuid(), active: true, roomId: null, version: 1, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...payload };
+    mock.staff.push(person);
+    return structuredClone(person);
+  },
+  updateStaff: async (id, changes) => {
+    const person = mock.staff.find((row) => row.id === id);
+    if (!person) return null;
+    Object.assign(person, changes, { updatedAt: mock.nowIso() });
+    return structuredClone(person);
+  },
   listRooms: async ({ includeArchived = false } = {}) => structuredClone(mock.rooms.filter((room) => includeArchived || room.active).sort((a, b) => a.name.localeCompare(b.name))),
   getRoomById: async (id) => structuredClone(mock.rooms.find((room) => room.id === id) || null),
   createRoom: async (payload) => {
@@ -97,7 +115,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
-    mock.rooms = []; mock.scheduleEntries = [];
+    mock.rooms = []; mock.scheduleEntries = []; mock.staff = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = [];
     mock.attendance = [];
