@@ -1,7 +1,8 @@
 // src/pages/Dashboard.tsx
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { API_BASE_URL } from '../lib/api'; // make sure this is defined
+import { API_BASE_URL } from '../lib/api';
+import { authError } from '../auth/transport';
 
 interface DashboardMetrics {
   totalStudents: number;
@@ -12,14 +13,23 @@ interface DashboardMetrics {
 
 const Dashboard = () => {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-
-  useEffect(() => {
-    axios
-      .get(`${API_BASE_URL}/api/dashboard`)
-      .then((res) => setMetrics(res.data))
-      .catch(() => console.error('Failed to fetch metrics.'));
+  const [error, setError] = useState('');
+  const pending = useRef<AbortController | null>(null);
+  const refresh = useCallback(async () => {
+    pending.current?.abort();
+    const request = new AbortController();
+    pending.current = request;
+    setError('');
+    try {
+      const response = await axios.get<DashboardMetrics>(`${API_BASE_URL}/api/dashboard`, { signal: request.signal });
+      if (!request.signal.aborted) setMetrics(response.data);
+    } catch (failure) {
+      if (!request.signal.aborted && !axios.isCancel(failure)) setError(authError(failure, 'Could not load the dashboard.'));
+    }
   }, []);
+  useEffect(() => { void refresh(); return () => pending.current?.abort(); }, [refresh]);
 
+  if (error) return <div className="space-y-3 p-6"><p role="alert">{error}</p><button onClick={() => void refresh()} className="rounded border bg-white px-4 py-2">Retry dashboard</button></div>;
   if (!metrics) return <p className="p-6">Loading dashboard...</p>;
 
   return (
@@ -28,7 +38,7 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <MetricCard label="Total Students" value={metrics.totalStudents} />
-        <MetricCard label="Total Staff" value={metrics.totalStaff} />
+        <MetricCard label="Active Staff" value={metrics.totalStaff} />
         <MetricCard label="Inventory Items" value={metrics.inventoryCount} />
       </div>
 

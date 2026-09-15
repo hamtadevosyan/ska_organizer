@@ -45,6 +45,13 @@ module.exports = (sequelize) => {
     ageMinMonths: DataTypes.INTEGER, ageMaxMonths: DataTypes.INTEGER, capacity: DataTypes.INTEGER,
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   });
+  const StaffMember = sequelize.define('StaffMember', {
+    id: id(), name: { type: DataTypes.STRING(100), allowNull: false },
+    role: { type: DataTypes.STRING(100), allowNull: false },
+    active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    roomId: { type: DataTypes.STRING, allowNull: true },
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+  }, { tableName: 'StaffMembers' });
   const Child = sequelize.define('Child', {
     id: id(), firstName: DataTypes.STRING, lastName: DataTypes.STRING,
     dateOfBirth: DataTypes.DATEONLY, preferredName: DataTypes.STRING,
@@ -88,5 +95,5 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember };
 };
