@@ -1,50 +1,197 @@
-// src/pages/Inventory.tsx
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import axios from 'axios';
+import { Plus, Package } from 'lucide-react';
 import { API_BASE_URL } from '../lib/api';
+import { useAuth } from '../auth/context';
+import { authError } from '../auth/transport';
+import { adjustInventory, inventoryRequestId, inventoryUnits, inventoryUrl, saveInventory } from '../api/inventory';
+import type { InventoryDetails, InventoryFilters, InventoryItem } from '../api/inventory';
+import { useInventory } from '../components/inventory/useInventory';
+import { InventoryHistory } from '../components/inventory/InventoryHistory';
 
-interface InventoryItem {
-  id: string;
-  name: string;
-  quantity: number;
-  category: string;
-}
+type Ingredient = { id: string; name: string; unit: string; archived?: boolean };
+type Mode = 'create' | 'edit' | 'adjust';
+const initial: InventoryFilters = { q: '', category: '', location: '', status: 'all', page: 1 };
+const empty: InventoryDetails = { name: '', category: '', location: '', unit: 'count', ingredientId: null, reorderThreshold: '0' };
+const control = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 disabled:bg-slate-100';
+const button = 'rounded-lg border bg-white px-4 py-2 disabled:opacity-50';
+const primary = 'rounded-lg border border-emerald-700 bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50';
+const stockLabel = { available: 'Available', low: 'Low stock', out: 'Out of stock' };
+const validAmount = (value: string) => /^(0|[1-9]\d{0,11})(\.\d{1,6})?$/.test(value);
 
-const Inventory = () => {
-  const [items, setItems] = useState<InventoryItem[] | null>(null);
-
-  useEffect(() => {
-    axios
-      .get(`${API_BASE_URL}/api/inventory`)
-      .then((res) => setItems(res.data))
-      .catch(() => console.error('Failed to fetch inventory.'));
+export default function Inventory() {
+  const { account } = useAuth();
+  const canWrite = account?.role === 'admin' || account?.role === 'editor';
+  const [filters, setFilters] = useState(initial);
+  const [search, setSearch] = useState('');
+  const { data, loading, error: loadError, refresh } = useInventory(filters);
+  const [mode, setMode] = useState<Mode | null>(null);
+  const [editing, setEditing] = useState<InventoryItem | null>(null);
+  const [form, setForm] = useState(empty);
+  const [openingQuantity, setOpeningQuantity] = useState('0');
+  const [reason, setReason] = useState('');
+  const [adjustment, setAdjustment] = useState({ type: 'addition', quantity: '' });
+  const [historyId, setHistoryId] = useState('');
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const requestKey = useRef('');
+  const [error, setError] = useState('');
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [conflict, setConflict] = useState(false);
+  const [message, setMessage] = useState('');
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [ingredientLoading, setIngredientLoading] = useState(true);
+  const [ingredientError, setIngredientError] = useState('');
+  const ingredientRequest = useRef<AbortController | null>(null);
+  const loadIngredients = useCallback(async () => {
+    ingredientRequest.current?.abort();
+    const request = new AbortController(); ingredientRequest.current = request;
+    setIngredientLoading(true); setIngredientError('');
+    try {
+      const response = await axios.get<{ data: Ingredient[] }>(API_BASE_URL + '/api/ingredients', { params: { includeArchived: true }, signal: request.signal });
+      if (!request.signal.aborted) setIngredients(response.data.data);
+    } catch (failure) {
+      if (!request.signal.aborted && !axios.isCancel(failure)) setIngredientError(authError(failure, 'Could not load ingredient choices. Use Refresh inventory to try again.'));
+    } finally { if (!request.signal.aborted) setIngredientLoading(false); }
   }, []);
+  useEffect(() => { void loadIngredients(); return () => ingredientRequest.current?.abort(); }, [loadIngredients]);
+  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  useEffect(() => {
+    if (!loading && data && data.page === filters.page && filters.page > pages) setFilters((current) => ({ ...current, page: pages }));
+  }, [loading, data, filters.page, pages]);
 
-  if (!items) return <p className="p-6">Loading inventory...</p>;
-
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800">Inventory</h2>
-      <table className="w-full text-left bg-white rounded shadow overflow-hidden">
-        <thead className="bg-gray-100 text-sm text-gray-700">
-          <tr>
-            <th className="p-3">Name</th>
-            <th className="p-3">Category</th>
-            <th className="p-3">Quantity</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => (
-            <tr key={item.id} className="border-t text-gray-800">
-              <td className="p-3">{item.name}</td>
-              <td className="p-3">{item.category}</td>
-              <td className="p-3">{item.quantity}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
-export default Inventory;
+  function open(next: Mode, item: InventoryItem | null = null) {
+    setMode(next); setEditing(item);
+    setForm(item ? { name: item.name, category: item.category, location: item.location, unit: item.unit, ingredientId: item.ingredientId, reorderThreshold: item.reorderThreshold } : empty);
+    setOpeningQuantity('0'); setReason(''); setAdjustment({ type: 'addition', quantity: '' });
+    setFields({}); setError(''); setMessage(''); setConflict(false); requestKey.current = inventoryRequestId();
+  }
+  function close() { setMode(null); setEditing(null); setFields({}); setError(''); setConflict(false); }
+  function failureMessage(failure: unknown) {
+    if (axios.isCancel(failure)) return;
+    setError(authError(failure, 'Could not save inventory. Your entries are still here; retry the same save.'));
+    if (axios.isAxiosError(failure)) {
+      setFields(failure.response?.data?.error?.fields || {});
+      setConflict(['INVENTORY_CONFLICT', 'INVENTORY_REQUEST_CONFLICT'].includes(failure.response?.data?.error?.code));
+    }
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busyRef.current || !mode || conflict) return;
+    const invalid: Record<string, string> = {};
+    if (!reason.trim() || reason.trim().length > 500) invalid.reason = 'Enter a reason between 1 and 500 characters.';
+    if (mode === 'adjust') {
+      if (!validAmount(adjustment.quantity) || (adjustment.type !== 'correction' && Number(adjustment.quantity) === 0)) invalid.quantity = 'Enter a valid quantity; additions and usage must be greater than zero.';
+    } else {
+      for (const [key, max] of [['name', 100], ['category', 80], ['location', 200]] as const) {
+        if (!form[key].trim() || form[key].trim().length > max) invalid[key] = `Enter ${key} between 1 and ${max} characters.`;
+      }
+      if (!validAmount(form.reorderThreshold)) invalid.reorderThreshold = 'Enter a non-negative threshold with up to six decimal places.';
+      if (mode === 'create' && !validAmount(openingQuantity)) invalid.openingQuantity = 'Enter a non-negative opening count with up to six decimal places.';
+    }
+    setFields(invalid);
+    if (Object.keys(invalid).length) { setError('Correct the highlighted inventory details.'); return; }
+    busyRef.current = true; setBusy(true); setError(''); setMessage('');
+    try {
+      const saved = mode === 'adjust' && editing
+        ? await adjustInventory(editing, { ...adjustment, reason: reason.trim() }, requestKey.current)
+        : await saveInventory(editing, { ...form, name: form.name.trim(), category: form.category.trim(), location: form.location.trim(), reason: reason.trim(), ...(mode === 'create' ? { openingQuantity } : {}) }, requestKey.current);
+      close(); setMessage(mode === 'adjust' ? 'Stock change recorded.' : mode === 'create' ? 'Inventory item created with its opening count.' : 'Inventory details updated and recorded in history.');
+      if (historyId === saved.id) setHistoryRefresh((value) => value + 1);
+      await refresh();
+    } catch (failure) { failureMessage(failure); }
+    finally { busyRef.current = false; setBusy(false); }
+  }
+  async function reloadItem() {
+    if (!editing || !mode || busyRef.current || !window.confirm('Replace your unsaved entries with the latest inventory details?')) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      const response = await axios.get<{ data: InventoryItem }>(inventoryUrl + '/' + encodeURIComponent(editing.id));
+      open(mode, response.data.data); setMessage('Latest stock loaded. Review the quantities before saving.');
+      await Promise.all([refresh(), loadIngredients()]);
+    } catch (failure) { failureMessage(failure); }
+    finally { busyRef.current = false; setBusy(false); }
+  }
+  const applyFilters = (next: Partial<InventoryFilters>) => setFilters((current) => ({ ...current, ...next, page: 1 }));
+  const attributes = (key: string) => ({ 'aria-invalid': !!fields[key], 'aria-describedby': fields[key] ? 'inventory-error-' + key : undefined });
+  const fieldError = (key: string) => fields[key] && <p id={'inventory-error-' + key} className="mt-1 text-sm text-red-700">{fields[key]}</p>;
+  const stockExists = editing && editing.quantity !== '0';
+  return <div className="mx-auto max-w-7xl space-y-6 p-2 sm:p-6">
+    <header className="flex flex-wrap items-center justify-between gap-4">
+      <div><h1 className="text-3xl font-bold text-slate-900">Inventory</h1><p className="mt-2 text-slate-600">Track supplies, their exact storage locations, and every stock change.</p></div>
+      <div className="flex gap-3"><button disabled={busy || loading || ingredientLoading} onClick={() => void Promise.all([refresh(), loadIngredients()])} className={button}>Refresh inventory</button>
+        {canWrite && <button disabled={busy || !!mode} onClick={() => open('create')} className={primary + ' flex items-center gap-2'}><Plus size={18} />Add inventory item</button>}</div>
+    </header>
+    {loadError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{loadError}</p>}
+    {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{error}</p>}
+    {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-800">{message}</p>}
+    {!loading && data && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {([['All items', data.summary.total], ['Available', data.summary.available], ['Low stock', data.summary.lowStock], ['Out of stock', data.summary.outOfStock]] as const).map(([label, count]) =>
+        <div key={label} className="rounded-xl border bg-white p-4"><p className="text-sm text-slate-600">{label}</p><p className="mt-1 text-2xl font-bold">{count}</p></div>)}
+    </div>}
+    {canWrite && mode && <form aria-label="Inventory details" onSubmit={(event) => void submit(event)} noValidate className="rounded-2xl border bg-white p-5 shadow-sm">
+      <fieldset disabled={busy} className="space-y-4"><h2 className="text-xl font-bold">{mode === 'adjust' ? 'Adjust stock: ' + editing?.name : mode === 'edit' ? 'Edit inventory item' : 'Create inventory item'}</h2>
+        {mode === 'adjust' && editing ? <>
+          <p>Current stock: <strong>{editing.quantity} {editing.unit}</strong> · {editing.location}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label>Change type<select className={control} value={adjustment.type} onChange={(event) => setAdjustment({ ...adjustment, type: event.target.value })}>
+              <option value="addition">Stock addition</option><option value="usage">Usage</option><option value="correction">Count correction</option>
+            </select></label>
+            <label>{adjustment.type === 'correction' ? 'Count observed' : 'Quantity'} ({editing.unit})<input className={control} type="text" inputMode="decimal" {...attributes('quantity')} value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: event.target.value })} />{fieldError('quantity')}</label>
+          </div>
+          <p className="text-sm text-slate-600">{adjustment.type === 'correction' ? 'Enter the total you counted, including zero. A new correction records the difference and keeps earlier history.' : 'Enter the amount added or used, in the displayed unit. Stock cannot fall below zero.'}</p>
+        </> : <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {([['name', 'Item name', 100], ['category', 'Category', 80], ['location', 'Exact storage location', 200]] as const).map(([key, label, max]) => <label key={key}>{label}
+              <input className={control} maxLength={max} {...attributes(key)} value={form[key]} list={key === 'name' ? undefined : 'inventory-' + key + '-options'} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />{fieldError(key)}
+            </label>)}
+            <label>Ingredient link (optional)<select className={control} {...attributes('ingredientId')} disabled={!!stockExists || ingredientLoading || !!ingredientError} value={form.ingredientId || ''} onChange={(event) => {
+              const selected = ingredients.find((ingredient) => ingredient.id === event.target.value);
+              setForm({ ...form, ingredientId: selected?.id || null, unit: selected?.unit || form.unit });
+            }}><option value="">No ingredient link</option>
+              {form.ingredientId && !ingredients.some((ingredient) => ingredient.id === form.ingredientId) && <option value={form.ingredientId} disabled>Current ingredient unavailable</option>}
+              {ingredients.filter((ingredient) => !ingredient.archived || ingredient.id === form.ingredientId).map((ingredient) => <option key={ingredient.id} value={ingredient.id} disabled={ingredient.archived}>{ingredient.name} ({ingredient.unit}){ingredient.archived ? ' — archived' : ''}</option>)}
+            </select>{fieldError('ingredientId')}</label>
+            <label>Unit<select className={control} {...attributes('unit')} disabled={!!stockExists || !!form.ingredientId} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}>{inventoryUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select>{fieldError('unit')}</label>
+            <label>Reorder threshold<input className={control} type="text" inputMode="decimal" {...attributes('reorderThreshold')} value={form.reorderThreshold} onChange={(event) => setForm({ ...form, reorderThreshold: event.target.value })} />{fieldError('reorderThreshold')}</label>
+            {mode === 'create' && <label>Opening count<input className={control} type="text" inputMode="decimal" {...attributes('openingQuantity')} value={openingQuantity} onChange={(event) => setOpeningQuantity(event.target.value)} />{fieldError('openingQuantity')}</label>}
+          </div>
+          <datalist id="inventory-category-options">{data?.options.categories.map((category) => <option key={category} value={category} />)}</datalist>
+          <datalist id="inventory-location-options">{data?.options.locations.map((location) => <option key={location} value={location} />)}</datalist>
+          <p className="text-sm text-slate-600">Use a precise location, such as Kitchen / Pantry / Shelf 2. Each record represents stock at one location. Low stock means the quantity is at or below its reorder threshold; zero means out of stock.</p>
+          {stockExists && <p className="text-sm text-slate-600">Unit and ingredient link can change when stock is zero. Use Adjust stock to record quantities.</p>}
+          {mode === 'edit' && <p className="text-sm text-slate-600">Changing the storage location moves this record's entire balance. Its previous location stays in history.</p>}
+          {ingredientError && <p role="alert" className="text-red-800">{ingredientError} Unlinked supplies can still be saved.</p>}
+        </>}
+        <label className="block">Reason<textarea className={control} maxLength={500} rows={2} {...attributes('reason')} value={reason} onChange={(event) => setReason(event.target.value)} />{fieldError('reason')}</label>
+        <div className="flex flex-wrap gap-3"><button disabled={conflict} className={primary}>{mode === 'adjust' ? 'Record stock change' : 'Save inventory item'}</button><button type="button" onClick={close} className={button}>Cancel</button>
+          {conflict && editing && <button type="button" onClick={() => void reloadItem()} className={button}>Reload inventory item</button>}</div>
+        {conflict && !editing && <p>Cancel this form and refresh inventory to check whether the item was already saved.</p>}
+      </fieldset>
+    </form>}
+    <form role="search" aria-label="Filter inventory" onSubmit={(event) => { event.preventDefault(); applyFilters({ q: search.trim() }); }} className="rounded-2xl border bg-white p-4">
+      <fieldset disabled={busy} className="flex flex-wrap items-end gap-3">
+        <label className="min-w-40 flex-1">Search items<input type="search" maxLength={100} className={control} value={search} onChange={(event) => setSearch(event.target.value)} /></label><button className={button}>Search</button>
+        <label>Filter category<select className={control} value={filters.category} onChange={(event) => applyFilters({ category: event.target.value })}><option value="">All categories</option>{[...new Set([...(data?.options.categories || []), ...(filters.category ? [filters.category] : [])])].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label>Filter location<select className={control} value={filters.location} onChange={(event) => applyFilters({ location: event.target.value })}><option value="">All locations</option>{[...new Set([...(data?.options.locations || []), ...(filters.location ? [filters.location] : [])])].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label>Stock status<select className={control} value={filters.status} onChange={(event) => applyFilters({ status: event.target.value })}><option value="all">All statuses</option>{Object.entries(stockLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <button type="button" className={button} onClick={() => { setSearch(''); setFilters(initial); }}>Reset filters</button>
+      </fieldset>
+    </form>
+    {loading && <p role="status">Loading inventory…</p>}
+    {!loading && data && <>
+      <p className="text-sm text-slate-600">{data.total} matching {data.total === 1 ? 'item' : 'items'} · totals above include all locations and pages.</p>
+      {!data.items.length ? <div className="rounded-2xl border border-dashed bg-white p-8 text-center"><Package className="mx-auto mb-3 text-emerald-700" size={30} /><p>No inventory matches these filters.</p>{canWrite && <p className="mt-2 text-slate-600">Reset filters or add an inventory item with its opening count.</p>}</div> :
+        <div className="overflow-x-auto rounded-2xl border bg-white"><table className="w-full text-left"><caption className="sr-only">Inventory items</caption><thead className="bg-slate-50 text-sm text-slate-600"><tr>{['Item', 'Location', 'Stock', 'Reorder at', 'Status', 'Actions'].map((label) => <th scope="col" key={label} className="p-4">{label}</th>)}</tr></thead>
+          <tbody>{data.items.map((item) => <tr key={item.id} className="border-t"><th scope="row" className="p-4"><span className="font-semibold">{item.name}</span><p className="mt-1 text-sm font-normal text-slate-500">{item.category}{item.ingredient ? ' · Ingredient: ' + item.ingredient.name + (item.ingredient.archived ? ' (archived)' : '') : ''}</p></th>
+            <td className="p-4">{item.location}</td><td className="p-4 font-semibold">{item.quantity} {item.unit}</td><td className="p-4">{item.reorderThreshold} {item.unit}</td><td className="p-4"><span className={'rounded-full px-3 py-1 text-sm ' + (item.status === 'available' ? 'bg-emerald-50 text-emerald-800' : item.status === 'low' ? 'bg-amber-50 text-amber-900' : 'bg-red-50 text-red-800')}>{stockLabel[item.status]}</span></td>
+            <td className="p-4"><div className="flex flex-wrap gap-3 text-sm">{canWrite && <><button disabled={busy || !!mode} className="font-semibold text-emerald-800 disabled:opacity-50" aria-label={'Adjust ' + item.name} onClick={() => open('adjust', item)}>Adjust stock</button><button disabled={busy || !!mode} className="text-slate-600 disabled:opacity-50" aria-label={'Edit ' + item.name} onClick={() => open('edit', item)}>Edit</button></>}
+              <button disabled={busy} className="text-slate-600" aria-label={'History for ' + item.name} onClick={() => { setHistoryId(item.id); setHistoryRefresh((value) => value + 1); }}>History</button></div></td>
+          </tr>)}</tbody></table></div>}
+      {pages > 1 && <nav aria-label="Inventory pages" className="flex items-center justify-between gap-3"><button className={button} disabled={busy || filters.page === 1} onClick={() => setFilters({ ...filters, page: filters.page - 1 })}>Previous page</button><span>Page {filters.page} of {pages}</span><button className={button} disabled={busy || filters.page >= pages} onClick={() => setFilters({ ...filters, page: filters.page + 1 })}>Next page</button></nav>}
+    </>}
+    {historyId && <InventoryHistory key={historyId + ':' + historyRefresh} itemId={historyId} onClose={() => setHistoryId('')} />}
+  </div>;
+}

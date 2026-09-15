@@ -124,6 +124,11 @@ Inventory
 GET /api/inventory
 GET /api/inventory/status
 GET /api/inventory/items
+POST /api/inventory
+GET /api/inventory/:id
+PUT /api/inventory/:id
+GET /api/inventory/:id/movements
+POST /api/inventory/:id/movements
 
 Schedule
 GET /api/schedule
@@ -176,3 +181,8 @@ Daily attendance
 
 - [Arrivals, departures, corrections and meal counts](docs/daily-attendance.md)
 - [SKAO-23 manual Ubuntu installation and verification](docs/SKAO-23-manual-install.md)
+
+Inventory quantities and storage locations
+
+- [Inventory workflow, quantities, movement history and API](docs/inventory.md)
+- [SKAO-25 manual Ubuntu installation and verification](docs/SKAO-25-manual-install.md)

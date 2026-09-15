@@ -52,6 +52,21 @@ module.exports = (sequelize) => {
     roomId: { type: DataTypes.STRING, allowNull: true },
     version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   }, { tableName: 'StaffMembers' });
+  const InventoryItem = sequelize.define('InventoryItem', {
+    id: id(), name: { type: DataTypes.STRING(100), allowNull: false },
+    category: { type: DataTypes.STRING(80), allowNull: false }, location: { type: DataTypes.STRING(200), allowNull: false },
+    unit: { type: DataTypes.STRING(16), allowNull: false }, ingredientId: DataTypes.STRING,
+    quantity: { type: DataTypes.DECIMAL(18, 6), allowNull: false, defaultValue: '0' },
+    reorderThreshold: { type: DataTypes.DECIMAL(18, 6), allowNull: false, defaultValue: '0' },
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+  });
+  const InventoryMovement = sequelize.define('InventoryMovement', {
+    id: id(), itemId: { type: DataTypes.STRING, allowNull: false }, type: DataTypes.STRING(16),
+    delta: DataTypes.DECIMAL(18, 6), beforeQuantity: DataTypes.DECIMAL(18, 6), afterQuantity: DataTypes.DECIMAL(18, 6),
+    reason: DataTypes.STRING(500), actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64),
+    occurredAt: DataTypes.DATE, itemVersion: DataTypes.INTEGER, before: DataTypes.JSONB, after: DataTypes.JSONB,
+    requestId: { type: DataTypes.STRING(100), unique: true }, request: DataTypes.JSONB,
+  }, { timestamps: false });
   const Child = sequelize.define('Child', {
     id: id(), firstName: DataTypes.STRING, lastName: DataTypes.STRING,
     dateOfBirth: DataTypes.DATEONLY, preferredName: DataTypes.STRING,
@@ -95,5 +110,5 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember, InventoryItem, InventoryMovement };
 };

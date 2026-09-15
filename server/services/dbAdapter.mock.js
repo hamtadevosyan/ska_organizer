@@ -1,10 +1,11 @@
 // server/services/dbAdapter.mock.js
 
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [], staff: [],
+  rooms: [], scheduleEntries: [], staff: [], inventoryItems: [], inventoryMovements: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [],
   attendance: [], attendanceCorrections: [],
@@ -39,6 +40,11 @@ const mock = {
 };
 
 let transactionQueue = Promise.resolve();
+const inventoryStatus = (item) => amount(item.quantity) === 0n ? 'out' : amount(item.quantity) <= amount(item.reorderThreshold) ? 'low' : 'available';
+const filteredInventory = ({ q, category, location, status } = {}) => mock.inventoryItems
+  .filter((item) => (!q || q.toLowerCase().split(/\s+/).every((word) => item.name.toLowerCase().includes(word))) &&
+    (!category || item.category === category) && (!location || item.location === location) && (!status || inventoryStatus(item) === status))
+  .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 const searchName = (child) => [child.firstName, child.lastName, child.preferredName].filter(Boolean).join(' ').toLowerCase();
 const normalizeName = (name) => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
 const filteredStaff = ({ q, roomId, active } = {}) => mock.staff
@@ -65,7 +71,27 @@ const withTransaction = (fn) => {
   return operation;
 };
 module.exports = {
-  withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction,
+  withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction, withInventoryLock: withTransaction,
+  listInventory: async ({ page = 1, pageSize = 50, ...filters } = {}) => structuredClone(filteredInventory(filters).slice((page - 1) * pageSize, page * pageSize)),
+  countInventory: async (filters) => filteredInventory(filters).length,
+  inventoryOptions: async () => ({ categories: [...new Set(mock.inventoryItems.map((item) => item.category))].sort(), locations: [...new Set(mock.inventoryItems.map((item) => item.location))].sort() }),
+  getInventoryById: async (id) => structuredClone(mock.inventoryItems.find((item) => item.id === id) || null),
+  createInventory: async (values) => {
+    const item = { id: mock.uuid(), createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values };
+    mock.inventoryItems.push(item); return structuredClone(item);
+  },
+  updateInventory: async (id, values) => {
+    const item = mock.inventoryItems.find((item) => item.id === id);
+    if (!item) return null;
+    Object.assign(item, values, { updatedAt: mock.nowIso() }); return structuredClone(item);
+  },
+  appendInventoryMovement: async (values) => {
+    const movement = { id: mock.uuid(), ...values }; mock.inventoryMovements.push(movement); return structuredClone(movement);
+  },
+  getInventoryMovementByRequestId: async (id) => structuredClone(mock.inventoryMovements.find((row) => row.requestId === id) || null),
+  listInventoryMovements: async (itemId, { page = 1, pageSize = 50 } = {}) => structuredClone(mock.inventoryMovements
+    .filter((row) => row.itemId === itemId).sort((a, b) => b.itemVersion - a.itemVersion).slice((page - 1) * pageSize, page * pageSize)),
+  countInventoryMovements: async (itemId) => mock.inventoryMovements.filter((row) => row.itemId === itemId).length,
   listStaff: async ({ page = 1, pageSize = 50, ...filters } = {}) => structuredClone(filteredStaff(filters).slice((page - 1) * pageSize, page * pageSize)),
   countStaff: async (filters) => filteredStaff(filters).length,
   getStaffById: async (id) => structuredClone(mock.staff.find((person) => person.id === id) || null),
@@ -106,7 +132,7 @@ module.exports = {
     mock.scheduleEntries.push(...created);
     return structuredClone(created);
   },
-  ingredientHasQuantities: async (id) => mock.mealIngredients.some((link) => link.ingredientId === id) ||
+  ingredientHasQuantities: async (id) => mock.inventoryItems.some((item) => item.ingredientId === id) || mock.mealIngredients.some((link) => link.ingredientId === id) ||
     mock.shelf.some((item) => item.ingredientId === id) ||
     Object.values(mock.weeklyPlans).some((plan) => plan.items.some((item) => item.ingredient.id === id) ||
       Object.hasOwn(plan.inHouse, id)),
@@ -115,7 +141,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
-    mock.rooms = []; mock.scheduleEntries = []; mock.staff = [];
+    mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryItems = []; mock.inventoryMovements = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = [];
     mock.attendance = [];
