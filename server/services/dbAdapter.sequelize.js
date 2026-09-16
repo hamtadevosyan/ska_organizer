@@ -21,6 +21,7 @@ const locked = (key, fn) => transact(async (transaction) => {
 exports.withCatalogLock = (fn) => locked(17003, fn);
 exports.withAuthLock = (fn) => locked(17004, fn);
 exports.withRoomLock = (fn) => locked(17005, fn);
+exports.withInventoryLock = (fn) => locked(17006, fn);
 
 exports.setup = async (connectionString, { schema = 'public' } = {}) => {
   if (sequelize) throw new Error('Database adapter is already initialized.');
@@ -81,6 +82,7 @@ exports.deleteIngredient = (id) => remove('Ingredient', id);
 exports.listMealIngredients = (mealId) => list('MealIngredient', { where: { mealId }, order: [['createdAt', 'ASC'], ['id', 'ASC']] });
 exports.getMealIngredientById = (id) => get('MealIngredient', id);
 exports.ingredientHasQuantities = async (id) => {
+  if (await model('InventoryItem').count({ where: { ingredientId: id }, transaction: transactionContext.getStore() })) return true;
   if ((await list('MealIngredient', { where: { ingredientId: id }, limit: 1 })).length) return true;
   if ((await exports.getShelf()).some((item) => item.ingredientId === id)) return true;
   const schema = sequelize.options.define.schema;
@@ -142,6 +144,44 @@ exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
 };
 
 const literalLike = (value) => value.replace(/[\\%_]/g, '\\$&');
+exports.listInventoryGroups = () => list('InventoryGroup', { order: [['name', 'ASC'], ['id', 'ASC']] });
+exports.inventoryGroupCounts = async () => {
+  const schema = sequelize.options.define.schema;
+  const [rows] = await sequelize.query('SELECT "groupId", count(*)::integer AS "total", ' +
+    'count(*) FILTER (WHERE "quantity" > "reorderThreshold")::integer AS "available", ' +
+    'count(*) FILTER (WHERE "quantity" > 0 AND "quantity" <= "reorderThreshold")::integer AS "lowStock", ' +
+    'count(*) FILTER (WHERE "quantity" = 0)::integer AS "outOfStock" FROM "' + schema + '"."InventoryItems" GROUP BY "groupId"', { transaction: transactionContext.getStore() });
+  return rows;
+};
+exports.getInventoryGroupById = (id) => get('InventoryGroup', id);
+exports.getInventoryGroupByName = async (nameKey) => (await list('InventoryGroup', { where: { nameKey }, limit: 1 }))[0] || null;
+exports.getInventoryGroupByRequestId = async (requestId) => (await list('InventoryGroup', { where: { requestId }, limit: 1 }))[0] || null;
+exports.createInventoryGroup = (values) => create('InventoryGroup', values);
+const inventoryWhere = ({ q, category, location, status, groupId } = {}) => {
+  const checks = q ? q.split(/\s+/).map((part) => sqlWhere(col('name'), { [Op.iLike]: '%' + literalLike(part) + '%' })) : [];
+  if (status === 'out') checks.push(sqlWhere(col('quantity'), Op.eq, 0));
+  if (status === 'low') checks.push(sqlWhere(col('quantity'), Op.gt, 0), sqlWhere(col('quantity'), Op.lte, col('reorderThreshold')));
+  if (status === 'available') checks.push(sqlWhere(col('quantity'), Op.gt, col('reorderThreshold')));
+  return { ...(category ? { category } : {}), ...(groupId ? { groupId } : {}), ...(location ? { location } : {}), ...(checks.length ? { [Op.and]: checks } : {}) };
+};
+exports.listInventory = ({ page = 1, pageSize = 50, ...filters } = {}) => list('InventoryItem', {
+  where: inventoryWhere(filters), limit: pageSize, offset: (page - 1) * pageSize, order: [['name', 'ASC'], ['id', 'ASC']],
+});
+exports.countInventory = (filters) => model('InventoryItem').count({ where: inventoryWhere(filters), transaction: transactionContext.getStore() });
+exports.inventoryOptions = async () => {
+  const rows = await list('InventoryItem', { attributes: ['category', 'location'], group: ['category', 'location'] });
+  return { categories: [...new Set(rows.map((row) => row.category))].sort(), locations: [...new Set(rows.map((row) => row.location))].sort() };
+};
+exports.getInventoryById = (id) => get('InventoryItem', id);
+exports.createInventory = (values) => create('InventoryItem', values);
+exports.updateInventory = (id, values) => update('InventoryItem', id, values);
+exports.appendInventoryMovement = (values) => create('InventoryMovement', values);
+exports.getInventoryMovementByRequestId = async (requestId) => (await list('InventoryMovement', { where: { requestId }, limit: 1 }))[0] || null;
+exports.listInventoryMovements = (itemId, { page = 1, pageSize = 50 } = {}) => list('InventoryMovement', {
+  where: { itemId }, order: [['itemVersion', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countInventoryMovements = (itemId) => model('InventoryMovement').count({ where: { itemId }, transaction: transactionContext.getStore() });
+
 const staffWhere = ({ q, roomId, active } = {}) => ({
   ...(roomId !== undefined ? { roomId } : {}),
   ...(active !== undefined ? { active } : {}),
