@@ -3,20 +3,25 @@ import { API_BASE_URL } from '../lib/api';
 
 export const inventoryUrl = API_BASE_URL + '/api/inventory';
 export const inventoryUnits = ['count', 'g', 'ml', 'oz', 'lb', 'gal', 'box', 'pack'];
+export type InventoryGroup = {
+  id: string; name: string; kind: 'food' | 'supplies'; description: string; createdAt: string; updatedAt: string;
+  summary: { total: number; available: number; lowStock: number; outOfStock: number };
+};
 export type InventoryItem = {
   id: string; name: string; category: string; location: string; unit: string;
+  groupId: string; group: Omit<InventoryGroup, 'summary'>;
   ingredientId: string | null; quantity: string; reorderThreshold: string; version: number;
   status: 'available' | 'low' | 'out'; createdAt: string; updatedAt: string;
   ingredient: { id: string; name: string; unit: string; archived: boolean } | null;
 };
-export type InventoryDetails = Pick<InventoryItem, 'name' | 'category' | 'location' | 'unit' | 'ingredientId' | 'reorderThreshold'>;
-export type InventoryFilters = { q: string; category: string; location: string; status: string; page: number };
+export type InventoryDetails = Pick<InventoryItem, 'name' | 'groupId' | 'location' | 'unit' | 'ingredientId' | 'reorderThreshold'>;
+export type InventoryFilters = { q: string; groupId: string; location: string; status: string; page: number };
 export type InventoryList = {
   items: InventoryItem[]; total: number; page: number; pageSize: number;
   summary: { total: number; available: number; lowStock: number; outOfStock: number };
   options: { categories: string[]; locations: string[] };
 };
-export type InventorySnapshot = InventoryDetails & Pick<InventoryItem, 'id' | 'quantity' | 'version'>;
+export type InventorySnapshot = Omit<InventoryDetails, 'groupId'> & Pick<InventoryItem, 'id' | 'category' | 'quantity' | 'version'> & { groupId?: string };
 export type StockMovement = {
   id: string; type: 'opening' | 'addition' | 'usage' | 'correction' | 'details';
   itemId: string; itemVersion: number; beforeQuantity: string; afterQuantity: string; delta: string;

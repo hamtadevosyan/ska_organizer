@@ -3,7 +3,7 @@ const { fieldError } = require('./catalogValidation');
 const SCALE = 1000000n;
 const MAX = 999999999999999999n;
 const UNITS = ['count', 'g', 'ml', 'oz', 'lb', 'gal', 'box', 'pack'];
-const editable = ['name', 'category', 'location', 'unit', 'ingredientId', 'reorderThreshold'];
+const editable = ['name', 'category', 'groupId', 'location', 'unit', 'ingredientId', 'reorderThreshold'];
 
 // Decimal strings and scaled integers keep repeated fractional stock changes exact.
 function amount(value, field = 'quantity') {
@@ -42,9 +42,12 @@ function version(value, previous) {
 function item(payload, previous) {
   keys(payload, [...editable, 'reason', 'requestId', ...(previous ? ['version'] : ['openingQuantity'])]);
   if (previous) version(payload.version, previous);
-  const result = { ingredientId: null, reorderThreshold: '0', ...previous };
+  const result = { ingredientId: null, groupId: null, reorderThreshold: '0', ...previous };
   for (const key of editable) if (Object.hasOwn(payload, key)) result[key] = payload[key];
-  for (const [key, max] of [['name', 100], ['category', 80], ['location', 200]]) result[key] = text(result[key], key, max);
+  if (Object.hasOwn(payload, 'category') && !Object.hasOwn(payload, 'groupId')) result.groupId = null;
+  for (const [key, max] of [['name', 100], ['location', 200]]) result[key] = text(result[key], key, max);
+  if (result.groupId !== null) identifier(result.groupId, 'groupId');
+  if (!result.groupId || Object.hasOwn(payload, 'category')) result.category = text(result.category, 'category', 80);
   if (!UNITS.includes(result.unit)) throw fieldError('unit', 'Choose a supported inventory unit.');
   if (result.ingredientId !== null && (typeof result.ingredientId !== 'string' || !result.ingredientId.trim() || result.ingredientId.length > 255)) {
     throw fieldError('ingredientId', 'Choose an ingredient or leave it unlinked.');
@@ -68,9 +71,24 @@ function movement(payload, previous) {
   if (after > MAX) throw fieldError('quantity', 'The resulting stock would exceed the supported quantity.');
   return decimal(after);
 }
-function pagination(query, allowed = ['q', 'category', 'location', 'status', 'page', 'pageSize']) {
+function identifier(value, field) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 255) throw fieldError(field, 'Choose a valid inventory group.');
+  return value;
+}
+function group(payload) {
+  keys(payload, ['name', 'kind', 'description', 'requestId']);
+  requestId(payload);
+  const name = text(payload.name, 'name', 80);
+  const kind = payload.kind ?? 'supplies';
+  if (!['food', 'supplies'].includes(kind)) throw fieldError('kind', 'Choose food stock or supplies and equipment.');
+  const description = payload.description ?? '';
+  if (typeof description !== 'string' || description.trim().length > 240) throw fieldError('description', 'Keep the group description within 240 characters.');
+  return { name, nameKey: name.toLowerCase(), kind, description: description.trim() };
+}
+function pagination(query, allowed = ['q', 'category', 'groupId', 'location', 'status', 'page', 'pageSize']) {
   keys(query, allowed);
   const result = {};
+  if (query.groupId !== undefined) result.groupId = identifier(query.groupId, 'groupId');
   for (const [key, max] of [['q', 100], ['category', 80], ['location', 200]]) {
     if (query[key] === undefined) continue;
     if (typeof query[key] !== 'string' || query[key].length > max) throw problem('Invalid inventory ' + key + ' filter.');
@@ -84,4 +102,4 @@ function pagination(query, allowed = ['q', 'category', 'location', 'status', 'pa
   }
   return result;
 }
-module.exports = { amount, decimal, text, item, movement, pagination, requestId, UNITS };
+module.exports = { amount, decimal, text, item, movement, pagination, requestId, identifier, group, UNITS };

@@ -38,6 +38,17 @@ The meal planner now saves and reopens separate calendar weeks with headcounts,
 stock and historical recipe quantities. See [Saved weekly menus](docs/saved-weekly-menus.md)
 for the SKAO-18 update commands, dated API and usage instructions.
 
+After applying an update, stop the usual client/server terminals and run this from the repository root:
+
+```bash
+bash scripts/check-update.sh
+```
+
+It backs up the configured database, checks the archive, applies pending migrations,
+and runs the server/PostgreSQL/client/browser tests plus client build and lint.
+It stops on failure and keeps the backup. Use `--inventory` for focused SKAO-25 checks,
+or `--dry-run` to preview the commands. See [the reusable update checks](docs/update-checks.md).
+
 🚀 Project Structure
 ska_organizer/
 │
@@ -186,3 +197,4 @@ Inventory quantities and storage locations
 
 - [Inventory workflow, quantities, movement history and API](docs/inventory.md)
 - [SKAO-25 manual Ubuntu installation and verification](docs/SKAO-25-manual-install.md)
+- [Inventory groups update for existing SKAO-25 installations](docs/SKAO-25-groups-update.md)

@@ -52,9 +52,17 @@ module.exports = (sequelize) => {
     roomId: { type: DataTypes.STRING, allowNull: true },
     version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   }, { tableName: 'StaffMembers' });
+  const InventoryGroup = sequelize.define('InventoryGroup', {
+    id: id(), name: { type: DataTypes.STRING(80), allowNull: false },
+    nameKey: { type: DataTypes.STRING(80), allowNull: false, unique: true },
+    kind: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'supplies' },
+    description: { type: DataTypes.STRING(240), allowNull: false, defaultValue: '' },
+    requestId: { type: DataTypes.STRING(100), unique: true }, request: DataTypes.JSONB,
+  });
   const InventoryItem = sequelize.define('InventoryItem', {
     id: id(), name: { type: DataTypes.STRING(100), allowNull: false },
     category: { type: DataTypes.STRING(80), allowNull: false }, location: { type: DataTypes.STRING(200), allowNull: false },
+    groupId: { type: DataTypes.STRING, allowNull: false },
     unit: { type: DataTypes.STRING(16), allowNull: false }, ingredientId: DataTypes.STRING,
     quantity: { type: DataTypes.DECIMAL(18, 6), allowNull: false, defaultValue: '0' },
     reorderThreshold: { type: DataTypes.DECIMAL(18, 6), allowNull: false, defaultValue: '0' },
@@ -110,5 +118,5 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember, InventoryItem, InventoryMovement };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement };
 };

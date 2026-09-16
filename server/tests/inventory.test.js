@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { runInNewContext } = require('node:vm');
 const request = require('./helpers/authenticatedRequest');
 const anonymous = require('supertest');
 const app = require('../index');
@@ -76,26 +77,66 @@ test('fractional stock is exact and invalid or incompatible quantities never cha
   expect((await history(large.id)).item.quantity).toBe('999999999999.999999');
 });
 
-test('required details, reasons, versions and request identifiers are validated and actor/time cannot be spoofed', async () => {
-  for (const values of [{ name: ' ' }, { category: '' }, { location: '' }, { location: 'x'.repeat(201) },
-    { unit: 'bucket' }, { reorderThreshold: '-1' }, { openingQuantity: null }, { reason: '' }, { reason: 'x'.repeat(501) },
-    { requestId: 'short' }, { ingredientId: [] }, { quantity: '7' }, { actorId: 'another-user' }, { occurredAt: '2000-01-01' }]) {
-    expect((await request(app).post('/api/inventory').send(createBody(values))).status).toBe(400);
-  }
+// Keep independent validation cases separate: the former single test made 30
+// serial API requests under one timeout, including real PostgreSQL transactions.
+// Each named case now has its own timeout and the usual isolated test database.
+test.each([
+  ['blank name', { name: ' ' }],
+  ['blank category', { category: '' }],
+  ['blank location', { location: '' }],
+  ['overlong location', { location: 'x'.repeat(201) }],
+  ['unsupported unit', { unit: 'bucket' }],
+  ['negative reorder threshold', { reorderThreshold: '-1' }],
+  ['null opening quantity', { openingQuantity: null }],
+  ['blank reason', { reason: '' }],
+  ['overlong reason', { reason: 'x'.repeat(501) }],
+  ['invalid request identifier', { requestId: 'short' }],
+  ['invalid ingredient identifier', { ingredientId: [] }],
+  ['client-supplied balance', { quantity: '7' }],
+  ['spoofed actor', { actorId: 'another-user' }],
+  ['spoofed time', { occurredAt: '2000-01-01' }],
+])('inventory creation rejects %s without saving stock', async (_label, values) => {
+  expect((await request(app).post('/api/inventory').send(createBody(values))).status).toBe(400);
   expect(await db.countInventory()).toBe(0);
-  const stock = await item();
-  for (const values of [{ reason: '' }, { version: null }, { actorUsername: 'Impostor' }, { occurredAt: '2000-01-01' }]) {
-    expect((await move(stock, values)).status).toBe(400);
-  }
-  expect((await edit(stock, { quantity: '100' })).status).toBe(400);
-  expect((await history(stock.id)).total).toBe(1);
-  for (const query of ['status=invalid', 'page=0', 'page=1.5', 'pageSize=101', 'category[]=Food', 'unknown=true']) {
-    expect((await request(app).get('/api/inventory?' + query)).status).toBe(400);
-  }
-  expect((await request(app).get('/api/inventory/' + stock.id + '/movements?status=low')).status).toBe(400);
-  expect((await request(app).get('/api/inventory/missing')).status).toBe(404);
-  expect((await request(app).get('/api/inventory/missing/movements')).status).toBe(404);
+  expect(await db.listInventoryGroups()).toHaveLength(0);
 });
+
+test.each([
+  ['blank reason', { reason: '' }],
+  ['invalid version', { version: null }],
+  ['spoofed actor', { actorUsername: 'Impostor' }],
+  ['spoofed time', { occurredAt: '2000-01-01' }],
+])('stock movement rejects %s without changing stock or history', async (_label, values) => {
+  const stock = await item();
+  const before = await history(stock.id);
+  expect((await move(stock, values)).status).toBe(400);
+  expect(await history(stock.id)).toEqual(before);
+});
+
+test('metadata edits cannot set the inventory balance or change its history', async () => {
+  const stock = await item();
+  const before = await history(stock.id);
+  expect((await edit(stock, { quantity: '100' })).status).toBe(400);
+  expect(await history(stock.id)).toEqual(before);
+});
+
+test.each(['status=invalid', 'page=0', 'page=1.5', 'pageSize=101', 'category[]=Food', 'unknown=true'])(
+  'inventory rejects invalid list filter %s', async (query) => {
+    expect((await request(app).get('/api/inventory?' + query)).status).toBe(400);
+  },
+);
+
+test('inventory history rejects filters other than pagination', async () => {
+  const stock = await item();
+  expect((await request(app).get('/api/inventory/' + stock.id + '/movements?status=low')).status).toBe(400);
+  expect((await history(stock.id)).total).toBe(1);
+});
+
+test.each(['/api/inventory/missing', '/api/inventory/missing/movements'])(
+  'missing inventory resource %s returns 404', async (url) => {
+    expect((await request(app).get(url)).status).toBe(404);
+  },
+);
 
 test('filters combine with literal search, global counts and pagination across categories and exact locations', async () => {
   const percent = await item({ name: 'Synthetic 100%_paper', openingQuantity: '2' });
@@ -157,6 +198,33 @@ test('retries replay one opening or stock change and cannot reuse an identifier 
   expect((await request(app).put('/api/inventory/' + stock.id).send(metadata)).status).toBe(200);
   expect((await request(app).put('/api/inventory/' + stock.id).send(metadata)).body.data.replayed).toBe(true);
   expect((await history(stock.id))).toMatchObject({ total: 3, item: { name: 'Updated paper', quantity: '12', version: 3 } });
+});
+
+test('retries accept JSON from another realm and reordered keys but retain value types and operation scope', async () => {
+  const opening = createBody();
+  const created = await request(app).post('/api/inventory').send(opening);
+  expect(created.status).toBe(201);
+  const stock = created.body.data;
+  const lookup = db.getInventoryMovementByRequestId;
+  const foreign = jest.spyOn(db, 'getInventoryMovementByRequestId').mockImplementation(async (id) => {
+    const stored = await lookup(id);
+    // Emulate data returned across the Jest/Node realm boundary or by a driver.
+    return stored ? runInNewContext('JSON.parse(serialized)', { serialized: JSON.stringify(stored) }) : null;
+  });
+  try {
+    const reordered = Object.fromEntries(Object.entries(opening).reverse());
+    const retry = await request(app).post('/api/inventory').send(reordered);
+    expect(retry.status).toBe(201);
+    expect(retry.body.data).toMatchObject({ id: stock.id, quantity: '10', version: 1, replayed: true });
+    const changedType = await request(app).post('/api/inventory').send({ ...opening, openingQuantity: 10 });
+    expect(changedType.status).toBe(409);
+    expect(changedType.body.error.code).toBe('INVENTORY_REQUEST_CONFLICT');
+    const changedOperation = await move(stock, { requestId: opening.requestId });
+    expect(changedOperation.status).toBe(409);
+    expect(changedOperation.body.error.code).toBe('INVENTORY_REQUEST_CONFLICT');
+  } finally { foreign.mockRestore(); }
+  expect(await db.countInventory()).toBe(1);
+  expect((await history(stock.id))).toMatchObject({ total: 1, item: { quantity: '10', version: 1 } });
 });
 
 test('concurrent adjustments reject a stale balance instead of consuming or adding stock twice', async () => {

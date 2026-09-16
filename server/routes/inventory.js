@@ -6,6 +6,8 @@ const { audited } = require('../auth/middleware');
 router.get('/', inventoryController.getItems);
 router.get('/items', inventoryController.getItems);
 router.get('/status', inventoryController.getStatus);
+router.get('/groups', inventoryController.listGroups);
+router.post('/groups', audited('inventory.group.create', inventoryController.createGroup));
 router.post('/', audited('inventory.create', inventoryController.create));
 router.get('/:id/movements', inventoryController.history);
 router.post('/:id/movements', audited('inventory.adjust', inventoryController.adjust));

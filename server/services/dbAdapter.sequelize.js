@@ -144,12 +144,25 @@ exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
 };
 
 const literalLike = (value) => value.replace(/[\\%_]/g, '\\$&');
-const inventoryWhere = ({ q, category, location, status } = {}) => {
+exports.listInventoryGroups = () => list('InventoryGroup', { order: [['name', 'ASC'], ['id', 'ASC']] });
+exports.inventoryGroupCounts = async () => {
+  const schema = sequelize.options.define.schema;
+  const [rows] = await sequelize.query('SELECT "groupId", count(*)::integer AS "total", ' +
+    'count(*) FILTER (WHERE "quantity" > "reorderThreshold")::integer AS "available", ' +
+    'count(*) FILTER (WHERE "quantity" > 0 AND "quantity" <= "reorderThreshold")::integer AS "lowStock", ' +
+    'count(*) FILTER (WHERE "quantity" = 0)::integer AS "outOfStock" FROM "' + schema + '"."InventoryItems" GROUP BY "groupId"', { transaction: transactionContext.getStore() });
+  return rows;
+};
+exports.getInventoryGroupById = (id) => get('InventoryGroup', id);
+exports.getInventoryGroupByName = async (nameKey) => (await list('InventoryGroup', { where: { nameKey }, limit: 1 }))[0] || null;
+exports.getInventoryGroupByRequestId = async (requestId) => (await list('InventoryGroup', { where: { requestId }, limit: 1 }))[0] || null;
+exports.createInventoryGroup = (values) => create('InventoryGroup', values);
+const inventoryWhere = ({ q, category, location, status, groupId } = {}) => {
   const checks = q ? q.split(/\s+/).map((part) => sqlWhere(col('name'), { [Op.iLike]: '%' + literalLike(part) + '%' })) : [];
   if (status === 'out') checks.push(sqlWhere(col('quantity'), Op.eq, 0));
   if (status === 'low') checks.push(sqlWhere(col('quantity'), Op.gt, 0), sqlWhere(col('quantity'), Op.lte, col('reorderThreshold')));
   if (status === 'available') checks.push(sqlWhere(col('quantity'), Op.gt, col('reorderThreshold')));
-  return { ...(category ? { category } : {}), ...(location ? { location } : {}), ...(checks.length ? { [Op.and]: checks } : {}) };
+  return { ...(category ? { category } : {}), ...(groupId ? { groupId } : {}), ...(location ? { location } : {}), ...(checks.length ? { [Op.and]: checks } : {}) };
 };
 exports.listInventory = ({ page = 1, pageSize = 50, ...filters } = {}) => list('InventoryItem', {
   where: inventoryWhere(filters), limit: pageSize, offset: (page - 1) * pageSize, order: [['name', 'ASC'], ['id', 'ASC']],
