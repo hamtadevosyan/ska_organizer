@@ -33,12 +33,16 @@ test('repair a missing recipe, review corrections, confirm removal and archive w
   await expect(page.getByLabel('Recipe ingredient', { exact: true }).getByRole('option', { name: 'Correction eggs (count)' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Planner', exact: true }).click();
   await expect(save).toBeEnabled();
-  await page.getByLabel('Correction eggs in house (count)', { exact: true }).fill('2');
+  const ingredients = (await (await request.get(`${api}/ingredients`)).json()).data as { id: string; name: string }[];
+  const eggs = ingredients.find((item) => item.name === 'Correction eggs')!;
+  expect((await request.post(`${api}/inventory`, { data: { name: 'Correction eggs stock', category: 'Food', location: 'Kitchen / Shelf 1',
+    ingredientId: eggs.id, unit: 'count', openingQuantity: '2', reorderThreshold: '0', reason: 'Opening count', requestId: crypto.randomUUID() } })).status()).toBe(201);
+  await page.getByRole('button', { name: 'Update shopping list' }).click();
   await expect(save).toBeEnabled();
   const row = page.getByRole('table').getByRole('row').filter({ hasText: 'Correction eggs' });
   await expect(row.getByText('23 count', { exact: true })).toBeVisible();
   await save.click();
-  await expect(page.getByText('Menu, headcounts and stock saved together.')).toBeVisible();
+  await expect(page.getByText('Menu and shopping list saved.')).toBeVisible();
   await page.getByRole('button', { name: 'Meal Setup', exact: true }).click();
   await page.getByLabel('Choose meal', { exact: true }).selectOption(meal.id);
   const quantity = page.getByLabel('Correction eggs quantity per person (count)', { exact: true });

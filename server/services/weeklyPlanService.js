@@ -1,6 +1,7 @@
 const { randomBytes, createHmac, timingSafeEqual } = require('node:crypto');
 const db = require('./dbAdapter');
 const { problem, validateWeekStart, validateCounts, validateVersion } = require('./planValidation');
+const { applyStock } = require('./inventoryStock');
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const SLOTS = ['breakfast', 'snack', 'lunch', 'afternoonSnack'];
 // A save uses exactly the calculation the user reviewed. Clients cannot invent
@@ -27,7 +28,7 @@ function decode(token) {
 
 exports.get = async (weekStart) => db.getWeeklyPlan(validateWeekStart(weekStart));
 
-exports.preview = (weekStart, input) => db.withCatalogLock(async () => {
+exports.preview = (weekStart, input) => db.withCatalogLock(() => db.withInventoryLock(async () => {
   validateWeekStart(weekStart);
   const { week, childrenCount, staffCount, version, inHouse = {}, refreshRecipes = false } = input;
   if (typeof refreshRecipes !== 'boolean') throw problem('refreshRecipes must be true or false.');
@@ -48,6 +49,7 @@ exports.preview = (weekStart, input) => db.withCatalogLock(async () => {
       !Object.values(inHouse).every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0)) {
     throw problem('In-house quantities must be finite, non-negative numbers.');
   }
+  if (Object.keys(inHouse).length) throw problem('Stock now comes from Inventory. Record a count correction there, then recalculate.');
   if (!Array.isArray(week) || !week.length || week.length > DAYS.length) throw problem('Supply one to five menu days.');
   const previous = await exports.get(weekStart);
   if ((previous?.version || 0) !== version) throw problem('This week was saved elsewhere. Reopen the saved week before continuing.', 409);
@@ -108,17 +110,18 @@ exports.preview = (weekStart, input) => db.withCatalogLock(async () => {
     canonicalWeek.push({ day: day.day, menu });
   }
   canonicalWeek.sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day));
-  const items = [...totals.values()].map((item) => {
+  const required = [...totals.values()].map((item) => {
     const quantity = Math.round(item.quantity * 1e6) / 1e6;
     if (!Number.isFinite(quantity)) throw problem('The required quantity is too large.');
-    const inStorage = inHouse[item.ingredient.id] ?? 0;
-    return { ...item, quantity, inStorage, toBuy: Math.max(0, Math.round((quantity - inStorage) * 1e6) / 1e6) };
+    return { ...item, quantity };
   });
+  const items = await applyStock(required);
   const snapshot = { weekStart, week: canonicalWeek, childrenCount, staffCount, recipes,
+    stockSource: 'inventory', stockTakenAt: new Date().toISOString(),
     ...(Object.keys(dailyChildrenCounts).length ? { dailyChildrenCounts } : {}),
     inHouse: Object.fromEntries(items.map((i) => [i.ingredient.id, i.inStorage])), items };
   return { ...snapshot, version, warnings, ...(warnings.length ? {} : { previewToken: encode(snapshot, version) }) };
-});
+}));
 
 exports.save = async (weekStart, { previewToken }) => {
   validateWeekStart(weekStart);
@@ -131,6 +134,7 @@ exports.shopping = async (weekStart) => {
   const plan = await exports.get(weekStart);
   if (!plan) throw problem('No saved menu for this week.', 404);
   return { weekStart, version: plan.version, generatedAt: plan.savedAt, items: plan.items,
+    stockSource: plan.stockSource || 'manual', stockTakenAt: plan.stockTakenAt || null,
     meta: { childrenCount: plan.childrenCount, staffCount: plan.staffCount, totalPeople: plan.childrenCount + plan.staffCount,
       ...(plan.dailyChildrenCounts ? { dailyChildrenCounts: plan.dailyChildrenCounts } : {}) } };
 };
@@ -138,7 +142,5 @@ exports.shopping = async (weekStart) => {
 exports.importLegacy = async (weekStart) => {
   const legacy = await db.getConfirmedMenu();
   if (!legacy) throw problem('There is no earlier undated menu to import.', 404);
-  const shelf = await db.getShelf();
-  return exports.preview(weekStart, { version: 0, week: legacy.week, childrenCount: 20, staffCount: 5,
-    inHouse: Object.fromEntries(shelf.map((i) => [i.ingredientId, i.quantity])) });
+  return exports.preview(weekStart, { version: 0, week: legacy.week, childrenCount: 20, staffCount: 5 });
 };

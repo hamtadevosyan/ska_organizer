@@ -4,7 +4,7 @@ The organizer now requires an explicitly authorized account. PostgreSQL stores a
 
 ## One-time setup on Ubuntu VMware
 
-Run these steps from your existing checkout after importing the SKAO-20 branch. Keep your current `server/.env`, database password and data. Use your normal database backup procedure before applying the migration; do not reseed or recreate the database.
+Run these steps from your checkout when setting up sign-in for the first time. Keep your current `server/.env`, database password and data. Use your normal database backup procedure before applying the migration; do not reseed or recreate the database. For later updates, use the shared [backup, migration and checks procedure](update-checks.md).
 
 1. Stop the backend (`Ctrl+C`).
 2. Edit `server/.env` and add `APP_ORIGINS` using the frontend **Network** URL that Windows Chrome opens. Include its scheme and port, with no trailing slash. For example, **only if these match your VM**:
@@ -125,7 +125,7 @@ PostgreSQL tests require the existing separate `TEST_DATABASE_URL` ending in `_t
 
 The API suite covers unauthenticated routes, read/write roles, account administration, password rotation, CSRF/Origin restrictions, throttling, expiry, logout/replay, and audit rollback. The PostgreSQL suite also reconnects and checks persistent accounts, sessions, audit, counters and revocation. Existing saved-menu restart checks now authenticate their direct API calls. Browser scenarios cover account creation, forced password change, read-only restrictions, logout/replay, account disabling and the previous meal workflows.
 
-Use synthetic child/staff data until this story and the private-pilot release gate are verified and merged. Keep SKAO-20 in Review until native PostgreSQL, actual Chromium execution and the PR merge are complete. See `docs/skao-20-verification.md` for the handoff's measured results and remaining checks.
+For manual verification, create a synthetic account, complete its required first-sign-in password change, verify its role restrictions, then disable it from another administrator session and confirm its access is revoked. Sign out and sign in again with an enabled account. Record results against the tested commit in the pull request or Jira issue.
 
 ## Troubleshooting
 

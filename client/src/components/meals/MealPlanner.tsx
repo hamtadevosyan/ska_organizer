@@ -11,6 +11,7 @@ import {
   ShoppingCart,
 } from 'lucide-react';
 import { API_BASE_URL } from '../../lib/api';
+import { INVENTORY_CHANGED } from '../../api/inventoryChanges';
 
 import { MEAL_TYPES, dateOfDay } from './weeklyPlan';
 import type { Meal, MealType, ShoppingItem } from './weeklyPlan';
@@ -52,18 +53,18 @@ const convertToUS = (
     const targetUnit =
       preferredUnit === 'lb' || preferredUnit === 'oz'
         ? preferredUnit
-        : Math.abs(safeQuantity) >= 453.592
+        : Math.abs(safeQuantity) >= 453.59237
           ? 'lb'
           : 'oz';
 
     return targetUnit === 'lb'
-      ? { value: (safeQuantity / 453.592).toFixed(2), unit: 'lb' }
-      : { value: (safeQuantity / 28.3495).toFixed(1), unit: 'oz' };
+      ? { value: (safeQuantity / 453.59237).toFixed(2), unit: 'lb' }
+      : { value: (safeQuantity / 28.349523125).toFixed(1), unit: 'oz' };
   }
 
   if (sourceUnit === 'ml') {
     return {
-      value: (safeQuantity / 3785.41).toFixed(3),
+      value: (safeQuantity / 3785.411784).toFixed(3),
       unit: 'gal',
     };
   }
@@ -71,36 +72,14 @@ const convertToUS = (
   return { value: String(safeQuantity), unit: sourceUnit };
 };
 
-const convertFromUS = (
-  quantity: number,
-  displayedUnit: string,
-  sourceUnit: string
-) => {
-  if (!Number.isFinite(quantity)) return 0;
-
-  if (sourceUnit === 'g' && displayedUnit === 'lb') {
-    return quantity * 453.592;
-  }
-
-  if (sourceUnit === 'g' && displayedUnit === 'oz') {
-    return quantity * 28.3495;
-  }
-
-  if (sourceUnit === 'ml' && displayedUnit === 'gal') {
-    return quantity * 3785.41;
-  }
-
-  return quantity;
-};
-
 const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWrite?: boolean; active?: boolean; onEditRecipe?: (id: string) => void }) => {
   const planner = useWeeklyPlan(active);
-  const { entry, update, isBusy, actionLoading, ready } = planner;
-  const { week: weeklyMenu, childrenCount, staffCount, inHouse: inStock, dailyChildrenCounts = {} } = entry.draft;
+  const { entry, update, isBusy, actionLoading, ready, printReady, historical } = planner;
+  const { week: weeklyMenu, childrenCount, staffCount, dailyChildrenCounts = {} } = entry.draft;
   const { message, messageType } = entry;
   const hasSaved = !!entry.savedAt && !entry.dirty;
   const shoppingItems = entry.preview?.items || [];
-  const finalShoppingItems = ready ? shoppingItems : [];
+  const finalShoppingItems = printReady ? shoppingItems : [];
   const shoppingLoading = entry.loaded && weeklyMenu.length > 0 && !planner.calculated && !entry.calculationError && !planner.invalid;
   const recipeWarnings = planner.calculated ? entry.preview?.warnings || [] : [];
   const [availableMeals, setAvailableMeals] = useState<Meal[]>([]);
@@ -118,6 +97,23 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
     }).finally(() => { if (current) setCatalogLoading(false); });
     return () => { current = false; controller.abort(); };
   }, [active]);
+  // Refresh only drafts. A saved week keeps the amounts the user reviewed and saved.
+  const recalculate = planner.recalculate;
+  useEffect(() => {
+    if (!active || historical || !entry.loaded || !weeklyMenu.length || isBusy) return;
+    const refreshStock = () => { if (document.visibilityState !== 'hidden') recalculate(); };
+    const storageChanged = (event: StorageEvent) => { if (event.key === INVENTORY_CHANGED) refreshStock(); };
+    window.addEventListener('focus', refreshStock);
+    window.addEventListener(INVENTORY_CHANGED, refreshStock);
+    window.addEventListener('storage', storageChanged);
+    document.addEventListener('visibilitychange', refreshStock);
+    return () => {
+      window.removeEventListener('focus', refreshStock);
+      window.removeEventListener(INVENTORY_CHANGED, refreshStock);
+      window.removeEventListener('storage', storageChanged);
+      document.removeEventListener('visibilitychange', refreshStock);
+    };
+  }, [active, historical, entry.loaded, weeklyMenu.length, isBusy, recalculate]);
   const mealsByType = useMemo(() => Object.fromEntries(MEAL_TYPES.map((type) =>
     [type, availableMeals.filter((meal) => isMealType(meal.type) && meal.type === type)]
   )) as Record<MealType, Meal[]>, [availableMeals]);
@@ -126,7 +122,6 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
     if (!meal) return;
     update({ week: weeklyMenu.map((day, index) => index === dayIndex ? { ...day, menu: { ...day.menu, [type]: meal } } : day) });
   };
-  const clearInStock = () => update({ inHouse: {} });
   const generateMenu = () => { void planner.generate(); };
   const saveMenu = () => { void planner.save(); };
 
@@ -143,7 +138,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
               Generate, adjust, save, and print
             </h3>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Choose a week to reopen its menu, headcounts and stock. Drafts stay here when you switch weeks or tabs.
+              Choose a week, pick meals, and we work out what to buy.
             </p>
           </div>
 
@@ -166,7 +161,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
               label="Print List"
               icon={<Printer size={18} />}
               loading={false}
-              disabled={isBusy || !ready || finalShoppingItems.length === 0}
+              disabled={isBusy || !printReady || finalShoppingItems.length === 0}
               onClick={() => window.print()}
             />
           </div>
@@ -312,7 +307,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
             <div>
               <h3 className="text-2xl font-bold text-gray-800">Shopping Items</h3>
               <p className="text-sm text-gray-500">
-                Enter the amount already in house.
+                We subtract what you already have. Buy only what is left.
               </p>
             </div>
 
@@ -320,18 +315,23 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
               {shoppingLoading && (
                 <Loader2 className="animate-spin text-emerald-600" size={18} />
               )}
-              {shoppingItems.length > 0 && (
+              {weeklyMenu.length > 0 && (
                 <button
                   type="button"
-                  onClick={clearInStock}
+                  onClick={planner.recalculate}
                   disabled={isBusy}
                   className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                 >
-                  Clear all
+                  Update shopping list
                 </button>
               )}
             </div>
           </div>
+
+          <p className="mb-4 text-sm text-gray-600">
+            {historical ? 'This is your saved shopping list. Update it to use today’s amounts.' : 'Uses the amounts in Inventory.'}{' '}
+            <a href="/inventory" target="_blank" rel="noopener noreferrer" className="font-semibold text-emerald-700">View what we have</a>
+          </p>
 
           {shoppingItems.length === 0 ? (
             <EmptyState
@@ -348,9 +348,9 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
                 const itemId = getIngredientId(item);
                 const sourceUnit = getIngredientUnit(item);
                 const needed = convertToUS(item.quantity, sourceUnit);
-                const stockRaw = Number(inStock[itemId]) || 0;
+                const stockRaw = item.inStorage;
                 const stock = convertToUS(stockRaw, sourceUnit, needed.unit);
-                const buyRaw = Math.max(item.quantity - stockRaw, 0);
+                const buyRaw = item.toBuy;
                 const buy = convertToUS(buyRaw, sourceUnit, needed.unit);
 
                 return (
@@ -364,7 +364,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
                           {getIngredientName(item)}
                         </p>
                         <p className="mt-1 text-xs text-gray-500">
-                          Needed: {ready ? `${needed.value} ${needed.unit}` : 'Awaiting calculation'}
+                          Needed: {printReady ? `${needed.value} ${needed.unit}` : 'Awaiting calculation'}
                         </p>
                         <p
                           className={`mt-1 text-xs font-semibold ${
@@ -373,32 +373,20 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
                               : 'text-gray-400 line-through'
                           }`}
                         >
-                          Buy: {ready ? `${buy.value} ${buy.unit}` : 'Awaiting calculation'}
+                          Buy: {printReady ? `${buy.value} ${buy.unit}` : 'Awaiting calculation'}
                         </p>
                       </div>
 
                       <div className="text-left sm:text-right">
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                          In house
+                          Already have
                         </p>
                         <div className="mt-1 flex items-center gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            disabled={isBusy}
-                            aria-label={`${getIngredientName(item)} in house (${needed.unit})`}
-                            value={inStock[itemId] === '' ? '' : Number(stock.value)}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              update({ inHouse: { ...inStock, [itemId]: value === '' ? '' : convertFromUS(
-                                Number(value), needed.unit, sourceUnit,
-                              ) } });
-                            }}
-                            className="w-24 rounded-xl border border-gray-200 px-3 py-2 text-right font-semibold outline-none focus:border-emerald-500 disabled:bg-gray-100"
-                          />
-                          <span className="text-sm text-gray-500">{needed.unit}</span>
+                          <p aria-label={`${getIngredientName(item)} recorded stock`} className="font-semibold text-gray-800">
+                            {printReady ? `${stock.value} ${stock.unit}` : 'Awaiting calculation'}
+                          </p>
                         </div>
+                        {item.stockItems && <p className="mt-1 text-xs text-gray-500">{item.stockItems.length ? `${item.stockItems.length} storage locations` : 'No amount recorded yet.'}</p>}
                       </div>
                     </div>
                   </div>
@@ -419,6 +407,10 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
             <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
               Week of {planner.weekStart} · Default: {childrenCount} children · {staffCount} staff. Quantities after subtracting stock.
             </p>
+            <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
+              {historical ? 'Saved shopping list' : 'Shopping list in progress'}
+              {entry.preview?.stockTakenAt ? ' · Updated ' + new Date(entry.preview.stockTakenAt).toLocaleString() : entry.savedAt ? ' · Saved ' + new Date(entry.savedAt).toLocaleString() : ''}.
+            </p>
             {Object.entries(dailyChildrenCounts).length > 0 && <p className="mt-1 text-sm text-slate-300 print:text-gray-600">
               Daily child counts: {Object.entries(dailyChildrenCounts).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => `${date}: ${count}`).join(' · ')}.
             </p>}
@@ -427,7 +419,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
           <div className="flex items-center gap-2 print:hidden">
             <PackageCheck size={18} className="text-emerald-300" />
             <span className="rounded-full bg-emerald-400 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-950">
-              {ready ? 'Up to date' : 'Not ready'}
+              {historical ? 'Saved list' : printReady ? 'Ready' : 'Updating'}
             </span>
           </div>
         </div>
@@ -446,7 +438,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
                 <tr>
                   <th className="p-4">Item</th>
                   <th className="p-4">Needed</th>
-                  <th className="p-4">In house</th>
+                  <th className="p-4">Already have</th>
                   <th className="p-4">Buy</th>
                 </tr>
               </thead>

@@ -11,7 +11,7 @@ Usage: bash scripts/check-update.sh [--inventory] [--dry-run] [--backup-dir DIR]
 Back up the configured database, verify the archive, apply pending migrations,
 then run server tests, PostgreSQL tests, client tests, build, lint and browser tests.
 
-  --inventory        Run the focused SKAO-25 inventory suites instead of all tests.
+  --inventory        Run inventory, purchasing and related planner suites.
   --dry-run          Print the steps without reading credentials or running them.
   --backup-dir DIR   Backup directory (default: ~/ska_backups).
   --help             Show this help.
@@ -46,10 +46,10 @@ postgres_tests=(npm run test:postgres)
 client_tests=(npm test)
 browser_tests=(npm run test:browser)
 if "$inventory_only"; then
-  server_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventoryGroups.test.js)
-  postgres_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventory.postgres.test.js tests/inventoryGroups.test.js tests/inventoryGroups.postgres.test.js)
-  client_tests+=(-- src/pages/Inventory.test.tsx)
-  browser_tests+=(-- tests/browser/inventory.spec.ts)
+  server_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventoryGroups.test.js tests/inventoryStock.test.js tests/purchasing.test.js tests/weeklyPlans.test.js tests/catalogCorrections.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventory.postgres.test.js tests/inventoryGroups.test.js tests/inventoryGroups.postgres.test.js tests/inventoryStock.test.js tests/purchasing.test.js tests/purchasing.postgres.test.js tests/weeklyPlans.test.js tests/catalogCorrections.test.js)
+  client_tests+=(-- src/pages/Inventory.test.tsx src/components/inventory/Purchasing.test.tsx src/components/meals/MealPlanner.test.tsx)
+  browser_tests+=(-- tests/browser/inventory.spec.ts tests/browser/purchasing.spec.ts tests/browser/weekly-plans.spec.ts tests/browser/catalog-corrections.spec.ts)
 fi
 
 current_step='Preflight'

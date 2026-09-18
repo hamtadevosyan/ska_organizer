@@ -53,6 +53,14 @@ Invalid fields return 400 with `error.fields`. Duplicate review returns 409 with
 
 New coverage is supplied in `server/tests/childRoster.test.js`, `server/tests/childRoster.postgres.test.js`, `client/src/pages/Children.test.tsx` and `client/tests/browser/child-roster.spec.ts`. Existing room fixtures now supply birth dates and explicitly acknowledge intentional same-name synthetic children.
 
-Run the automated and manual checks in [SKAO-22-manual-install.md](SKAO-22-manual-install.md). Final tests, PostgreSQL integration and merge are performed by the user. No new dependencies or environment variables are required.
+Use the shared [backup, migration and automated checks procedure](update-checks.md). No new dependencies or environment variables are required.
+
+For manual verification with synthetic children:
+
+1. Create and edit a profile, assign a room, then refresh Chrome and restart the backend. Verify details and counts persist.
+2. Check blank-name and future-birth-date rejection, duplicate-name acknowledgement and full-room capacity acknowledgement.
+3. Search by preferred name and combine room and enrollment filters. End enrollment and confirm the profile/history remain while the room count decreases.
+4. Reactivate the child; verify capacity is checked again and an archived room requires an active replacement or Unassigned.
+5. Verify read-only accounts can view profiles but cannot change enrollment or details. For legacy profiles, missing birth dates must remain unknown until entered explicitly.
 
 The separate room age-range defect remains tracked in SKAO-43. Daily attendance entry is described in [Daily attendance](daily-attendance.md). Parent onboarding, billing and document collection remain later work.

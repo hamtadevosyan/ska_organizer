@@ -29,3 +29,12 @@ exports.adjust = async (req, res, next) => {
 exports.history = async (req, res, next) => {
   try { res.json(await inventoryService.history(req.params.id, req.query)); } catch (error) { next(error); }
 };
+exports.purchaseConfig = (_req, res, next) => {
+  try { res.json(inventoryService.purchaseConfig()); } catch (error) { next(error); }
+};
+exports.purchases = async (req, res, next) => {
+  try { res.json(await inventoryService.purchases(req.query)); } catch (error) { next(error); }
+};
+exports.receivePurchase = async (req, res, next) => {
+  try { res.status(201).json({ data: await inventoryService.receivePurchase(req.params.id, req.body, req.account) }); } catch (error) { next(error); }
+};

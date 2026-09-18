@@ -1,3 +1,4 @@
+const { randomUUID } = require('node:crypto');
 const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
 const db = require('../services/dbAdapter');
@@ -15,7 +16,9 @@ beforeEach(async () => {
   meal = await api('post', '/api/meals', { name: 'Egg breakfast', type: 'breakfast' }, 201);
   eggs = await api('post', '/api/ingredients', { name: 'Eggs', unit: 'count', shelfLifeDays: 0 }, 201);
   link = await api('post', `/api/meals/${meal.id}/ingredients`, { ingredientId: eggs.id, quantity: 1 }, 201);
-  draft = { version: 0, childrenCount: 4, staffCount: 1, inHouse: { [eggs.id]: 2 },
+  await api('post', '/api/inventory', { name: 'Recipe eggs', category: 'Food', location: 'Kitchen / Shelf 1',
+    ingredientId: eggs.id, unit: 'count', openingQuantity: '2', reorderThreshold: '0', reason: 'Opening count', requestId: randomUUID() }, 201);
+  draft = { version: 0, childrenCount: 4, staffCount: 1,
     week: ['Monday', 'Tuesday', 'Wednesday'].map((day) => ({ day, menu: { breakfast: meal } })) };
 });
 

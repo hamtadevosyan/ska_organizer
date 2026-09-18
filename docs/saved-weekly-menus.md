@@ -1,48 +1,27 @@
-# Saved weekly menus (SKAO-18)
+# Saved weekly menus
 
 The planner stores each calendar week separately. Saving records the meals,
-child/staff counts, recipe ingredients and quantities, and in-house stock in one
-atomic snapshot. Reopening a week restores that snapshot, including historical
-ingredient names and units. Later recipe edits do not rewrite it.
+child/staff counts, recipe ingredients and quantities, and a sample of recorded
+inventory in one atomic snapshot. Reopening a week restores that snapshot, including historical
+ingredient names, units and stock totals. Later recipe edits, purchases and
+stock corrections do not rewrite it.
 
 For catalog edits and archiving, see [Correcting meals and recipes (SKAO-19)](catalog-corrections.md).
 
-## Update your existing Ubuntu installation
+## Update and run
 
-After bringing this branch into `~/workspace/ska_organizer`, stop both running
-servers with Ctrl+C. Keep your existing PostgreSQL databases and `.env` files.
+Use the shared [backup, migration and automated checks procedure](update-checks.md)
+after applying an update. It backs up the configured PostgreSQL database before
+applying pending migrations. Keep your existing databases and settings; no seed
+or database recreation is needed.
 
-```bash
-cd ~/workspace/ska_organizer/server
-npm ci
-npm run db:migrate
-npm test
-npm run test:postgres
-```
+Migration `002-weekly-plans` introduced dated snapshots. Migration
+`011-purchase-receipts` adds purchase history without rewriting any saved plan.
 
-Migration `002-weekly-plans` adds `WeeklyPlans`. It leaves existing tables and data
-intact. Migration is required before restarting the backend. You do not need to
-recreate database users or run the development seed again.
-
-```bash
-cd ~/workspace/ska_organizer/client
-npm ci
-npm run build
-npm run lint
-npm test
-npm run dev
-```
-
-In your second Ubuntu terminal:
-
-```bash
-cd ~/workspace/ska_organizer/server
-node index.js
-```
-
-Open the Network URL printed by Vite in Windows Chrome. Your configured
-`VITE_API_BASE_URL` is used when present; otherwise the frontend connects to port
-3001 on the same host that served the page. Your usual startup commands are unchanged.
+Start the frontend with `npm run dev` in `client`, and the backend with
+`node index.js` in `server`, using separate Ubuntu terminals. In Windows Chrome,
+open the Network URL printed by Vite. See [PostgreSQL setup](postgresql-setup.md)
+for the initial environment configuration.
 
 ## Plan a week
 
@@ -50,12 +29,14 @@ Open the Network URL printed by Vite in Windows Chrome. Your configured
    weekday selects the Monday of that week.
 2. An existing saved plan loads automatically. For a new week, click **Generate
    Menu**. Meals and their recipe ingredients must already exist in Meal Setup.
-3. Adjust meals and child/staff counts, then enter stock already in house. Counts
-   must be whole numbers, neither may be negative, and their total must exceed
-   zero. Stock may be fractional but cannot be negative or blank.
-4. Wait for the shopping calculation, then click **Save Menu**. One request saves
-   the entire plan. Save and Print are unavailable during recalculation or after
-   a calculation error; previous totals are not presented as current.
+3. Adjust meals and child/staff counts. Counts must be whole numbers, neither may
+   be negative, and their total must exceed zero. The calculation reads linked
+   food stock from Inventory across all storage locations.
+4. Review the required, recorded-stock and to-buy quantities, then click **Save
+   Menu**. One request saves the entire reviewed snapshot. Save and Print are
+   unavailable during recalculation or after an error. Reopening an unchanged
+   saved week allows printing its historical snapshot; Save becomes available
+   only after an edit or explicit recalculation.
 5. Return to either week or reload the browser to reopen its saved plan. The
    browser remembers the last selected week.
 
@@ -67,7 +48,7 @@ other weeks' drafts remain intact.
 
 If you had a saved menu before calendar weeks were introduced, choose its intended
 week and click **Use earlier undated menu**. This creates an editable draft using
-the old menu and shelf check, with the old defaults of 20 children and 5 staff.
+the old menu, current Inventory and the old defaults of 20 children and 5 staff.
 Review counts and stock before saving. Its ingredients are captured from the
 current catalog because the old format did not store recipe history. The original
 undated records remain available and are never assigned a guessed date.
@@ -79,6 +60,18 @@ recipe. **Use current recipes** explicitly adopts catalog corrections in a saved
 week’s draft; the saved week changes only after Save. A newly generated menu or
 new calendar week also uses current recipes. Conflicting units for the
 same ingredient are rejected instead of being added together.
+
+## Inventory and saved shopping
+
+The planner uses food amounts from Inventory. **View what we have** opens it in another tab. Unsaved drafts refresh on return or an inventory-change notification from another same-origin tab, preserving meals and headcounts. **Update shopping list** can also request a fresh calculation. There is no polling of other devices.
+
+A reopened week is labeled **Saved list**. Its original stock quantities stay unchanged, including older manually entered amounts. Updating shopping or editing a saved plan creates a draft using current Inventory; only Save replaces the saved week.
+
+Food is matched by ingredient ID across all locations and pages. When adding an item to a food group, typing a unique existing food name selects that identifier automatically. Existing unconnected stock can use **More → Choose food** in Inventory. A new food still needs to be added to its recipes in Meal Setup.
+
+Compatible weights and volumes are converted. Package sizes are never guessed. Missing stock means zero available; stock above the requirement means zero to buy. **No amount recorded yet** indicates the ingredient has no linked inventory record. See [Inventory](inventory.md) for units, daily actions and manual checks.
+
+Saving and printing do not decrease or reserve stock. Record actual usage with **Used some**. The same available stock can appear in several future plans; this feature does not allocate stock between weeks.
 
 ## Errors and concurrent edits
 
@@ -115,26 +108,33 @@ All success responses wrap the result in `{ "data": ... }`. Validation returns
   "staffCount": 1,
   "week": [
     { "day": "Monday", "menu": { "breakfast": { "id": "saved-meal-id" } } }
-  ],
-  "inHouse": { "saved-ingredient-id": 2 }
+  ]
 }
 ```
 
 Optional `refreshRecipes: true` adopts current catalog recipes for a saved week.
 A preview with incomplete recipes returns named `warnings` and no save token.
+Stock is derived on the server. A nonempty `inHouse` input is rejected with an
+instruction to record a count correction in Inventory instead.
 
 Use version `0` for a new week, or the version returned by GET for an existing
 week. Week arrays contain one to five distinct weekdays and valid meal slots.
 Quantities in the API use the ingredient's stored unit. The UI converts grams and
 milliliters to US display units. Each preview's `items` includes `ingredient`,
-`quantity`, `inStorage`, and `toBuy`. Save submits the token from the successful
-preview, so the saved recipe/quantity snapshot is exactly what was reviewed, even
-if someone edits the catalog between calculation and save. The token is not an
-authentication credential; authentication remains a separate backlog item.
+`quantity`, `inStorage`, `toBuy` and `stockItems` (source item, location, quantity,
+unit and revision). New snapshots include `stockSource: "inventory"` and an ISO
+`stockTakenAt` timestamp. Historical saved-shopping responses identify older
+snapshots with `stockSource: "manual"` and a null sample time.
+
+Save submits the token from the successful preview, so the saved recipe and
+stock snapshot is exactly what was reviewed, even if the catalog or inventory
+changes between calculation and save. Recalculate first when you want fresher
+stock. The token is not a sign-in credential; normal [authentication and
+permissions](authentication.md) remain required.
 
 The older `/menu/current`, `/menu/confirm`, and undated shelf APIs remain compatible
-with the previous workflow. They do not represent dated plans. New consumers must
-use dated endpoints rather than the old final-shopping default headcounts.
+with the previous workflow. They do not represent dated plans or the inventory
+ledger. New consumers must use dated endpoints.
 
 ## Verification
 
@@ -170,21 +170,13 @@ npx playwright install --with-deps chromium
 npm run test:browser
 ```
 
-Manual check: add a breakfast recipe using one egg per person; select it on three
-days, set 4 children and 1 staff, and enter 2 eggs in house. Save and reload: the
-shopping table must show 15 needed and 13 buy. Save a different second week, then
-reopen the first and verify its selections, counts and stock are unchanged.
+Manual check: add a breakfast recipe using one egg per person and create linked
+food inventory with an opening count of 2 eggs. Select the recipe on three days
+and set 4 children and 1 staff. Save and reload: the table must show 15 needed,
+2 recorded and 13 to buy. Save a different second week, then reopen the first;
+its selections, counts and stock snapshot must remain unchanged.
 
-### Ubuntu verification — September 7, 2026
-
-The handoff commit was imported and migration `002-weekly-plans` applied to the
-existing configured database, without recreating databases or changing `.env`
-files. With Node 22.17.1, all 35 mock tests, all 39 native PostgreSQL tests, all
-12 React interaction tests and the production build passed. ESLint passed with
-the existing `MealsManagement.tsx` hook dependency warning.
-
-The full Chromium flow passed after correcting its breakfast selector to use
-the combobox role and accessible name. It verified save/reload, the 15/2/13
-quantities through both the UI and saved-shopping API, draft retention across
-tabs and weeks, reopening the saved first week, and mobile navigation.
-GitHub CI and PR merge remain separate delivery gates.
+Receive 3 more eggs in Inventory. Reopening the first week must still show its
+saved 2/13 stock/buy values. Explicitly recalculate to see 5/10, then save and
+print. The inventory balance must stay at 5. For correction, retry and permission
+checks, use the manual verification in [Inventory](inventory.md).

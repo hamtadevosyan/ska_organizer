@@ -5,12 +5,14 @@ export type MenuDay = { day: string; menu: Partial<Record<MealType, Meal>> };
 export type ShoppingItem = {
   ingredient: { id: string; name: string; unit: string };
   quantity: number; inStorage: number; toBuy: number;
+  stockItems?: { id: string; name: string; location: string; quantity: string; unit: string; version: number }[];
 };
 export type Plan = {
   weekStart: string; week: MenuDay[]; childrenCount: number; staffCount: number;
   dailyChildrenCounts?: Record<string, number>;
   inHouse: Record<string, number>; items: ShoppingItem[]; version: number;
   savedAt?: string; previewToken?: string;
+  stockSource?: 'inventory' | 'manual'; stockTakenAt?: string;
   warnings?: { day: string; slot: MealType; mealId: string; mealName: string; message: string }[];
 };
 export type Draft = {

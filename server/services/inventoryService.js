@@ -2,7 +2,8 @@ const { isDeepStrictEqual } = require('node:util');
 const db = require('./dbAdapter');
 const v = require('./inventoryValidation');
 const { problem } = require('./planValidation');
-const { fieldError } = require('./catalogValidation');
+const { fieldError, validate } = require('./catalogValidation');
+const { compatible } = require('./stockUnits');
 
 const snapshot = (item) => ({ ...Object.fromEntries(['id', 'name', 'category', 'groupId', 'location', 'unit', 'ingredientId', 'version'].map((key) => [key, item[key]])),
   quantity: v.decimal(v.amount(item.quantity)), reorderThreshold: v.decimal(v.amount(item.reorderThreshold)) });
@@ -40,7 +41,25 @@ async function verifyIngredient(item, previous) {
   const ingredient = await db.getIngredientById(item.ingredientId);
   if (!ingredient) throw fieldError('ingredientId', 'Ingredient not found.', 404);
   if (ingredient.archived && item.ingredientId !== previous?.ingredientId) throw fieldError('ingredientId', 'Choose an active ingredient for a new link.', 409);
-  if (ingredient.unit !== item.unit) throw fieldError('unit', 'Linked food stock must use the ingredient unit: ' + ingredient.unit + '.');
+  if (!compatible(item.unit, ingredient.unit)) throw fieldError('unit', 'Choose a unit compatible with this food: ' + ingredient.unit + '. Packages must be recorded as a count, weight or volume.');
+}
+// Runs inside the same transaction as the stock record and its history.
+async function connectNewFood(values, payload) {
+  if (payload.newIngredient === undefined) return values;
+  if (values.ingredientId) throw fieldError('ingredientId', 'Choose an existing food or add a new food, not both.');
+  const group = await requireGroup(values.groupId);
+  if (group.kind !== 'food') throw fieldError('groupId', 'Choose a food stock group when adding food.');
+  const details = payload.newIngredient;
+  if (!details || typeof details !== 'object' || Array.isArray(details) || Object.keys(details).some((key) => !['name', 'unit'].includes(key))) {
+    throw fieldError('newIngredient', 'Supply a food name and unit.');
+  }
+  const validated = validate(details, 'ingredient');
+  const normalized = (name) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+  const existing = (await db.listIngredients({ includeArchived: true })).find((row) => normalized(row.name) === normalized(validated.name));
+  if (existing) throw fieldError('newIngredient', existing.archived ? 'This food is archived. Restore it in Meal Setup before choosing it.' : 'This food already exists. Choose it from the food list.', 409);
+  if (!compatible(values.unit, validated.unit)) throw fieldError('unit', 'Choose a compatible count, weight or volume for this food.');
+  const food = await db.createIngredient({ ...validated, name: validated.name.replace(/\s+/g, ' '), shelfLifeDays: null });
+  return { ...values, ingredientId: food.id };
 }
 // Ingredient unit edits and inventory writes share the catalog lock. Always take
 // catalog before inventory, including when nested in an audited transaction.
@@ -74,13 +93,13 @@ async function replay(payload, operation, itemId, actor) {
   }
   return { ...await present(await requireItem(old.itemId)), replayed: true };
 }
-async function record(before, after, type, payload, operation, actor) {
+async function record(before, after, type, payload, operation, actor, reason = payload.reason) {
   const prior = before ? v.amount(before.quantity) : 0n;
-  await db.appendInventoryMovement({
+  return db.appendInventoryMovement({
     itemId: after.id, type, delta: v.decimal(v.amount(after.quantity) - prior),
     beforeQuantity: v.decimal(prior), afterQuantity: v.decimal(v.amount(after.quantity)),
     before: before ? snapshot(before) : null, after: snapshot(after), itemVersion: after.version,
-    reason: v.text(payload.reason, 'reason', 500), actorId: actor.id, actorUsername: actor.username,
+    reason: v.text(reason, 'reason', 500), actorId: actor.id, actorUsername: actor.username,
     occurredAt: new Date().toISOString(), requestId: payload.requestId,
     request: signature(payload, operation, operation === 'create' ? null : after.id, actor),
   });
@@ -88,7 +107,7 @@ async function record(before, after, type, payload, operation, actor) {
 exports.create = (payload, actor) => locked(async () => {
   const repeated = await replay(payload, 'create', null, actor);
   if (repeated) return repeated;
-  const values = await assignGroup(v.item(payload));
+  const values = await connectNewFood(await assignGroup(v.item(payload)), payload);
   const quantity = v.decimal(v.amount(payload.openingQuantity, 'openingQuantity'));
   v.text(payload.reason, 'reason', 500);
   await verifyIngredient(values);
@@ -100,7 +119,7 @@ exports.update = (id, payload, actor) => locked(async () => {
   const repeated = await replay(payload, 'update', id, actor);
   if (repeated) return repeated;
   const previous = await requireItem(id);
-  const values = await assignGroup(v.item(payload, previous));
+  const values = await connectNewFood(await assignGroup(v.item(payload, previous)), payload);
   v.text(payload.reason, 'reason', 500);
   await verifyIngredient(values, previous);
   const saved = await db.updateInventory(id, { ...values, version: previous.version + 1 });
@@ -118,6 +137,38 @@ exports.adjust = (id, payload, actor) => locked(async () => {
   return present(saved);
 });
 exports.get = async (id) => present(await requireItem(id));
+const publicReceipt = (row) => ({
+  ...Object.fromEntries(['id', 'itemId', 'movementId', 'unit', 'receivedOn', 'supplier', 'totalCost', 'currency',
+    'itemSnapshot', 'actorId', 'actorUsername', 'recordedAt'].map((key) => [key, row[key]])),
+  quantity: v.decimal(v.amount(row.quantity)),
+});
+exports.purchaseConfig = () => {
+  const time = require('./facilityTime');
+  return { today: time.dateAt(), timeZone: time.timeZone() };
+};
+exports.receivePurchase = (id, payload, actor) => locked(async () => {
+  const repeated = await replay(payload, 'purchase', id, actor);
+  if (repeated) {
+    const movement = await db.getInventoryMovementByRequestId(payload.requestId);
+    const receipt = await db.getPurchaseByMovementId(movement.id);
+    if (!receipt) throw problem('The purchase record could not be loaded.', 500);
+    return { receipt: publicReceipt(receipt), item: repeated, replayed: true };
+  }
+  const previous = await requireItem(id);
+  const values = v.receipt(payload, previous);
+  const saved = await db.updateInventory(id, { quantity: values.resultingQuantity, version: previous.version + 1 });
+  const movement = await record(previous, saved, 'addition', payload, 'purchase', actor, values.reason);
+  const { resultingQuantity: _quantity, reason: _reason, ...details } = values;
+  const receipt = await db.createPurchaseReceipt({ ...details, itemId: id, movementId: movement.id,
+    itemSnapshot: snapshot(saved), actorId: actor.id, actorUsername: actor.username, recordedAt: movement.occurredAt });
+  return { receipt: publicReceipt(receipt), item: await present(saved), replayed: false };
+});
+exports.purchases = (query = {}) => db.withInventoryLock(async () => {
+  const filters = v.pagination(query, ['itemId', 'page', 'pageSize']);
+  if (query.itemId !== undefined) filters.itemId = (await requireItem(query.itemId)).id;
+  const [items, total] = await Promise.all([db.listPurchaseReceipts(filters), db.countPurchaseReceipts(filters)]);
+  return { items: items.map(publicReceipt), total, page: filters.page, pageSize: filters.pageSize, ...exports.purchaseConfig() };
+});
 exports.getStatus = () => db.withInventoryLock(async () => {
   const [total, lowStock, outOfStock] = await Promise.all([db.countInventory(), db.countInventory({ status: 'low' }), db.countInventory({ status: 'out' })]);
   return { total, lowStock, outOfStock, available: total - lowStock - outOfStock };

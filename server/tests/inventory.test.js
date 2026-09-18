@@ -156,10 +156,10 @@ test('filters combine with literal search, global counts and pagination across c
   expect((await request(app).get('/api/inventory/items?status=out')).body.items).toHaveLength(1);
 });
 
-test('food uses stable ingredient IDs and exact units; archived links and historical units are retained', async () => {
+test('food uses stable ingredient IDs and compatible units; archived links and historical units are retained', async () => {
   const ingredient = (await request(app).post('/api/ingredients').send({ name: 'Synthetic flour', unit: 'lb' })).body.data;
   expect(ingredient.id).toBeDefined();
-  expect((await request(app).post('/api/inventory').send(createBody({ ingredientId: ingredient.id, unit: 'oz' }))).status).toBe(400);
+  expect((await request(app).post('/api/inventory').send(createBody({ ingredientId: ingredient.id, unit: 'gal' }))).status).toBe(400);
   expect((await request(app).post('/api/inventory').send(createBody({ ingredientId: 'missing' }))).status).toBe(404);
   const stock = await item({ name: 'Flour bag', ingredientId: ingredient.id, unit: 'lb' });
   expect(stock.ingredient).toMatchObject({ id: ingredient.id, unit: 'lb' });

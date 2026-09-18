@@ -65,4 +65,12 @@ Staff mutations share the room transaction lock with room archival and record at
 
 This story does not add staff attendance, shift schedules, payroll, employment documents or account linking. It does not alter saved meal plans or their manually entered staff counts. A current staff roster is not a count of staff eating a particular meal. Other dashboard metrics remain under SKAO-28.
 
-Regression coverage is provided in `server/tests/staff.test.js`, `server/tests/staff.postgres.test.js`, `client/src/pages/Staff.test.tsx` and `client/tests/browser/staff-directory.spec.ts`. See `SKAO-24-manual-install.md` for installation and the checks to run on Ubuntu.
+Regression coverage is provided in `server/tests/staff.test.js`, `server/tests/staff.postgres.test.js`, `client/src/pages/Staff.test.tsx` and `client/tests/browser/staff-directory.spec.ts`. Use the shared [backup, migration and automated checks procedure](update-checks.md).
+
+## Manual verification
+
+1. As an administrator, create a synthetic staff member, edit their role and assign an active room. Reject blank required fields. Refresh Chrome and restart the backend to check persistence.
+2. Search and filter, deactivate, then reactivate the person. Verify the facility-wide active count, including across pages, and the Dashboard Active Staff count. Meal-plan headcounts and login accounts must stay unchanged.
+3. Archive the assigned room. Existing details should remain editable, but new assignments and reactivation require an active room or Unassigned.
+4. Save conflicting edits from two tabs; verify the stale form retains its values until **Reload staff record** is confirmed.
+5. Verify editors and viewers can browse but cannot add, edit or deactivate staff. Deactivate synthetic staff when finished.

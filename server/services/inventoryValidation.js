@@ -40,7 +40,7 @@ function version(value, previous) {
   if (value !== previous.version) throw Object.assign(problem('This inventory item changed elsewhere. Reload it and review the latest stock before saving.', 409), { code: 'INVENTORY_CONFLICT' });
 }
 function item(payload, previous) {
-  keys(payload, [...editable, 'reason', 'requestId', ...(previous ? ['version'] : ['openingQuantity'])]);
+  keys(payload, [...editable, 'newIngredient', 'reason', 'requestId', ...(previous ? ['version'] : ['openingQuantity'])]);
   if (previous) version(payload.version, previous);
   const result = { ingredientId: null, groupId: null, reorderThreshold: '0', ...previous };
   for (const key of editable) if (Object.hasOwn(payload, key)) result[key] = payload[key];
@@ -53,8 +53,8 @@ function item(payload, previous) {
     throw fieldError('ingredientId', 'Choose an ingredient or leave it unlinked.');
   }
   result.reorderThreshold = decimal(amount(result.reorderThreshold, 'reorderThreshold'));
-  if (previous && amount(previous.quantity) > 0n && (result.unit !== previous.unit || result.ingredientId !== previous.ingredientId)) {
-    throw fieldError('unit', 'Unit and ingredient link can change only when stock is zero. Record a count correction or usage first.', 409);
+  if (previous && amount(previous.quantity) > 0n && (result.unit !== previous.unit || (previous.ingredientId && (result.ingredientId !== previous.ingredientId || payload.newIngredient !== undefined)))) {
+    throw fieldError('unit', 'The recorded unit and connected food can change only when stock is zero. Unconnected stock can be connected without changing its quantity or unit.', 409);
   }
   return Object.fromEntries(editable.map((key) => [key, result[key]]));
 }
@@ -102,4 +102,30 @@ function pagination(query, allowed = ['q', 'category', 'groupId', 'location', 's
   }
   return result;
 }
-module.exports = { amount, decimal, text, item, movement, pagination, requestId, identifier, group, UNITS };
+function receipt(payload, previous) {
+  keys(payload, ['quantity', 'unit', 'receivedOn', 'supplier', 'totalCost', 'reason', 'version', 'requestId']);
+  requestId(payload);
+  const time = require('./facilityTime');
+  let receivedOn;
+  try { receivedOn = time.validateDate(payload.receivedOn); }
+  catch { throw fieldError('receivedOn', 'Enter a real received date in YYYY-MM-DD format.'); }
+  if (receivedOn > time.dateAt()) throw fieldError('receivedOn', 'A received purchase cannot have a future date.');
+  let supplier = null;
+  if (payload.supplier !== undefined && payload.supplier !== null) {
+    if (typeof payload.supplier !== 'string' || payload.supplier.trim().length > 200) throw fieldError('supplier', 'Keep the supplier within 200 characters.');
+    supplier = payload.supplier.trim().replace(/\s+/g, ' ') || null;
+  }
+  let totalCost = null;
+  if (payload.totalCost !== undefined && payload.totalCost !== null) {
+    if (!['string', 'number'].includes(typeof payload.totalCost) || !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(String(payload.totalCost))) {
+      throw fieldError('totalCost', 'Enter a non-negative total cost with at most two decimal places, or leave it empty.');
+    }
+    const [whole, fraction = ''] = String(payload.totalCost).split('.');
+    totalCost = whole + '.' + fraction.padEnd(2, '0');
+  }
+  const resultingQuantity = movement({ type: 'addition', quantity: payload.quantity, unit: payload.unit, version: payload.version }, previous);
+  const reason = payload.reason === undefined ? 'Purchase received' : text(payload.reason, 'reason', 500);
+  return { quantity: decimal(amount(payload.quantity)), unit: previous.unit, receivedOn, supplier, totalCost,
+    currency: 'USD', reason, resultingQuantity };
+}
+module.exports = { amount, decimal, text, item, movement, pagination, requestId, identifier, group, receipt, UNITS };

@@ -10,6 +10,8 @@ test('save, reload, preserve drafts and reopen two independent weeks through rea
   const ingredientResponse = await request.post(`${api}/ingredients`, { data: { name: 'Eggs', unit: 'count' } });
   expect(ingredientResponse.status()).toBe(201);
   const eggs = (await ingredientResponse.json()).data;
+  expect((await request.post(`${api}/inventory`, { data: { name: 'Weekly eggs', category: 'Food', location: 'Kitchen / Shelf 1',
+    ingredientId: eggs.id, unit: 'count', openingQuantity: '2', reorderThreshold: '0', reason: 'Opening count', requestId: crypto.randomUUID() } })).status()).toBe(201);
   expect((await request.post(`${api}/meals/${meal.id}/ingredients`, { data: { ingredientId: eggs.id, quantity: 1 } })).status()).toBe(201);
   const catalog = (await (await request.get(`${api}/meals`)).json()).data as { id: string; name: string }[];
   const oatmeal = catalog.find((item) => item.name === 'Oatmeal')!;
@@ -28,17 +30,17 @@ test('save, reload, preserve drafts and reopen two independent weeks through rea
   await page.getByLabel('Children', { exact: true }).fill('4');
   await page.getByLabel('Staff', { exact: true }).fill('1');
   await expect(save).toBeEnabled();
-  await page.getByLabel('Eggs in house (count)', { exact: true }).fill('2');
   await expect(save).toBeEnabled();
   const eggRow = page.getByRole('table').getByRole('row').filter({ hasText: 'Eggs' });
   await expect(eggRow.getByText('15 count', { exact: true })).toBeVisible();
   await expect(eggRow.getByText('13 count', { exact: true })).toBeVisible();
   await save.click();
-  await expect(page.getByText('Menu, headcounts and stock saved together.')).toBeVisible();
+  await expect(page.getByText('Menu and shopping list saved.')).toBeVisible();
   await page.reload();
-  await expect(save).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Print List' })).toBeEnabled();
+  await expect(save).toBeDisabled();
   await expect(page.getByLabel('Children', { exact: true })).toHaveValue('4');
-  await expect(page.getByLabel('Eggs in house (count)', { exact: true })).toHaveValue('2');
+  await expect(page.getByLabel('Eggs recorded stock', { exact: true })).toHaveText('2 count');
   await expect(eggRow.getByText('13 count', { exact: true })).toBeVisible();
   await page.getByLabel('Children', { exact: true }).fill('6');
   await page.getByRole('button', { name: 'Meal Setup', exact: true }).click();
@@ -49,7 +51,7 @@ test('save, reload, preserve drafts and reopen two independent weeks through rea
   await generate.click();
   await expect(save).toBeEnabled();
   await save.click();
-  await expect(page.getByText('Menu, headcounts and stock saved together.')).toBeVisible();
+  await expect(page.getByText('Menu and shopping list saved.')).toBeVisible();
   await page.getByLabel('Week starting Monday').fill('2026-09-07');
   await expect(page.getByLabel('Children', { exact: true })).toHaveValue('6');
   await page.getByRole('button', { name: 'Reopen saved week' }).click();
