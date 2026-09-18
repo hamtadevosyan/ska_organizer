@@ -1,9 +1,10 @@
+const { randomUUID } = require('node:crypto');
 const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
 const db = require('../services/dbAdapter');
 const A = '/api/menu/plans/2026-09-07';
 const B = '/api/menu/plans/2026-09-14';
-let meal, eggs, link, draft;
+let meal, eggs, link, draft, stock;
 async function api(method, path, body, status = 200) {
   const response = await request(app)[method](path).send(body);
   expect({ status: response.status, error: response.body.error }).toEqual({ status, error: status < 400 ? undefined : expect.anything() });
@@ -15,14 +16,18 @@ beforeEach(async () => {
   meal = await db.createMeal({ name: 'Egg breakfast', type: 'breakfast' });
   eggs = await db.createIngredient({ name: 'Eggs', unit: 'count' });
   link = await db.addMealIngredient({ mealId: meal.id, ingredientId: eggs.id, quantity: 1 });
-  draft = { version: 0, childrenCount: 4, staffCount: 1, inHouse: { [eggs.id]: 2 },
+  stock = await api('post', '/api/inventory', { name: 'Recipe eggs', category: 'Food', location: 'Kitchen / Shelf 1',
+    ingredientId: eggs.id, unit: 'count', openingQuantity: '2', reorderThreshold: '0', reason: 'Opening count', requestId: randomUUID() }, 201);
+  draft = { version: 0, childrenCount: 4, staffCount: 1,
     week: ['Monday', 'Tuesday', 'Wednesday'].map((day) => ({ day, menu: { breakfast: meal } })) };
 });
 
 test('reopens two independent weeks with 15 needed, 2 in house and 13 to buy', async () => {
   expect(await api('get', A)).toBeNull();
   const first = await save(A, await preview());
-  const second = await save(B, await preview(B, { childrenCount: 1, staffCount: 1, inHouse: {} }));
+  await api('post', '/api/inventory/' + stock.id + '/movements', { type: 'correction', quantity: '0', unit: stock.unit,
+    version: stock.version, reason: 'Shelf recounted before planning the next week', requestId: randomUUID() });
+  const second = await save(B, await preview(B, { childrenCount: 1, staffCount: 1 }));
   expect(await api('get', A)).toEqual(first);
   expect(await api('get', B)).toEqual(second);
   expect(first).toMatchObject({ childrenCount: 4, staffCount: 1, version: 1, inHouse: { [eggs.id]: 2 } });
@@ -44,13 +49,14 @@ test('draft changes are read-only and existing slots retain recipe history after
   const saved = await save(A, calculated);
   expect(saved.items[0].quantity).toBe(15);
   await db.deleteMeal(meal.id);
-  await db.updateIngredient(eggs.id, { name: 'Renamed eggs', unit: 'g' });
+  await db.updateIngredient(eggs.id, { name: 'Renamed eggs' });
   const edited = await preview(A, { version: 1, childrenCount: 5 });
   expect(edited.items[0]).toMatchObject({ ingredient: { name: 'Eggs', unit: 'count' }, quantity: 18, toBuy: 16 });
   expect(await api('get', A)).toEqual(saved);
   expect((await api('get', `${A}/shopping`)).items[0].quantity).toBe(15);
   const replacement = await db.createMeal({ name: 'New breakfast', type: 'breakfast' });
-  await db.addMealIngredient({ mealId: replacement.id, ingredientId: eggs.id, quantity: 2 });
+  const replacementIngredient = await db.createIngredient({ name: 'Replacement ingredient', unit: 'g' });
+  await db.addMealIngredient({ mealId: replacement.id, ingredientId: replacementIngredient.id, quantity: 2 });
   const newWeek = draft.week.map((day) => ({ ...day, menu: { breakfast: replacement } }));
   const newPreview = await preview(B, { week: newWeek });
   expect(newPreview.items[0]).toMatchObject({ ingredient: { unit: 'g' }, quantity: 30 });
@@ -58,7 +64,9 @@ test('draft changes are read-only and existing slots retain recipe history after
 
 test('a rejected save leaves every field of the prior version intact', async () => {
   const saved = await save(A, await preview());
-  const editing = await preview(A, { version: 1, childrenCount: 6, inHouse: { [eggs.id]: 8 } });
+  await api('post', '/api/inventory/' + stock.id + '/movements', { type: 'correction', quantity: '8', unit: stock.unit,
+    version: stock.version, reason: 'Physical recount', requestId: randomUUID() });
+  const editing = await preview(A, { version: 1, childrenCount: 6 });
   const failure = jest.spyOn(db, 'saveWeeklyPlan').mockRejectedValueOnce(new Error('Storage unavailable'));
   await api('put', A, { previewToken: editing.previewToken }, 500);
   failure.mockRestore();

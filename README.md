@@ -36,7 +36,7 @@ sample data and isolated database tests.
 
 The meal planner now saves and reopens separate calendar weeks with headcounts,
 stock and historical recipe quantities. See [Saved weekly menus](docs/saved-weekly-menus.md)
-for the SKAO-18 update commands, dated API and usage instructions.
+for the dated API, historical snapshots and usage instructions.
 
 After applying an update, stop the usual client/server terminals and run this from the repository root:
 
@@ -46,7 +46,7 @@ bash scripts/check-update.sh
 
 It backs up the configured database, checks the archive, applies pending migrations,
 and runs the server/PostgreSQL/client/browser tests plus client build and lint.
-It stops on failure and keeps the backup. Use `--inventory` for focused SKAO-25 checks,
+It stops on failure and keeps the backup. Use `--inventory` for focused inventory, purchasing and planner checks,
 or `--dry-run` to preview the commands. See [the reusable update checks](docs/update-checks.md).
 
 🚀 Project Structure
@@ -140,6 +140,9 @@ GET /api/inventory/:id
 PUT /api/inventory/:id
 GET /api/inventory/:id/movements
 POST /api/inventory/:id/movements
+GET /api/inventory/purchase-config
+GET /api/inventory/purchases
+POST /api/inventory/:id/purchases
 
 Schedule
 GET /api/schedule
@@ -183,18 +186,15 @@ node index.js
 http://localhost:5173 or http://YOUR_IP:5173
 
 
-Child roster and enrollment
+Documentation
 
-- [Feature and API documentation](docs/child-roster.md)
-- [SKAO-22 manual Ubuntu installation and verification](docs/SKAO-22-manual-install.md)
-
-Daily attendance
-
-- [Arrivals, departures, corrections and meal counts](docs/daily-attendance.md)
-- [SKAO-23 manual Ubuntu installation and verification](docs/SKAO-23-manual-install.md)
-
-Inventory quantities and storage locations
-
-- [Inventory workflow, quantities, movement history and API](docs/inventory.md)
-- [SKAO-25 manual Ubuntu installation and verification](docs/SKAO-25-manual-install.md)
-- [Inventory groups update for existing SKAO-25 installations](docs/SKAO-25-groups-update.md)
+- [PostgreSQL setup](docs/postgresql-setup.md)
+- [Sign-in and account administration](docs/authentication.md)
+- [Backups, migrations and update checks](docs/update-checks.md)
+- [Rooms and classes](docs/rooms-and-classes.md)
+- [Child roster and enrollment](docs/child-roster.md)
+- [Daily attendance and meal counts](docs/daily-attendance.md)
+- [Staff directory](docs/staff-directory.md)
+- [Inventory groups, stock, purchase receipts and history](docs/inventory.md)
+- [Saved weekly menus](docs/saved-weekly-menus.md)
+- [Meal and ingredient catalog corrections](docs/catalog-corrections.md)

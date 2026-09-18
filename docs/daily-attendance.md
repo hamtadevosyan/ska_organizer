@@ -80,4 +80,14 @@ The dated weekly-menu preview accepts optional `dailyChildrenCounts: { "2026-09-
 - Frontend: action status, retry handling, read-only controls, stale responses, correction failures, date-specific planner transfer and future-week isolation.
 - Browser: real HTTP arrival, refresh, void/history and departure flow.
 
-See [manual installation and verification](SKAO-23-manual-install.md) for commands. Automated suites, PostgreSQL migration and integration are for the user to execute; they have not been marked as passed in this handoff.
+Use the shared [backup, migration and automated checks procedure](update-checks.md).
+
+## Manual verification
+
+Use synthetic children assigned to active rooms and check the displayed facility time zone.
+
+1. Check a child in, refresh Chrome and restart the backend. The open visit should persist. Try the same arrival in two tabs; only one valid open visit may exist. Check out and confirm the departure persists.
+2. Correct a completed visit with a reason. Verify before/after history, actor and time; reject blank reasons, future times, reversed times and overlaps. Try saving an older revision from a second tab and confirm typed edits survive the conflict.
+3. Void a mistaken visit; it should remain in history and leave the counts. Moving the child or ending enrollment must preserve historical rooms and allow an existing open visit to be checked out. Verify read-only access and date/room/name filters.
+4. On a weekday, review today's attendance in the current meal-plan week. Reviewing must not change counts; applying changes only today's child count and shopping quantities. Staff, other daily overrides and future weeks remain independent.
+5. Save, reload and print the menu; confirm its daily counts persist. Check out the test children and verify the saved plan stays unchanged until a new count is explicitly applied. Review flagged legacy visits without inventing missing times.

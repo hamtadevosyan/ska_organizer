@@ -182,6 +182,17 @@ exports.listInventoryMovements = (itemId, { page = 1, pageSize = 50 } = {}) => l
 });
 exports.countInventoryMovements = (itemId) => model('InventoryMovement').count({ where: { itemId }, transaction: transactionContext.getStore() });
 
+exports.listInventoryForIngredients = (ids) => list('InventoryItem', { where: { ingredientId: { [Op.in]: ids } }, order: [['id', 'ASC']] });
+exports.createPurchaseReceipt = (values) => create('PurchaseReceipt', values);
+exports.getPurchaseByMovementId = async (movementId) => (await list('PurchaseReceipt', { where: { movementId }, limit: 1 }))[0] || null;
+exports.listPurchaseReceipts = ({ itemId, page = 1, pageSize = 25 } = {}) => list('PurchaseReceipt', {
+  where: itemId ? { itemId } : {}, order: [['receivedOn', 'DESC'], ['recordedAt', 'DESC'], ['id', 'DESC']],
+  limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countPurchaseReceipts = ({ itemId } = {}) => model('PurchaseReceipt').count({
+  where: itemId ? { itemId } : {}, transaction: transactionContext.getStore(),
+});
+
 const staffWhere = ({ q, roomId, active } = {}) => ({
   ...(roomId !== undefined ? { roomId } : {}),
   ...(active !== undefined ? { active } : {}),

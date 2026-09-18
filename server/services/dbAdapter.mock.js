@@ -5,7 +5,7 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [],
+  rooms: [], scheduleEntries: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [],
   attendance: [], attendanceCorrections: [],
@@ -105,6 +105,16 @@ module.exports = {
   listInventoryMovements: async (itemId, { page = 1, pageSize = 50 } = {}) => structuredClone(mock.inventoryMovements
     .filter((row) => row.itemId === itemId).sort((a, b) => b.itemVersion - a.itemVersion).slice((page - 1) * pageSize, page * pageSize)),
   countInventoryMovements: async (itemId) => mock.inventoryMovements.filter((row) => row.itemId === itemId).length,
+  listInventoryForIngredients: async (ids) => structuredClone(mock.inventoryItems.filter((item) => ids.includes(item.ingredientId)).sort((a, b) => a.id.localeCompare(b.id))),
+  createPurchaseReceipt: async (values) => {
+    const receipt = { id: mock.uuid(), ...values }; mock.purchaseReceipts.push(receipt); return structuredClone(receipt);
+  },
+  getPurchaseByMovementId: async (movementId) => structuredClone(mock.purchaseReceipts.find((row) => row.movementId === movementId) || null),
+  listPurchaseReceipts: async ({ itemId, page = 1, pageSize = 25 } = {}) => structuredClone(mock.purchaseReceipts
+    .filter((row) => !itemId || row.itemId === itemId)
+    .sort((a, b) => b.receivedOn.localeCompare(a.receivedOn) || b.recordedAt.localeCompare(a.recordedAt) || b.id.localeCompare(a.id))
+    .slice((page - 1) * pageSize, page * pageSize)),
+  countPurchaseReceipts: async ({ itemId } = {}) => mock.purchaseReceipts.filter((row) => !itemId || row.itemId === itemId).length,
   listStaff: async ({ page = 1, pageSize = 50, ...filters } = {}) => structuredClone(filteredStaff(filters).slice((page - 1) * pageSize, page * pageSize)),
   countStaff: async (filters) => filteredStaff(filters).length,
   getStaffById: async (id) => structuredClone(mock.staff.find((person) => person.id === id) || null),
@@ -154,7 +164,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
-    mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = [];
+    mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = [];
     mock.attendance = [];

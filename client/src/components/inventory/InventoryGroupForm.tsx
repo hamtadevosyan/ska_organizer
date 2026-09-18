@@ -32,7 +32,7 @@ export function InventoryGroupForm({ onSaved, onCancel }: { onSaved: (group: Inv
       <label className="block">Group type<select className={control} value={kind} onChange={(event) => setKind(event.target.value as 'food' | 'supplies')}>
         <option value="supplies">Supplies and equipment</option><option value="food">Food stock</option>
       </select></label>
-      <p className="text-sm text-slate-600">{kind === 'food' ? 'Track food physically in storage. Recipes and weekly menus are managed in Meals.' : 'For materials, toys, decorations, cleaning supplies and equipment.'}</p>
+      <p className="text-sm text-slate-600">{kind === 'food' ? 'Food you keep for meals. We count it when making your shopping list.' : 'For materials, toys, decorations, cleaning supplies and equipment.'}</p>
       <label className="block">Description (optional)<textarea className={control} maxLength={240} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       <div className="flex gap-3"><button className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Save group</button><button type="button" className="rounded-lg border px-4 py-2" onClick={onCancel}>Cancel group</button></div>
     </fieldset>

@@ -69,10 +69,12 @@ Schedule writes validate the selected Monday, supported time blocks, dates withi
 - `client/tests/browser/rooms.spec.ts`: room creation/editing/reload, Activity Planner selection and archival.
 - Existing attendance/present-children fixtures now create real referenced rooms and children.
 
-## Current verification status
+## Manual verification
 
-TypeScript compilation, production frontend build, JavaScript syntax checks and ESLint completed successfully. ESLint reports one existing warning in MealsManagement.tsx.
+Use the shared [backup, migration and automated checks procedure](update-checks.md), then verify the workflow with synthetic records in Windows Chrome:
 
-During implementation, the targeted room, attendance and child API run passed 26 tests. The final full test suites, native PostgreSQL migration/restart checks and actual browser execution are left for your testing, as requested. This is an implementation ready for review, not a claim that final integration tests have passed.
-
-See `docs/SKAO-21-manual-install.md` for manual installation, tests and integration.
+1. Create and edit a room with ages 24–60 months and capacity 1. Verify blank names, reversed ages and zero/fractional capacity are rejected.
+2. Assign two active children, acknowledging the capacity warning for the second. Transfer or unassign one and check both room counts.
+3. Select the room in Activity Planner and the schedule. Archive it and confirm existing references remain, while new assignments are rejected. Reactivate it.
+4. Refresh Chrome and restart the backend; room details and assignments should persist.
+5. Verify administrators can manage rooms, editors can assign children, and read-only accounts see no write controls.

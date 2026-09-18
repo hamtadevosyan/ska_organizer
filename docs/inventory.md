@@ -1,63 +1,66 @@
-# Inventory quantities and storage locations — SKAO-25
+# Inventory and shopping
 
-Inventory stores physical supplies and their quantities in PostgreSQL, organized into user-created groups. Administrators and editors can create groups and items, change item details and record stock movements. Viewers can browse, search, filter and read history. Existing sign-in, Origin and CSRF protections apply to the API.
+Inventory shows what is on hand, organized into groups such as Food, Toys or Cleaning Supplies. Open a group and find the item. Routine actions ask only for an amount and a save; setup, history and optional information stay out of the main view.
 
-Each record represents stock at one exact location. For example, paper in `Art room / Cupboard / Shelf 2` and paper in `Office / Drawer 1` are separate records. Every item belongs to a group and has a required storage location. Moving a record to another location or group is a details edit and preserves the previous values in history.
+## Everyday actions
 
-## Groups and the Meals area
+| What happened | Action | What to enter |
+| --- | --- | --- |
+| You received more | **Bought more** | The amount received, then **Save amount** |
+| You used some | **Used some** | The amount used, then **Save amount** |
+| You checked what is left | **More → Check the amount** | The total you counted, including zero, then **Save amount** |
 
-Opening Inventory shows group cards with item counts and low/out-of-stock counts. It does not open a mixed table of food and other materials. Select **Add group** to create a named group, optionally describe it, and choose its type:
+The form previews the resulting amount before saving. For example, using 2 of 10 packs shows **8 packs left**. Usage cannot exceed what is available. A physical count replaces the current total; entering 12 when the app shows 15 records a decrease of 3.
 
-| Group type | Examples | Item form |
-|---|---|---|
-| Food stock | Food Stock, Pantry, Refrigerated Food | Can link to an existing food ingredient |
-| Supplies and equipment | Classroom Materials, Toys, Decorations, Cleaning Supplies | Has no food ingredient controls |
+**Bought more** uses today's facility date automatically. Open **Date, cost or notes (optional)** for an earlier received date, supplier, total cost in USD or a note. An empty cost is unknown; zero is no cost. Dates cannot be in the future. Use this action for goods actually received.
 
-Names are chosen by the user and must be unique regardless of capitalization or repeated spaces. Empty groups exist before any items are added. Open a group to view its stock or add an item with that group preselected. **Add inventory item** from the group overview asks you to choose the destination group. **All groups** returns to the cards, and **View all items** provides an optional combined search view.
+History notes are supplied automatically: **Initial quantity recorded**, **Purchase received**, **Used in daily activities**, **Physical count checked**, or **Inventory details updated**. Users may supply an optional note. Other additions, such as donated supplies, are under **Other changes → Added without a purchase**.
 
-Meals manages recipes, ingredient amounts per recipe and weekly menus. Food inventory records what is physically in storage. Grouping does not create a second place to edit recipes or automatically consume food when a menu is saved.
+## Add an item
 
-## Creating and maintaining stock
+Open its group and choose **Add item**. Answer three questions:
 
-Create a group first if necessary. Choose **Add inventory item**, then select its group and enter its name, exact storage location, unit, opening count, reorder threshold and a reason for the opening count. Food groups can optionally link stock to an existing ingredient. Use **Edit** for the group, descriptive details and the reorder threshold. Use **Adjust stock** for changes in quantity.
+1. **What is it?** Type the name.
+2. **How much do you have?** Enter the amount and select its unit. Zero means none.
+3. **Where do you keep it?** Type a location or choose a suggested location.
 
-| Movement | Quantity entered | Result |
-|---|---|---|
-| Opening count | Starting quantity physically counted | Creates the item and its first history entry |
-| Stock addition | Amount added, greater than zero | Increases the recorded quantity |
-| Usage | Amount used, greater than zero | Decreases the quantity; cannot exceed available stock |
-| Count correction | Total physically counted, including zero | Sets the current count and records the difference |
-| Details changed | Updated name/group/location/unit/link/threshold | Keeps the balance and records previous and new details |
+Choose **Save item**. The current group is already selected. From the overview, choose a group first. **Optional details** contains the group and a warning level; leave the warning empty if it is unnecessary. A warning does not place orders or send notifications.
 
-The item form now uses a group selector in place of the old category text field. Historical categories remain visible in older movement snapshots.
+For food, a unique existing recipe ingredient with the same name is chosen automatically, ignoring capitalization and repeated spaces. Suggestions can also be selected. A new name creates the food and its stock together in one transaction and makes it available in Meal Setup. Add that food to the relevant recipes there. Similar names are not guessed; duplicate names require an explicit choice. Archived foods must be restored or given a different name.
 
-Every change requires a reason. **History** shows the change, before/after quantities, unit, location, reason, signed-in username, timestamp and revision. Corrections create new entries; earlier entries cannot be edited or deleted through the API or interface. There is no item-deletion action in this version. An unused item can be counted down to zero with a reason and remains in history.
+Weight defaults to pounds, volume to gallons, and counts to pieces for a matched food. A compatible unit can be chosen. Supply items have no recipe controls. Each record represents one storage location; the same food may have separate records in the pantry and freezer.
 
-**Count correction takes the new total, not the amount to add or remove.** If the app says 15 packs and you count 12, enter `12`; history records a change of `-3`.
+## Groups and additional details
 
-## Units, food links and precision
+The first empty screen offers **Add your first group**. Later use the page's **More → Add group**. Choose **Food stock** for food used in meals and **Supplies and equipment** for other materials. Group names must be unique regardless of capitalization or repeated spaces.
 
-Supported units are `count`, `g`, `ml`, `oz`, `lb`, `gal`, `box` and `pack`. No conversions occur automatically. Quantities and thresholds must be non-negative, below one trillion, with at most six decimal places. The API returns them as decimal strings so fractional stock can be retained exactly; for example, `0.1` plus `0.2` is `0.3`.
+Open a group to browse or add its items. **All groups** returns to the cards. **View all items** offers combined search. **More filters** holds group, location and status filters; **Overview** holds totals. Zero warning counts are omitted from group cards.
 
-Food links use ingredient IDs and are permitted only in a food stock group. Linking an ingredient selects its existing unit. A stock movement must specify that exact unit: an ounce quantity cannot be entered against a pounds record. Unit and ingredient link can change only when the item's stock is zero. Past movements retain the units and ingredient links that applied at the time. Ingredient-linked stock can move between food groups; unlinking an empty item allows it to move to a supplies group.
+Use an item's **More → Edit details** for its name, group, location or warning level. Moving a record moves its entire balance and keeps the previous details in history. The main list is hidden while editing so the active task remains clear. An item's **More → History** and **More → Purchases** show past changes; the page's **More → Purchase history** shows all receipts.
 
-An ingredient referenced by current inventory cannot have its unit changed in Meal Setup, including when that inventory is empty. Existing links to archived ingredients remain readable and usable; new links require an active ingredient. Unlink an empty record or create a separate ingredient when changing units.
+Administrators and editors can change inventory. Viewers can read it and its history. Every change records the signed-in user and server time. History and receipts cannot be edited or deleted through this interface. Corrections create a new entry. Item/group deletion, receipt returns and financial accounting are outside this workflow.
 
-This story establishes inventory records and movement history. Purchase receipts and connection to shopping/meal planning are SKAO-26. Saving or generating a meal plan does not consume inventory in this version. Existing weekly-plan in-house entries and saved snapshots keep their current behavior. The Dashboard inventory card is separate work under SKAO-28; use the Inventory page for actual counts.
+## Food and the shopping list
 
-## Status, search and retry behavior
+The planner subtracts available food across every location from recipe requirements. **Already have** shows the recorded amount; **Buy** shows `max(needed − available, 0)`. Calculations use ingredient identifiers, including those automatically chosen when adding food, rather than names alone.
 
-| Status | Calculation |
-|---|---|
-| Out of stock | Quantity is zero |
-| Low stock | Quantity is positive and at or below the reorder threshold |
-| Available | Quantity is above the reorder threshold |
+For older food without a connection, use **More → Choose food** to select the recipe ingredient and save. The amount stays unchanged. If the record is in a supplies group, edit its group first. Group names do not determine group type. Boxes and packs must have their contents counted or measured before they can supply a recipe; do not count both the packages and their contents.
 
-Search matches words in item names without treating `%` or `_` as wildcards. Group, exact location and stock status filters combine with the search. The table uses 25 records per page. Summary cards count every item in the selected group across all locations and pages, independently of the search and location/status filters. Selecting All groups in the filter shows overall inventory totals. Reset filters keeps the selected group. Group cards always show counts for their own members.
+**View what we have** opens Inventory in another tab. An unsaved shopping draft refreshes when you return or when another same-origin tab reports an inventory change. It keeps meal selections and headcounts. There is no background polling of other devices; **Update shopping list** is also available whenever a fresh calculation is needed.
 
-**Refresh inventory** retries failed list and ingredient loads. A failed history load has **Retry history**. Unsaved form values survive failed saves. Retry the same save if the response was lost; the request identifier prevents a second opening or stock movement. If you change the payload after it was already committed, the server rejects reusing that identifier.
+A saved week keeps its saved quantities until you choose **Update shopping list** or edit the plan. Review and save to replace it. Saving and printing never consume or reserve inventory; record actual use with **Used some**. The same stock may appear in multiple future weeks. See [Saved weekly menus](saved-weekly-menus.md).
 
-If another person updates the same item, saving an old revision returns a conflict and preserves your entries. Choose **Reload inventory item**, confirm replacement of the unsaved entries, and review the current balance before entering a new change. Refreshing the list alone does not replace the open form.
+## Units, status and retries
+
+Supported units are pieces (`count`), `g`, `ml`, `oz`, `lb`, US `gal`, `box` and `pack`. Quantities are non-negative, below one trillion, with at most six decimal places. The API returns decimal strings and daily previews use exact decimal arithmetic.
+
+Food accepts compatible mass units (`g`, `oz`, `lb`) or volume units (`ml`, `gal`). Counts match counts only. There is no assumed size for packs or boxes. Converted available stock is rounded down to six decimal places. Once stock exists, its unit stays fixed; an unconnected record may still select a compatible ingredient. Replacing an already connected ingredient requires a zero balance. Previous history retains its original units and links.
+
+An ingredient referenced by inventory cannot change its recipe unit. Links to archived ingredients remain readable; new links require an active ingredient.
+
+Zero is **Out of stock**. A positive amount at or below an enabled warning level is **Low stock**; other positive quantities are **Available**. The list is paginated and filters preserve overall/group summaries.
+
+If a save response is lost, retry the unchanged form. A request identifier prevents duplicate changes. A concurrent update or reused identifier with different details keeps the entered values visible and asks for review. Check history before explicitly reloading the latest item, which replaces unsaved entries after confirmation. The stock increase, receipt and history are saved atomically.
 
 ## API contract
 
@@ -75,6 +78,9 @@ All paths below are relative to `/api/inventory`. Writes require a signed-in adm
 | `PUT /:id` | Edit metadata; `200 {data: item}` |
 | `GET /:id/movements` | `{item, items, total, page, pageSize}`; newest revision first |
 | `POST /:id/movements` | Apply addition, usage or correction; `200 {data: item}` |
+| `GET /purchase-config` | `{today, timeZone}` from the facility clock |
+| `GET /purchases` | `{items, total, page, pageSize, today, timeZone}`; optional `itemId` filter |
+| `POST /:id/purchases` | Record a received purchase; `201 {data: {receipt, item, replayed}}` |
 
 The list accepts `q`, `groupId`, `location`, `status=all|available|low|out`, `page` and `pageSize`. The earlier `category` text filter remains supported for existing clients. Page size defaults to 50 and is capped at 100. History accepts only `page` and `pageSize`. Unknown body/filter fields are rejected. The list replaces the former hardcoded array response. Its API `summary` remains the overall inventory summary; `GET /groups` supplies the group summaries shown in the interface.
 
@@ -91,7 +97,7 @@ Example create body (request identifiers must be fresh per intended operation, t
   "ingredientId": null,
   "openingQuantity": "10",
   "reorderThreshold": "2",
-  "reason": "Opening physical count",
+  "reason": "Initial quantity recorded",
   "requestId": "synthetic-opening-request-0001"
 }
 ```
@@ -111,6 +117,10 @@ Example adjustment to that item's current revision:
 
 Metadata edits accept `name`, `groupId`, `location`, `unit`, `ingredientId`, `reorderThreshold`, plus required `version`, `reason`, and `requestId`. They cannot set the current quantity. Moving an item changes its group without altering the balance and records a details movement. Request identifiers are 16–100 letters, digits, underscores or hyphens. Clients cannot supply actor, occurrence time, ID or a replacement history entry.
 
+Create and metadata-edit bodies also accept `newIngredient: {"name": "Brown rice", "unit": "lb"}` instead of an existing `ingredientId`. `ingredientId` must be null when adding a new food. The group must have type `food`, and stock and food units must be compatible. New food, stock, movement and audit share one transaction; identical retries reuse the recorded result. An existing normalized food name (including an archived food) returns 409 with guidance to choose or restore it. This avoids silently creating duplicate recipe ingredients. The UI requires a food choice or new food in food groups; older API clients may still create unlinked records, which are visibly flagged in Inventory.
+
+Purchase requests contain `quantity`, the item's exact `unit`, `receivedOn` (`YYYY-MM-DD`), current `version` and `requestId`. Optional fields are `supplier` (up to 200 characters), `totalCost` (null or non-negative USD amount with at most two decimal places), and `reason` (up to 500 characters, defaults to "Purchase received"). Negative or zero quantity, future/invalid dates, incompatible units, invalid costs and unknown fields return 400. Received date is user-selected; actor and recording time are server-generated. Purchase reads accept only `itemId`, `page` and `pageSize`, and sort by received date, recorded time and ID descending.
+
 For compatibility, older clients can still supply category text without `groupId`; the API finds or creates the corresponding group. Food-linked stock and the category names Food, Food Stock, Ingredients and Groceries create food groups. A food-linked item cannot be placed in an existing supplies group. New interface requests always use a group ID.
 
 Invalid input returns 400 with field details where applicable. Missing item/ingredient returns 404. Insufficient stock, prohibited unit/link changes, archived new ingredient links or a revision conflict return 409. Revision conflicts use `INVENTORY_CONFLICT`; conflicting reuse of a request identifier uses `INVENTORY_REQUEST_CONFLICT`. Repeating an identical committed request by the same account returns the item's current state with `replayed: true` without changing its quantity, revision or movement history again.
@@ -119,8 +129,21 @@ Invalid input returns 400 with field details where applicable. Missing item/ingr
 
 Migration `009-inventory-ledger` adds `InventoryItems` and `InventoryMovements`. Migration `010-inventory-groups` adds `InventoryGroups` and required item group references. Existing categories become groups; names differing only by case or repeated whitespace share a group. Groups with ingredient-linked stock, or named Food, Food Stock, Ingredients or Groceries, receive the food type. Other groups receive the supplies type. No quantities, item versions, original categories, timestamps or historical movement entries are rewritten by migration 010.
 
-Neither migration seeds demonstration stock or changes existing meals, rooms, children, staff, accounts or weekly plans. With no existing inventory, the groups page starts empty and asks you to create the first group. Mock inventory and groups are empty on every backend start and are for isolated tests; use PostgreSQL for persistent operation.
+Migration `011-purchase-receipts` adds `PurchaseReceipts`, linked to the original stock movement, item and account. It does not rewrite balances, old movement history or saved weekly plans. Existing stock additions remain movements; they are not relabeled as purchases.
 
-Item updates, stock movements and audit events commit in one transaction. The transaction takes authentication, catalog and inventory locks in that order. Revision checks prevent stale writes; a unique request identifier prevents duplicated movements. Database constraints protect non-negative balances, movement arithmetic and item/ingredient/account references.
+These migrations do not seed demonstration stock or change existing meals, rooms, children, staff, accounts or weekly plans. With no existing inventory, the groups page starts empty and asks you to create the first group. Mock inventory, groups and purchases are empty on every backend start and are for isolated tests; use PostgreSQL for persistent operation.
 
-Regression suites are `server/tests/inventory.test.js`, `server/tests/inventory.postgres.test.js`, `server/tests/inventoryGroups.test.js`, `server/tests/inventoryGroups.postgres.test.js`, `client/src/pages/Inventory.test.tsx`, and `client/tests/browser/inventory.spec.ts`. They cover stock arithmetic, corrections, history, units, ingredient links, permissions, conflicts, retry identifiers, rollback, filters, group browsing/creation, moving items, migration preservation, persistence and the browser workflow. Test execution and PostgreSQL migration are left to the user for this delivery. Follow [the groups update instructions](SKAO-25-groups-update.md) for an existing SKAO-25 installation.
+Item updates, stock movements, purchase receipts and audit events commit in one transaction. The transaction takes authentication, catalog and inventory locks in that order. Revision checks prevent stale writes; a unique request identifier prevents duplicated movements and each receipt refers to one unique movement. Database constraints protect non-negative balances/costs, positive receipt quantities, movement arithmetic and item/ingredient/account references.
+
+Inventory and group suites cover stock arithmetic, corrections, history, permissions, conflicts, retry identifiers, rollback, filters, moving items, migration preservation and persistence. Purchasing coverage is in `server/tests/purchasing.test.js`, `server/tests/purchasing.postgres.test.js`, `server/tests/inventoryStock.test.js`, `client/src/components/inventory/Purchasing.test.tsx`, and `client/tests/browser/purchasing.spec.ts`. Planner/catalog regression cases verify historical snapshots, linked stock and read-only calculation. Use the shared [backup, migration and automated checks procedure](update-checks.md), including its focused inventory option. Test results must come from running those suites in your environment.
+
+## Manual verification
+
+Use synthetic items and your separate test database for automated checks.
+
+1. Add a supply item with 10 packs. **Bought more → 0.5 → Save amount** gives 10.5; **Used some → 9** previews 1.5 and saves that amount. Neither routine action requires a note, date or movement type.
+2. Check the amount under More and enter zero. Edit its location. Reload and confirm that counts, receipts and history remain. Try using more than is available; it must fail without changing stock.
+3. Type an existing food name in a food group. Save its amount and location without choosing a recipe link. Verify it reduces the shopping requirement for a recipe using that ingredient. New food must become available in Meal Setup. Ambiguous names require a choice.
+4. Use a recipe needing 15 eggs with 2 in Inventory: 13 to buy. Keep an unsaved draft open, buy 3 more in the Inventory tab and return: 5 available, 10 to buy; meals and headcounts remain.
+5. Save that week, change Inventory, then return or reload. Its saved shopping amounts must stay unchanged until **Update shopping list**. Save and print; Inventory must not change.
+6. Retry a lost response unchanged and confirm only one change was recorded. A viewer can browse history but cannot mutate stock. Check narrow screens: item details stack and daily actions remain easy to tap.

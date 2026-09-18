@@ -75,6 +75,15 @@ module.exports = (sequelize) => {
     occurredAt: DataTypes.DATE, itemVersion: DataTypes.INTEGER, before: DataTypes.JSONB, after: DataTypes.JSONB,
     requestId: { type: DataTypes.STRING(100), unique: true }, request: DataTypes.JSONB,
   }, { timestamps: false });
+  const PurchaseReceipt = sequelize.define('PurchaseReceipt', {
+    id: id(), itemId: { type: DataTypes.STRING, allowNull: false },
+    movementId: { type: DataTypes.STRING, allowNull: false, unique: true },
+    quantity: { type: DataTypes.DECIMAL(18, 6), allowNull: false }, unit: DataTypes.STRING(16),
+    receivedOn: { type: DataTypes.DATEONLY, allowNull: false }, supplier: DataTypes.STRING(200),
+    totalCost: DataTypes.DECIMAL(14, 2), currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'USD' },
+    itemSnapshot: { type: DataTypes.JSONB, allowNull: false },
+    actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64), recordedAt: DataTypes.DATE,
+  }, { timestamps: false });
   const Child = sequelize.define('Child', {
     id: id(), firstName: DataTypes.STRING, lastName: DataTypes.STRING,
     dateOfBirth: DataTypes.DATEONLY, preferredName: DataTypes.STRING,
@@ -118,5 +127,5 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt };
 };

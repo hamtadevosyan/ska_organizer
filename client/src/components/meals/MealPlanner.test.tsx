@@ -8,6 +8,7 @@ import type { Meal, Plan } from './weeklyPlan';
 
 vi.mock('axios');
 vi.mock('./MealSetup', () => ({ default: () => <div>Recipe editor</div> }));
+let recordedStock = 2;
 const firstWeek = '2026-09-07';
 const secondWeek = '2026-09-14';
 const eggMeal: Meal = { id: 'eggs', name: 'Scrambled Eggs', type: 'breakfast' };
@@ -95,6 +96,7 @@ it('explains an attendance sample outside the selected menu without changing its
 });
 
 beforeEach(() => {
+  recordedStock = 2;
   vi.useFakeTimers();
   vi.resetAllMocks();
   localStorage.clear();
@@ -107,14 +109,15 @@ beforeEach(() => {
       ? { data: { date: '2026-09-08', timeZone: 'America/Los_Angeles', takenAt: '2026-09-08T17:00:00Z', childrenCount: 2 } }
       : path.endsWith('/api/meals') ? response([eggMeal, oats]) : response(savedPlan(path.endsWith(secondWeek) ? secondWeek : firstWeek)));
   vi.mocked(axios.post).mockImplementation(async (path, body) => {
-    const draft = body as { childrenCount: number; staffCount: number; inHouse: Record<string, number>; dailyChildrenCounts?: Record<string, number> };
+    const draft = body as { childrenCount: number; staffCount: number; dailyChildrenCounts?: Record<string, number> };
     const monday = path.includes(secondWeek) ? secondWeek : firstWeek;
     const quantity = [0, 1, 2].reduce((sum, offset) => {
       const date = new Date(monday + 'T12:00:00Z'); date.setUTCDate(date.getUTCDate() + offset);
       return sum + (draft.dailyChildrenCounts?.[date.toISOString().slice(0, 10)] ?? draft.childrenCount) + draft.staffCount;
     }, 0);
-    const inStorage = draft.inHouse.egg || 0;
+    const inStorage = recordedStock;
     return response({ ...savedPlan(path.includes(secondWeek) ? secondWeek : firstWeek), ...draft,
+      stockSource: 'inventory', stockTakenAt: '2026-09-08T17:00:00Z', inHouse: { egg: inStorage },
       previewToken: `reviewed-${draft.childrenCount}-${inStorage}`,
       items: [{ ingredient: { id: 'egg', name: 'Eggs', unit: 'count' }, quantity, inStorage, toBuy: Math.max(0, quantity - inStorage) }] });
   });
@@ -129,11 +132,13 @@ describe('saved weekly planner', () => {
     await flush();
     expect(screen.getByLabelText('Children')).toHaveValue(4);
     expect(screen.getByLabelText('Staff')).toHaveValue(1);
-    expect(screen.getByLabelText('Eggs in house (count)')).toHaveValue(2);
+    expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('2 count');
     expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
     expect(within(table()).getByText('15 count')).toBeInTheDocument();
     expect(within(table()).getByText('13 count')).toBeInTheDocument();
-    expect(saveButton()).toBeEnabled();
+    expect(saveButton()).toBeDisabled();
+    expect(printButton()).toBeEnabled();
+    expect(axios.post).not.toHaveBeenCalled();
     view.unmount();
     render(<MealPlanner canWrite />);
     await flush();
@@ -177,7 +182,7 @@ describe('saved weekly planner', () => {
     render(<SignedIn><Meals /></SignedIn>);
     await flush();
     input('Children', '6');
-    input('Eggs in house (count)', '3');
+    recordedStock = 3;
     fireEvent.change(screen.getAllByLabelText('Breakfast')[0], { target: { value: 'oats' } });
     fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
     expect(screen.getByText('Recipe editor')).toBeVisible();
@@ -189,7 +194,7 @@ describe('saved weekly planner', () => {
     input('Week starting Monday', firstWeek);
     await flush();
     expect(screen.getByLabelText('Children')).toHaveValue(6);
-    expect(screen.getByLabelText('Eggs in house (count)')).toHaveValue(3);
+    expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('3 count');
     expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('oats');
     expect(axios.put).not.toHaveBeenCalled();
   });
@@ -228,20 +233,20 @@ describe('saved weekly planner', () => {
     render(<MealPlanner canWrite />);
     await flush();
     input('Children', '6');
-    input('Eggs in house (count)', '8');
+    recordedStock = 8;
     await flush();
     vi.mocked(axios.put).mockRejectedValueOnce(new Error('Storage unavailable'));
     fireEvent.click(saveButton());
     await flush();
     expect(screen.getByText('Storage unavailable')).toBeInTheDocument();
     expect(screen.getByLabelText('Children')).toHaveValue(6);
-    expect(screen.getByLabelText('Eggs in house (count)')).toHaveValue(8);
+    expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('8 count');
     expect(screen.getByText('Draft — unsaved changes')).toBeInTheDocument();
     expect(saveButton()).toBeEnabled();
-    expect(axios.post).toHaveBeenCalledTimes(2);
+    expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['-1', '1.5', ''])('rejects invalid headcount %s and negative stock without requests', async (value) => {
+  it.each(['-1', '1.5', ''])('rejects invalid headcount %s without requests', async (value) => {
     render(<MealPlanner canWrite />);
     await flush();
     const previous = vi.mocked(axios.post).mock.calls.length;
@@ -250,11 +255,7 @@ describe('saved weekly planner', () => {
     expect(saveButton()).toBeDisabled();
     expect(printButton()).toBeDisabled();
     expect(axios.post).toHaveBeenCalledTimes(previous);
-    input('Children', '4');
-    input('Eggs in house (count)', '-2');
-    await flush();
-    expect(saveButton()).toBeDisabled();
-    expect(screen.getByText('In-house quantities must be non-negative numbers.')).toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton', { name: /in house/i })).not.toBeInTheDocument();
   });
 
   it('asks before discarding a draft and keeps it if the user cancels', async () => {
@@ -285,6 +286,8 @@ it('blocks Save and Print with named recipe warnings and opens that meal for rep
   }], previewToken: undefined }));
   const edit = vi.fn();
   render(<MealPlanner canWrite onEditRecipe={edit} />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Update shopping list' }));
   await flush();
   expect(screen.getByRole('alert')).toHaveTextContent('Monday — Scrambled Eggs');
   expect(screen.getByText('Complete the recipes before saving or printing this shopping list.')).toBeInTheDocument();
@@ -317,10 +320,47 @@ it('refreshes the catalog and calculation when returning from Meal Setup without
 
 it('keeps recipe refresh explicit for saved weeks and recalculates before saving corrections', async () => {
   render(<MealPlanner canWrite />); await flush();
-  expect(vi.mocked(axios.post).mock.calls.at(-1)?.[1]).not.toHaveProperty('refreshRecipes', true);
+  expect(axios.post).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Use current recipes' }));
   expect(saveButton()).toBeDisabled(); await flush();
   expect(vi.mocked(axios.post).mock.calls.at(-1)?.[1]).toHaveProperty('refreshRecipes', true);
   expect(screen.getByText('Draft — unsaved changes')).toBeInTheDocument();
   expect(saveButton()).toBeEnabled();
+});
+
+it('keeps saved stock historical until an explicit refresh and never writes inventory from the planner', async () => {
+  recordedStock = 8;
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  render(<MealPlanner canWrite />); await flush();
+  expect(within(table()).getByText('13 count')).toBeInTheDocument();
+  expect(screen.getByText('This is your saved shopping list. Update it to use today’s amounts.', { exact: false })).toBeInTheDocument();
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(printButton()); expect(print).toHaveBeenCalledOnce();
+  expect(axios.put).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Update shopping list' }));
+  expect(printButton()).toBeDisabled(); await flush();
+  expect(within(table()).getByText('7 count')).toBeInTheDocument();
+  expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('8 count');
+  expect(screen.queryByRole('spinbutton', { name: /in house/i })).not.toBeInTheDocument();
+  expect(vi.mocked(axios.post).mock.calls[0][1]).not.toHaveProperty('inHouse');
+  expect(vi.mocked(axios.post).mock.calls.every(([path]) => path.endsWith('/preview'))).toBe(true);
+  expect(axios.put).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Reopen saved week' })); await flush();
+  expect(within(table()).getByText('13 count')).toBeInTheDocument();
+});
+
+it('refreshes a draft when returning from Inventory but keeps saved shopping unchanged', async () => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  render(<MealPlanner canWrite />); await flush();
+  recordedStock = 6; fireEvent(window, new Event('focus')); await flush();
+  expect(axios.post).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('2 count');
+  input('Children', '5'); await flush();
+  expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('6 count');
+  recordedStock = 8; fireEvent(window, new Event('focus')); await flush();
+  expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('8 count');
+  expect(screen.getByLabelText('Children')).toHaveValue(5);
+  recordedStock = 9; fireEvent(window, new StorageEvent('storage', { key: 'skao.inventory.changed', newValue: 'changed' })); await flush();
+  expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('9 count');
+  expect(axios.put).not.toHaveBeenCalled();
 });

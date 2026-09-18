@@ -32,9 +32,12 @@ export function useWeeklyPlan(enabled = true) {
   const entry = entries[weekStart] || empty();
   const inputKey = keyOf(entry.draft);
   const invalid = validationError(entry.draft);
-  const calculated = entry.calculatedKey === inputKey;
-  const ready = enabled && entry.loaded && entry.draft.week.length > 0 && !invalid &&
+  const historical = !!entry.savedAt && !entry.dirty && !!entry.preview;
+  const calculated = historical || entry.calculatedKey === inputKey;
+  const ready = !historical && enabled && entry.loaded && entry.draft.week.length > 0 && !invalid &&
     !entry.calculationError && entry.calculatedKey === inputKey && !!entry.preview?.previewToken;
+  const printReady = enabled && entry.loaded && !invalid && !entry.calculationError && calculated &&
+    !!entry.preview && !entry.preview.warnings?.length && (historical || !!entry.preview.previewToken);
   const patch = (week: string, fn: (old: Entry) => Entry) => setEntries((old) => ({ ...old, [week]: fn(old[week] || empty()) }));
 
   useEffect(() => {
@@ -59,7 +62,7 @@ export function useWeeklyPlan(enabled = true) {
       const plan: Plan | null = data.data;
       patch(weekStart, () => ({ ...empty(), loaded: true, ...(plan ? {
         draft: fromPlan(plan), savedAt: plan.savedAt, preview: plan,
-        message: 'Saved week reopened.', messageType: 'success' as const,
+        message: 'Your saved week is ready.', messageType: 'success' as const,
       } : {}) }));
     }).catch((error: unknown) => {
       if (active) patch(weekStart, (old) => ({ ...old, loadError: errorMessage(error, 'Could not load this week. Retry before editing.') }));
@@ -69,7 +72,7 @@ export function useWeeklyPlan(enabled = true) {
 
   useEffect(() => {
     const request = ++sequence.current;
-    if (!enabled || !loaded || invalid) return;
+    if (!enabled || !loaded || invalid || historical) return;
     const draft: Draft = JSON.parse(inputKey);
     if (!draft.week.length) return;
     let active = true;
@@ -77,7 +80,8 @@ export function useWeeklyPlan(enabled = true) {
     const timer = window.setTimeout(async () => {
       try {
         const { data } = await axios.post(`${url(weekStart)}/preview`, {
-          ...draft, childrenCount: Number(draft.childrenCount), staffCount: Number(draft.staffCount),
+          week: draft.week, version: draft.version, refreshRecipes: draft.refreshRecipes || false,
+          childrenCount: Number(draft.childrenCount), staffCount: Number(draft.staffCount),
           ...(draft.dailyChildrenCounts ? { dailyChildrenCounts: Object.fromEntries(Object.entries(draft.dailyChildrenCounts).map(([date, count]) => [date, Number(count)])) } : {}),
         }, { signal: controller.signal });
         if (!active || request !== sequence.current) return;
@@ -90,7 +94,7 @@ export function useWeeklyPlan(enabled = true) {
       }
     }, 300);
     return () => { active = false; window.clearTimeout(timer); controller.abort(); };
-  }, [weekStart, inputKey, loaded, invalid, retry, enabled]);
+  }, [weekStart, inputKey, loaded, invalid, retry, enabled, historical]);
 
   const anyDirty = Object.values(entries).some((value) => value.dirty);
   useEffect(() => {
@@ -134,7 +138,7 @@ export function useWeeklyPlan(enabled = true) {
       }
       patch(weekStart, (old) => ({ ...old, message: importLegacy
         ? 'Earlier menu copied into this draft. Check the week, counts and stock, then save.'
-        : 'Menu generated. Adjust meals, counts and stock, then save.', messageType: 'info' }));
+        : 'Your menu is ready. Change any meal, then save.', messageType: 'info' }));
     } catch (error) {
       patch(weekStart, (old) => ({ ...old, message: errorMessage(error, 'Could not create a menu.'), messageType: 'error' }));
     } finally { setActionLoading(null); }
@@ -146,15 +150,15 @@ export function useWeeklyPlan(enabled = true) {
       const { data } = await axios.put(url(weekStart), { previewToken: entry.preview?.previewToken });
       const plan: Plan = data.data;
       patch(weekStart, () => ({ ...empty(), loaded: true, draft: fromPlan(plan), savedAt: plan.savedAt,
-        preview: plan, dirty: false, message: 'Menu, headcounts and stock saved together.', messageType: 'success' }));
+        preview: plan, dirty: false, message: 'Menu and shopping list saved.', messageType: 'success' }));
     } catch (error) {
       const conflict = axios.isAxiosError(error) && error.response?.status === 409;
       patch(weekStart, (old) => ({ ...old, message: errorMessage(error, 'Save failed. Your draft is still here; try saving again.'),
         messageType: 'error', ...(conflict ? { calculatedKey: undefined, calculationError: 'Recalculate to refresh an expired calculation, or reopen if this week was saved elsewhere.' } : {}) }));
     } finally { setActionLoading(null); }
   };
-  return { weekStart, selectWeek, reopen, entry, update, ready, calculated, invalid, actionLoading,
+  return { weekStart, selectWeek, reopen, entry, update, ready, printReady, historical, calculated, invalid, actionLoading,
     isBusy: actionLoading !== null || !entry.loaded, generate, save,
-    recalculate: () => { sequence.current++; patch(weekStart, (old) => ({ ...old, calculatedKey: undefined, calculationError: '' })); setRetry((n) => n + 1); },
+    recalculate: () => { sequence.current++; patch(weekStart, (old) => ({ ...old, dirty: true, calculatedKey: undefined, calculationError: '', message: '' })); setRetry((n) => n + 1); },
   };
 }

@@ -27,13 +27,13 @@ The script stops at the first failing command and reports the step. Later steps 
 
 ## Focused inventory checks
 
-For the SKAO-25 inventory/groups update:
+For inventory, groups, purchase receipts and their shopping calculations:
 
 ```bash
 bash scripts/check-update.sh --inventory
 ```
 
-This runs the same backup and migration steps, but limits API, PostgreSQL, component and browser suites to inventory. Build and lint still cover the client. Run the default full command before merging.
+This runs the same backup and migration steps, but limits API, PostgreSQL, component and browser suites to inventory, purchasing and the affected weekly-planner/catalog flows. Build and lint still cover the client. Run the default full command before merging.
 
 ## Preview or choose a backup directory
 
