@@ -34,7 +34,7 @@ function isOperationalWrite(req) {
   if (safeMethods.has(req.method)) return false;
   // These endpoints calculate drafts only; none persist changes.
   const path = req.originalUrl.split('?')[0].replace(/\/$/, '');
-  return !(req.method === 'POST' && (path === '/api/shopping/generate' ||
+  return !(req.method === 'POST' && (path === '/api/shopping/generate' || path === '/api/schedule/plan/preview' ||
     /^\/api\/menu\/plans\/[^/]+\/(preview|import-preview)$/.test(path)));
 }
 async function requireOperationalAccess(req, res, next) {

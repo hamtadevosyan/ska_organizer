@@ -11,6 +11,8 @@ const migrations = [
   { name: '009-inventory-ledger', ...require('./migrations/009-inventory-ledger') },
   { name: '010-inventory-groups', ...require('./migrations/010-inventory-groups') },
   { name: '011-purchase-receipts', ...require('./migrations/011-purchase-receipts') },
+  { name: '012-activity-planner', ...require('./migrations/012-activity-planner') },
+  { name: '013-full-day-activities', ...require('./migrations/013-full-day-activities') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

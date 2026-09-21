@@ -166,7 +166,7 @@ exports.saveWeeklyActivityPlan = async (req, res, next) => {
       });
     }
 
-    const saved = await activityService.saveWeeklyPlan(roomId, weekStart, week);
+    const saved = await activityService.saveWeeklyPlan(roomId, weekStart, week, req.body.version);
     res.json({ data: saved });
   } catch (err) {
     next(err);

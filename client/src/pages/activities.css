@@ -1,0 +1,11 @@
+@media print {
+  body:has(.activity-planner) { background: white; }
+  body:has(.activity-planner) #root, body:has(.activity-planner) #root > div,
+  body:has(.activity-planner) main { height: auto; overflow: visible; }
+  body:has(.activity-planner) header, body:has(.activity-planner) aside,
+  body:has(.activity-planner) .activity-screen { display: none !important; }
+  .activity-planner { margin: 0; padding: 0; max-width: none; }
+  .activity-print { display: block !important; color: black; }
+  .activity-print thead { display: table-header-group; }
+  .activity-print td, .activity-print th { border-color: #64748b; }
+}

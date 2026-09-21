@@ -242,12 +242,20 @@ const scheduleWhere = (roomId, weekStart) => {
   return { roomId, date: { [Op.gte]: weekStart, [Op.lt]: end.toISOString().slice(0, 10) } };
 };
 exports.listScheduleEntries = (roomId, weekStart) => list('ScheduleEntry', {
-  where: scheduleWhere(roomId, weekStart), order: [['date', 'ASC'], ['timeBlock', 'ASC'], ['id', 'ASC']],
+  where: scheduleWhere(roomId, weekStart), order: [['date', 'ASC'], ['startTime', 'ASC'], ['id', 'ASC']],
 });
+exports.getScheduleEntryById = (id) => get('ScheduleEntry', id);
+exports.getScheduleWeek = async (roomId, weekStart) => (await list('ScheduleWeek', { where: { roomId, weekStart } }))[0] || null;
+// All schedule writes share the room lock with room/activity changes.
+exports.saveScheduleWeek = (values) => transact(async (transaction) => {
+  await model('ScheduleWeek').upsert(values, { transaction });
+  return exports.getScheduleWeek(values.roomId, values.weekStart);
+});
+exports.activityInSchedule = async (id) => (await model('ScheduleEntry').count({ where: { activityId: id }, transaction: transactionContext.getStore() })) > 0;
 exports.saveScheduleEntries = (roomId, weekStart, entries) => transact(async (transaction) => {
   await model('ScheduleEntry').destroy({ where: scheduleWhere(roomId, weekStart), transaction });
   if (entries.length) await model('ScheduleEntry').bulkCreate(entries.map((entry) => ({
-    ...entry, roomId, id: randomUUID(),
+    ...entry, roomId, id: entry.id || randomUUID(),
   })), { transaction });
   return exports.listScheduleEntries(roomId, weekStart);
 });
@@ -278,6 +286,7 @@ exports.updateAttendance = (id, changes) => update('Attendance', id, changes);
 exports.deleteAttendance = (id) => remove('Attendance', id);
 exports.listActivities = ({ q, roomId } = {}) => list('Activity', {
   where: { ...(roomId ? { roomId } : {}), ...(q ? { name: { [Op.iLike]: `%${q}%` } } : {}) },
+  order: [['name', 'ASC'], ['id', 'ASC']],
 });
 exports.getActivityById = (id) => get('Activity', id);
 exports.createActivity = (payload) => create('Activity', { ...payload, id: payload.id || randomUUID() });

@@ -107,6 +107,13 @@ module.exports = (sequelize) => {
   }, { timestamps: false });
   const Activity = require('../models/activity')(sequelize, DataTypes);
   const ScheduleEntry = require('../models/scheduleEntry')(sequelize, DataTypes);
+  const ScheduleWeek = sequelize.define('ScheduleWeek', {
+    roomId: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
+    weekStart: { type: DataTypes.DATEONLY, primaryKey: true, allowNull: false },
+    version: { type: DataTypes.INTEGER, allowNull: false },
+    savedAt: { type: DataTypes.DATE, allowNull: false },
+    requestId: DataTypes.STRING(100), request: DataTypes.JSONB,
+  }, { timestamps: false });
   const Account = sequelize.define('Account', {
     id: id(), username: { type: DataTypes.STRING(64), allowNull: false, unique: true },
     displayName: { type: DataTypes.STRING(100), allowNull: false },
@@ -127,5 +134,5 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt };
 };
