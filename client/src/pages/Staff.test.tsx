@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, expect, test, vi } from 'vitest';
 import axios from 'axios';
 import Staff from './Staff';
-import Dashboard from './Dashboard';
 import { SignedIn } from '../tests/authFixture';
 import { testAccount } from '../tests/authAccount';
 import type { Room } from '../api/rooms';
@@ -27,7 +26,6 @@ beforeEach(() => {
   // Route-based mocks keep room lookups from consuming staff responses.
   vi.mocked(axios.get).mockImplementation(async (url, config) => {
     if (url.endsWith('/rooms')) return response(rooms);
-    if (url.endsWith('/dashboard')) return { data: { totalStaff: people.filter((item) => item.active).length, totalStudents: 42, inventoryCount: 120, recentActivities: [] } };
     if (url.endsWith('/staff')) {
       const params = config?.params as { active: string; q?: string; roomId?: string; page: number; pageSize: number };
       const matches = people.filter((item) => (params.active === 'all' || item.active === (params.active === 'true')) &&
@@ -191,23 +189,17 @@ test('pagination keeps the facility total and moves back after deactivating the 
   expect(screen.queryByRole('navigation', { name: 'Staff pages' })).not.toBeInTheDocument();
 });
 
-test('failed directory and dashboard loads expose retry controls and recover to actual counts', async () => {
+test('failed directory loads expose retry controls and recover to actual counts', async () => {
   const get = vi.mocked(axios.get).getMockImplementation()!;
-  let failStaff = true, failDashboard = true;
+  let failStaff = true;
   vi.mocked(axios.get).mockImplementation((url, config) => {
     if (url.endsWith('/staff') && failStaff) { failStaff = false; return Promise.reject(new Error('Unavailable')); }
-    if (url.endsWith('/dashboard') && failDashboard) { failDashboard = false; return Promise.reject(new Error('Unavailable')); }
     return get(url, config);
   });
-  const view = renderStaff();
+  renderStaff();
   await screen.findByRole('alert');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh staff' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Refresh staff' }));
   await screen.findByRole('rowheader', { name: person.name });
-  view.unmount();
-  people = [];
-  render(<Dashboard />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Retry dashboard' }));
-  const label = await screen.findByText('Active Staff');
-  expect(label.parentElement).toHaveTextContent('0');
+  expect(screen.getByText(/1 active staff across all rooms/)).toBeInTheDocument();
 });

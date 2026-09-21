@@ -18,6 +18,10 @@ import { resultingQuantity, unitNames } from '../components/inventory/quantity';
 
 type Ingredient = { id: string; name: string; unit: string; archived?: boolean };
 type Mode = 'create' | 'edit' | 'adjust' | 'receive';
+const dashboardStatus = () => {
+  const status = new URLSearchParams(window.location.search).get('status');
+  return status === 'low' || status === 'out' ? status : 'all';
+};
 const initial: InventoryFilters = { q: '', groupId: '', location: '', status: 'all', page: 1 };
 const empty: InventoryDetails = { name: '', groupId: '', location: '', unit: 'count', ingredientId: null, reorderThreshold: '0' };
 const control = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 disabled:bg-slate-100';
@@ -29,10 +33,10 @@ const validAmount = (value: string) => /^(0|[1-9]\d{0,11})(\.\d{1,6})?$/.test(va
 export default function Inventory() {
   const { account } = useAuth();
   const canWrite = account?.role === 'admin' || account?.role === 'editor';
-  const [showGroups, setShowGroups] = useState(true);
+  const [showGroups, setShowGroups] = useState(() => dashboardStatus() === 'all');
   const [newGroup, setNewGroup] = useState(false);
   const { groups, loading: groupLoading, error: groupError, refresh: refreshGroups, remember } = useInventoryGroups();
-  const [filters, setFilters] = useState(initial);
+  const [filters, setFilters] = useState(() => ({ ...initial, status: dashboardStatus() }));
   const [search, setSearch] = useState('');
   const { data, loading, error: loadError, refresh } = useInventory(filters, !showGroups);
   const [mode, setMode] = useState<Mode | null>(null);
@@ -260,6 +264,11 @@ export default function Inventory() {
         <button type="button" className={button} onClick={() => { setSearch(''); setFilters({ ...initial, groupId: filters.groupId }); }}>Reset filters</button></div></details>
       </fieldset>
     </form>}
+    {!showGroups && !mode && !newGroup && (filters.status === 'low' || filters.status === 'out') &&
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white px-4 py-2">
+        <p>{filters.status === 'low' ? 'Showing items running low.' : 'Showing items that are out of stock.'}</p>
+        <button type="button" className={button} onClick={() => { setSearch(''); setFilters({ ...initial, groupId: filters.groupId }); }}>Show all items</button>
+      </div>}
     {!showGroups && !mode && !newGroup && loading && <p role="status">Loading inventory…</p>}
     {!showGroups && !mode && !newGroup && !loading && data && <>
       <p className="text-sm text-slate-600">{data.total} {data.total === 1 ? 'item' : 'items'}</p>

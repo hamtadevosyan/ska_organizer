@@ -155,8 +155,9 @@ test('dashboard reports a database failure instead of a fabricated staff count',
   const log = jest.spyOn(console, 'error').mockImplementation(() => {});
   try {
     const response = await request(app).get('/api/dashboard');
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(200);
     expect(response.body).not.toHaveProperty('totalStaff');
-    expect(response.body.error.message).toBe('Internal server error.');
+    expect(response.body.sections.staff).toEqual({ error: 'Could not load staff. Please try again.' });
+    expect(response.body.sections.enrollment.data.count).toBe(0);
   } finally { count.mockRestore(); log.mockRestore(); }
 });

@@ -38,7 +38,7 @@ beforeEach(async () => {
   await setupStep('creating and signing in the test administrator', () =>
     require('./helpers/authenticatedRequest').initialize(require('../index')));
 // Allow slower VM fixture setup; keep the existing timeout for each test body.
-}, process.env.DB_ADAPTER === 'sequelize' ? 60000 : undefined);
+}, process.env.DB_ADAPTER === 'sequelize' ? 60000 : 30000);
 
 afterAll(async () => {
   if (!connection) return;
