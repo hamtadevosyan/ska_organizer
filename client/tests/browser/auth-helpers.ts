@@ -17,6 +17,7 @@ export async function authenticatedApi(page: Page) {
   // Cookies are shared with this browser context; only the fixture wrapper supplies headers for direct API calls.
   return {
     get: (url: string) => page.request.get(url, { headers }),
+    put: (url: string, options: { data: unknown }) => page.request.put(url, { ...options, headers }),
     post: (url: string, options: { data: unknown }) => page.request.post(url, { ...options, headers }),
   };
 }

@@ -312,6 +312,7 @@ exports.cleanAuthRecords = (now) => transact(async (transaction) => {
   }
 });
 exports.appendAudit = (values) => create('AuditEvent', values);
-exports.listAudit = ({ limit = 50, offset = 0 } = {}) => list('AuditEvent', {
+exports.listAudit = ({ limit = 50, offset = 0, actions } = {}) => list('AuditEvent', {
+  ...(actions ? { where: { action: { [Op.in]: actions } } } : {}),
   order: [['occurredAt', 'DESC'], ['id', 'DESC']], limit, offset,
 });

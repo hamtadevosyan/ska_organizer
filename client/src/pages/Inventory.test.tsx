@@ -263,3 +263,18 @@ test('exact food matching ignores capitalization and repeated spaces', async () 
   vi.mocked(axios.post).mockResolvedValueOnce(response(stock)); fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
   await screen.findByText('Item added.'); expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ ingredientId: 'brown-rice', unit: 'lb' });
 });
+
+test.each(['low', 'out'])('dashboard stock links open the %s items directly', async (status) => {
+  const previousUrl = window.location.href;
+  window.history.replaceState({}, '', '/inventory?status=' + status);
+  try {
+    items.push({ ...stock, id: 'needs-stock', name: 'Stock to check', status: status as 'low' | 'out', quantity: status === 'out' ? '0' : '1' });
+    render(<SignedIn><Inventory /></SignedIn>);
+    await ready('Stock to check');
+    expect(screen.queryByText(stock.name, { selector: 'span' })).not.toBeInTheDocument();
+    expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/inventory$/), expect.objectContaining({ params: expect.objectContaining({ status, groupId: undefined }) }));
+    expect(screen.getByText(status === 'low' ? 'Showing items running low.' : 'Showing items that are out of stock.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all items' }));
+    await ready(stock.name);
+  } finally { window.history.replaceState({}, '', previousUrl); }
+});

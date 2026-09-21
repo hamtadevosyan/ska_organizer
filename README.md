@@ -38,6 +38,9 @@ The meal planner now saves and reopens separate calendar weeks with headcounts,
 stock and historical recipe quantities. See [Saved weekly menus](docs/saved-weekly-menus.md)
 for the dated API, historical snapshots and usage instructions.
 
+The dashboard now reads current headcounts, stock needing attention, saved daily plans,
+and recent operational changes. See [Dashboard usage and metric definitions](docs/dashboard.md).
+
 After applying an update, stop the usual client/server terminals and run this from the repository root:
 
 ```bash

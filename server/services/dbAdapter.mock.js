@@ -516,6 +516,6 @@ Object.assign(module.exports, {
     for (const key of ['sessions', 'loginAttempts']) mock[key] = mock[key].filter((item) => new Date(item.expiresAt) > now);
   },
   appendAudit: async (values) => insert('auditEvents', values),
-  listAudit: async ({ limit = 50, offset = 0 } = {}) => copy(mock.auditEvents).sort((a, b) =>
+  listAudit: async ({ limit = 50, offset = 0, actions } = {}) => copy(mock.auditEvents).filter((row) => !actions || actions.includes(row.action)).sort((a, b) =>
     new Date(b.occurredAt) - new Date(a.occurredAt) || b.id.localeCompare(a.id)).slice(offset, offset + limit),
 });
