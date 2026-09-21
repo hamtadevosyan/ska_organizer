@@ -5,7 +5,7 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [],
+  rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [],
   attendance: [], attendanceCorrections: [],
@@ -149,9 +149,17 @@ module.exports = {
   },
   countChildren: async (filters) => filteredChildren(filters).length,
   listScheduleEntries: async (roomId, weekStart) => structuredClone(mock.scheduleEntries.filter((row) => inScheduleWeek(row, roomId, weekStart))),
+  getScheduleEntryById: async (id) => structuredClone(mock.scheduleEntries.find((row) => row.id === id) || null),
+  getScheduleWeek: async (roomId, weekStart) => structuredClone(mock.scheduleWeeks.find((row) => row.roomId === roomId && row.weekStart === weekStart) || null),
+  saveScheduleWeek: async (values) => {
+    mock.scheduleWeeks = mock.scheduleWeeks.filter((row) => row.roomId !== values.roomId || row.weekStart !== values.weekStart);
+    mock.scheduleWeeks.push(structuredClone(values));
+    return structuredClone(values);
+  },
+  activityInSchedule: async (id) => mock.scheduleEntries.some((entry) => entry.activityId === id),
   saveScheduleEntries: async (roomId, weekStart, entries) => {
     mock.scheduleEntries = mock.scheduleEntries.filter((row) => !inScheduleWeek(row, roomId, weekStart));
-    const created = entries.map((entry) => ({ ...entry, roomId, id: mock.uuid(), createdAt: mock.nowIso(), updatedAt: mock.nowIso() }));
+    const created = entries.map((entry) => ({ ...entry, roomId, id: entry.id || mock.uuid(), createdAt: mock.nowIso(), updatedAt: mock.nowIso() }));
     mock.scheduleEntries.push(...created);
     return structuredClone(created);
   },
@@ -164,6 +172,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.scheduleWeeks = [];
     mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = [];
@@ -311,14 +320,15 @@ module.exports = {
       items = items.filter((a) => a.roomId === opts.roomId);
     }
 
-    return items;
+    return structuredClone(items.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)));
   },
 
   getActivityById: async (id) =>
-    mock.activities.find((a) => a.id === id) || null,
+    structuredClone(mock.activities.find((a) => a.id === id) || null),
 
   createActivity: async (payload) => {
     const rec = {
+      version: 1, durationMinutes: null, ageMinMonths: null, ageMaxMonths: null, materials: [],
       ...payload,
       id: payload.id || mock.uuid(),
       name: payload.name,
@@ -326,17 +336,17 @@ module.exports = {
       roomId: payload.roomId || null,
       startTime: payload.startTime || null,
       endTime: payload.endTime || null,
-      createdAt: mock.nowIso()
+      createdAt: mock.nowIso(), updatedAt: mock.nowIso()
     };
     mock.activities.push(rec);
-    return rec;
+    return structuredClone(rec);
   },
 
   updateActivity: async (id, changes) => {
     const idx = mock.activities.findIndex((a) => a.id === id);
     if (idx === -1) return null;
-    mock.activities[idx] = { ...mock.activities[idx], ...changes };
-    return mock.activities[idx];
+    mock.activities[idx] = { ...mock.activities[idx], ...changes, updatedAt: mock.nowIso() };
+    return structuredClone(mock.activities[idx]);
   },
 
   deleteActivity: async (id) => {

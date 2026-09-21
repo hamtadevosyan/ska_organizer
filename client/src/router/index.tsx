@@ -10,7 +10,6 @@ import Activities from "../pages/Activities";
 import Meals from "../pages/Meals";
 import Staff from "../pages/Staff";
 import Reports from "../pages/Reports";
-import SchedulePage from "../pages/SchedulePage";
 
 export default function AppRoutes() {
   return (
@@ -23,7 +22,7 @@ export default function AppRoutes() {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/inventory" element={<Inventory />} />
       <Route path="/activities" element={<Activities />} />
-      <Route path="/schedule" element={<SchedulePage />} />
+      <Route path="/schedule" element={<Navigate to="/activities" replace />} />
       <Route path="/meals" element={<Meals />} />
       <Route path="/staff" element={<Staff />} />
       <Route path="/reports" element={<Reports />} />

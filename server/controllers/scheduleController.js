@@ -13,7 +13,7 @@ exports.getWeek = async (req, res, next) => {
 exports.saveWeek = async (req, res, next) => {
   try {
     const { roomId, weekStart, entries } = req.body;
-    await scheduleService.saveWeek(roomId, weekStart, entries);
+    await scheduleService.saveWeek(roomId, weekStart, entries, req.body.version);
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -29,4 +29,3 @@ exports.suggestWeek = async (req, res, next) => {
     next(err);
   }
 };
-

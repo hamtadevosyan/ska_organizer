@@ -16,6 +16,11 @@ module.exports = (sequelize, DataTypes) => {
     location: DataTypes.STRING,              // indoor | outdoor
     ageMin: DataTypes.INTEGER,
     ageMax: DataTypes.INTEGER,
+    ageMinMonths: DataTypes.INTEGER,
+    ageMaxMonths: DataTypes.INTEGER,
+    durationMinutes: DataTypes.INTEGER,
+    materials: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
     energyLevel: DataTypes.STRING,           // low | medium | high
     estimatedCost: DataTypes.FLOAT,
     materialsLinks: DataTypes.JSON,          // array of URLs
@@ -29,4 +34,3 @@ module.exports = (sequelize, DataTypes) => {
 
   return Activity;
 };
-

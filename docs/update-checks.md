@@ -65,3 +65,17 @@ npx playwright install --with-deps chromium
 Use a `pg_dump` version compatible with your PostgreSQL server. A failed backup or unreadable archive stops execution before migrations. The script uses the URL's database path; connection URLs that override `dbname` or include an `sslpassword` query option are not supported by this helper. The project's normal local PostgreSQL URL is supported, including encoded password characters.
 
 After the script succeeds, start the frontend with `npm run dev` and the backend with `node index.js`, then perform the feature's manual checks in Windows Chrome. Commit, push and merge after reviewing the results. Automated checks do not replace those manual checks.
+
+## PostgreSQL test setup timeouts
+
+A timeout pointing to `beforeEach` in `server/tests/databaseSetup.js` happens while preparing the test, before its assertions run. That hook clears the isolated test tables and signs in a fresh test administrator. It has a 60-second PostgreSQL setup budget; individual PostgreSQL tests retain their 30-second default.
+
+If either setup step takes more than 20 seconds, a warning identifies whether it is clearing tables or creating/signing in the test administrator. This warning does not fail or skip the test. If setup still times out, retain that warning with the failure output to distinguish database cleanup from authentication; the timeout alone cannot establish whether the VM is slow or an operation is blocked.
+
+After a setup correction, rerun the affected suite from `server`, for example:
+
+```bash
+npm run test:postgres -- --runTestsByPath tests/activityPlanner.test.js
+```
+
+After that passes, rerun the full update script to complete any checks that were stopped by the earlier failure.

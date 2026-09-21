@@ -13,9 +13,12 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false
     },
     timeBlock: {
-      type: DataTypes.STRING, // morning | midday | afternoon
-      allowNull: false
+      type: DataTypes.STRING, // Retained only for schedules saved before timed entries.
+      allowNull: true
     },
+    startTime: DataTypes.STRING(5),
+    endTime: DataTypes.STRING(5),
+    activitySnapshot: DataTypes.JSONB,
     activityId: {
       type: DataTypes.STRING,
       allowNull: false
@@ -26,4 +29,3 @@ module.exports = (sequelize, DataTypes) => {
 
   return ScheduleEntry;
 };
-

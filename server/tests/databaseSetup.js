@@ -7,6 +7,14 @@ const { migrate } = require('../database/migrate');
 let connection;
 let schema;
 
+async function setupStep(label, operation) {
+  // Identify a slow fixture step without printing SQL, URLs or credentials.
+  const warning = setTimeout(() => console.warn(`Test setup is still ${label} after 20 seconds.`), 20000);
+  warning.unref();
+  try { await operation(); }
+  finally { clearTimeout(warning); }
+}
+
 beforeAll(async () => {
   if (process.env.DB_ADAPTER !== 'sequelize') return;
   const url = validateDatabaseUrl(process.env.DATABASE_URL);
@@ -23,11 +31,14 @@ beforeAll(async () => {
 beforeEach(async () => {
   if (!connection) db.reset();
   else {
-  const tables = ['PurchaseReceipts', 'InventoryMovements', 'InventoryItems', 'InventoryGroups', 'MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'AttendanceCorrections', 'Attendances', 'Activities', 'ScheduleEntries', 'StaffMembers', 'Rooms', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
-  await connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`);
+    const tables = ['PurchaseReceipts', 'InventoryMovements', 'InventoryItems', 'InventoryGroups', 'MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'AttendanceCorrections', 'Attendances', 'Activities', 'ScheduleEntries', 'ScheduleWeeks', 'StaffMembers', 'Rooms', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
+    await setupStep('clearing the PostgreSQL test tables', () =>
+      connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`));
   }
-  await require('./helpers/authenticatedRequest').initialize(require('../index'));
-});
+  await setupStep('creating and signing in the test administrator', () =>
+    require('./helpers/authenticatedRequest').initialize(require('../index')));
+// Allow slower VM fixture setup; keep the existing timeout for each test body.
+}, process.env.DB_ADAPTER === 'sequelize' ? 60000 : undefined);
 
 afterAll(async () => {
   if (!connection) return;

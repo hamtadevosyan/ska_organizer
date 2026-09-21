@@ -145,11 +145,14 @@ GET /api/inventory/purchases
 POST /api/inventory/:id/purchases
 
 Schedule
-GET /api/schedule
+GET /api/schedule/plan?roomId=...&weekStart=YYYY-MM-DD
+POST /api/schedule/plan/preview
+POST /api/schedule/plan
 
 Activity
 GET /api/activity
-POST /api/activity/generate
+POST /api/activity
+PUT /api/activity/:id
 
 📱 Mobile Ready
 
@@ -196,5 +199,6 @@ Documentation
 - [Daily attendance and meal counts](docs/daily-attendance.md)
 - [Staff directory](docs/staff-directory.md)
 - [Inventory groups, stock, purchase receipts and history](docs/inventory.md)
+- [Weekly activity schedules and materials](docs/activity-planner.md)
 - [Saved weekly menus](docs/saved-weekly-menus.md)
 - [Meal and ingredient catalog corrections](docs/catalog-corrections.md)
