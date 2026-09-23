@@ -2,7 +2,7 @@ name: Server persistence tests
 
 on:
   push:
-    branches: [development, 'feature/SKAO-17-*', 'feature/SKAO-18-*', 'feature/SKAO-19-*', 'feature/SKAO-20-*']
+    branches: [main, development, 'feature/**']
     paths: ['server/**', '.github/workflows/server-tests.yml']
   pull_request:
     paths: ['server/**', '.github/workflows/server-tests.yml']
@@ -14,10 +14,10 @@ permissions:
 jobs:
   postgres:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-test-password

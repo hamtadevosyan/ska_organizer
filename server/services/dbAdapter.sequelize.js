@@ -42,6 +42,10 @@ exports.close = async () => {
   sequelize = undefined;
   models = undefined;
 };
+exports.health = async () => {
+  if (!sequelize) throw new Error('Storage is not initialized.');
+  await sequelize.authenticate();
+};
 function model(name) {
   if (!models) throw new Error('Database adapter is not initialized.');
   return models[name];

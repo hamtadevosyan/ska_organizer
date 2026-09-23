@@ -173,8 +173,20 @@ test('an enrollment change rolls back if its audit cannot be saved', async () =>
   const audit = jest.spyOn(db, 'appendAudit').mockRejectedValueOnce(new Error('Synthetic audit failure'));
   const log = jest.spyOn(console, 'error').mockImplementation(() => {});
   try {
-    expect((await request(app).put('/api/children/' + child.id + '/enrollment').send({ active: false })).status).toBe(500);
+    const response = await request(app).put('/api/children/' + child.id + '/enrollment').send({ active: false });
+    expect(response.status).toBe(500);
     expect((await db.getChildById(child.id)).active).toBe(true);
-    expect(log).toHaveBeenCalledWith('Request failed (internal server error).');
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith(expect.any(String));
+    expect(response.headers['x-request-id']).toEqual(expect.any(String));
+    // Check the public correlation ID and safe fields, without logging exception
+    // contents or private child data when the audited transaction rolls back.
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({
+      event: 'request_failed',
+      requestId: response.headers['x-request-id'],
+      method: 'PUT',
+      status: 500,
+      code: 'INTERNAL_ERROR',
+    });
   } finally { audit.mockRestore(); log.mockRestore(); }
 });

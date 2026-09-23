@@ -2,6 +2,7 @@
 require('./config/environment');
 const express = require('express');
 const cors = require('cors');
+const { randomUUID } = require('node:crypto');
 
 const app = express();
 
@@ -9,11 +10,13 @@ app.disable('x-powered-by');
 const authConfig = require('./auth/config');
 const { originGuard, requireSession, requireOperationalAccess, clearCookie } = require('./auth/middleware');
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use('/api', (req, res, next) => { req.requestId = randomUUID(); res.set('X-Request-Id', req.requestId); next(); });
 app.use('/api', originGuard);
 app.use(cors({ origin: (origin, done) => done(null, !!origin && authConfig.origins.has(origin)), credentials: true,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/api/ready', require('./services/availability').ready);
 app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api', requireSession, requireOperationalAccess);
@@ -56,7 +59,14 @@ app.use((err, req, res, next) => {
   if (err.retryAfter) res.set('Retry-After', String(err.retryAfter));
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: { message: 'Invalid JSON request.' } });
   if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields, code: err.code } });
-  console.error('Request failed (internal server error).');
+  const unavailable = require('./services/availability').databaseUnavailable(err);
+  // No raw path, SQL, error message, body, cookies, credentials or child names.
+  console.error(JSON.stringify({ event: 'request_failed', requestId: req.requestId, method: req.method,
+    status: unavailable ? 503 : 500, code: unavailable ? 'DATABASE_UNAVAILABLE' : 'INTERNAL_ERROR' }));
+  if (unavailable) {
+    res.set('Retry-After', '5');
+    return res.status(503).json({ error: { message: 'Storage is temporarily unavailable. Please try again.', code: 'DATABASE_UNAVAILABLE' } });
+  }
   res.status(500).json({ error: { message: 'Internal server error.' } });
 });
 

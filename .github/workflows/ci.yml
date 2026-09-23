@@ -1,30 +1,92 @@
-name: CI
+name: Pilot deployment checks
 
 on:
   push:
-    branches: ['**']   # run on every push to any branch
+    branches: [main, development, 'feature/**']
+    paths: ['server/**', 'client/**', 'deploy/**', 'compose.pilot.yaml', '.dockerignore', '.gitattributes', 'scripts/pilot.ps1', '.github/workflows/ci.yml']
   pull_request:
-    branches: ['main'] # optional: also run on PRs targeting main
+    paths: ['server/**', 'client/**', 'deploy/**', 'compose.pilot.yaml', '.dockerignore', '.gitattributes', 'scripts/pilot.ps1', '.github/workflows/ci.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
+  powershell:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Parse the Windows helper without executing it
+        shell: powershell
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$pwd/scripts/pilot.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { $errors | Format-List; exit 1 }
+
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install server dependencies
-        working-directory: server
+      - uses: actions/checkout@v6
+      - name: Build and verify the isolated HTTPS pilot and a separate restore
+        shell: bash
         run: |
-          npm ci
-
-      - name: Run tests
-        working-directory: server
+          set -euo pipefail
+          mkdir -m 700 -p .pilot/secrets "$RUNNER_TEMP/skao-backups"
+          openssl rand -hex 32 > .pilot/secrets/db-admin-password
+          openssl rand -hex 32 > .pilot/secrets/app-password
+          # The directory is private; file readability also lets the non-root API
+          # read its bind-mounted Compose secret on this disposable Linux runner.
+          chmod 644 .pilot/secrets/*
+          sudo chown root:root "$RUNNER_TEMP/skao-backups"
+          cat > .pilot/runtime.env <<ENV
+          PILOT_RELEASE=$GITHUB_SHA
+          PILOT_HOST=localhost
+          PILOT_BIND=127.0.0.1
+          PILOT_DATABASE=ska_organizer
+          PILOT_BACKUP_DIR=$RUNNER_TEMP/skao-backups
+          FACILITY_TIME_ZONE=America/Los_Angeles
+          ENV
+          dc() { docker compose --env-file .pilot/runtime.env -f compose.pilot.yaml "$@"; }
+          dc config --quiet
+          dc --profile operations build server web tools
+          dc up -d --wait --wait-timeout 120 db
+          dc run --rm --no-deps -T server node scripts/database.js migrate
+          # Only this disposable one-shot fixture command enables demo seeding.
+          # The running API below still uses NODE_ENV=production.
+          dc run --rm --no-deps -T -e NODE_ENV=development server node scripts/database.js seed
+          printf '%s\n' 'Synthetic CI pilot passphrase!' | dc run --rm --no-deps -T \
+            -e ADMIN_USERNAME=pilot-ci -e ADMIN_DISPLAY_NAME='Synthetic Pilot Admin' \
+            server node scripts/create-admin.js --password-stdin
+          dc up -d --no-build --wait --wait-timeout 180 server web
+          docker cp "$(dc ps -q web):/data/caddy/pki/authorities/local/root.crt" .pilot/root.crt
+          curl --fail --silent --show-error --cacert .pilot/root.crt https://localhost:8443/api/ready
+          code=$(curl --silent --cacert .pilot/root.crt -o /dev/null -w '%{http_code}' https://localhost:8443/api/rooms)
+          test "$code" = 401
+          curl --fail --silent --show-error --cacert .pilot/root.crt -D .pilot/login-headers -o /dev/null \
+            -H 'Origin: https://localhost:8443' -H 'Content-Type: application/json' \
+            --data '{"username":"pilot-ci","password":"Synthetic CI pilot passphrase!"}' \
+            https://localhost:8443/api/auth/login
+          python3 - <<'PY'
+          from pathlib import Path
+          headers = Path('.pilot/login-headers').read_text().lower()
+          assert 'httponly' in headers and 'secure' in headers and 'samesite=strict' in headers
+          PY
+          dc --profile operations run --rm --no-deps -T tools backup > .pilot/backup-result.json
+          name=$(python3 -c 'import json; print(json.load(open(".pilot/backup-result.json"))["backup"])')
+          dc --profile operations run --rm --no-deps -T tools verify "$name" > .pilot/verification-result.json
+          python3 - <<'PY'
+          import json
+          result = json.load(open('.pilot/verification-result.json'))
+          assert result['operation'] == 'verify' and result['retained'] is False
+          assert result['coverage']['meals'] and result['coverage']['accounts']
+          assert any(t['name'] == 'SequelizeMeta' and t['count'] > 0 for t in result['tables'])
+          PY
+      - name: Clean up only this hosted runner's synthetic pilot
+        if: always()
+        shell: bash
         run: |
-          npm test
-
+          if [ -f .pilot/runtime.env ]; then
+            docker compose --env-file .pilot/runtime.env -f compose.pilot.yaml --profile operations down -v
+          fi

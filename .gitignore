@@ -4,3 +4,9 @@ dist/
 npm-debug.log*
 .DS_Store
 server/.restart-test-state.json
+.pilot/
+backups/
+docker/*.env
+*.dump
+*.backup
+*.log

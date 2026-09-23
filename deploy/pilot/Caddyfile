@@ -1,0 +1,29 @@
+{
+    auto_https disable_redirects
+    admin off
+}
+
+https://{$PILOT_HOST}:8443 {
+    tls internal
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+        X-Frame-Options DENY
+        -Server
+    }
+    @api path /api /api/*
+    handle @api {
+        reverse_proxy server:3001
+    }
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        header Cache-Control "no-cache"
+        file_server
+    }
+    # No access log: request paths and cookies may contain operational information.
+    handle_errors {
+        respond "The organizer is temporarily unavailable. Please try again." 503
+    }
+}

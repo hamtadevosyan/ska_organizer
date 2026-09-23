@@ -71,6 +71,7 @@ const withTransaction = (fn) => {
   return operation;
 };
 module.exports = {
+  health: async () => {},
   withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction, withInventoryLock: withTransaction,
   listInventoryGroups: async () => structuredClone(mock.inventoryGroups.slice().sort((a, b) => a.name.localeCompare(b.name))),
   inventoryGroupCounts: async () => mock.inventoryGroups.map((group) => {
