@@ -205,3 +205,4 @@ Documentation
 - [Weekly activity schedules and materials](docs/activity-planner.md)
 - [Saved weekly menus](docs/saved-weekly-menus.md)
 - [Meal and ingredient catalog corrections](docs/catalog-corrections.md)
+- [Attendance and purchasing reports](docs/reports.md)
