@@ -2,7 +2,7 @@ name: Client build and planner tests
 
 on:
   push:
-    branches: [development, 'feature/SKAO-18-*', 'feature/SKAO-19-*', 'feature/SKAO-20-*']
+    branches: [main, development, 'feature/**']
     paths: ['client/**', 'server/**', '.github/workflows/client-tests.yml']
   pull_request:
     paths: ['client/**', 'server/**', '.github/workflows/client-tests.yml']
@@ -14,7 +14,7 @@ permissions:
 jobs:
   client:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: client

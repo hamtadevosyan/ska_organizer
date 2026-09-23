@@ -8,3 +8,4 @@ if (process.env.NODE_ENV !== 'test') {
     if (error.code !== 'ENOENT') throw error;
   }
 }
+require('./database-secret')();

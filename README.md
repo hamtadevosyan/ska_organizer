@@ -86,8 +86,10 @@ Server running on port 3001
 Backend will run on:
 http://localhost:3001
 
-Example test:
-curl http://localhost:3001/api/dashboard
+Health check (no sign-in required):
+curl http://localhost:3001/api/health
+
+The dashboard endpoint requires an authenticated session.
 
 💻 Frontend Setup (Client)
 1️⃣ Open new terminal
@@ -129,6 +131,8 @@ Use:
 http://192.168.33.132:5173
 
 📡 API Endpoints (Current)
+
+See the [API index](docs/api.md) for authentication, health, errors and feature contracts.
 Dashboard
 GET /api/dashboard
 Attendance
@@ -194,6 +198,10 @@ http://localhost:5173 or http://YOUR_IP:5173
 
 Documentation
 
+- [Private Windows Docker pilot: HTTPS, startup and migration from the old install](docs/private-pilot.md)
+- [Pilot backup, verification, update and recovery](docs/backup-recovery.md)
+- [Pilot acceptance checklist](docs/pilot-checklist.md)
+- [API index and session/error contract](docs/api.md)
 - [PostgreSQL setup](docs/postgresql-setup.md)
 - [Sign-in and account administration](docs/authentication.md)
 - [Backups, migrations and update checks](docs/update-checks.md)
