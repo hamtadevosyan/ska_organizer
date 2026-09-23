@@ -20,6 +20,7 @@ app.use('/api', requireSession, requireOperationalAccess);
 
 // Dashboard route
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/reports', require('./routes/reports'));
 // Attendance route
 app.use('/api/attendance', require('./routes/attendance'));
 // Inventory route

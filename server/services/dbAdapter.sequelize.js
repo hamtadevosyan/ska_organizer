@@ -192,6 +192,10 @@ exports.listPurchaseReceipts = ({ itemId, page = 1, pageSize = 25 } = {}) => lis
 exports.countPurchaseReceipts = ({ itemId } = {}) => model('PurchaseReceipt').count({
   where: itemId ? { itemId } : {}, transaction: transactionContext.getStore(),
 });
+exports.listReportPurchases = ({ from, to, limit }) => list('PurchaseReceipt', {
+  where: { receivedOn: { [Op.gte]: from, [Op.lte]: to } },
+  order: [['receivedOn', 'ASC'], ['recordedAt', 'ASC'], ['id', 'ASC']], limit,
+});
 
 const staffWhere = ({ q, roomId, active } = {}) => ({
   ...(roomId !== undefined ? { roomId } : {}),
@@ -277,6 +281,19 @@ exports.listAttendance = ({ roomId, childId, date, from, to, openOnly = false, i
   return list('Attendance', { where, order: [['checkIn', 'ASC'], ['id', 'ASC']] });
 };
 exports.getAttendanceByRequestId = async (requestId) => (await list('Attendance', { where: { requestId }, limit: 1 }))[0] || null;
+// Same interval-overlap definition as daily attendance; return each visit once.
+exports.listReportAttendance = ({ from, to, roomId, limit }) => list('Attendance', {
+  where: {
+    ...(roomId ? { roomId } : {}), checkIn: { [Op.lt]: new Date(to) },
+    [Op.or]: [{ checkOut: null }, { checkOut: { [Op.gt]: new Date(from) } }, { checkIn: { [Op.gte]: new Date(from) } }],
+  }, order: [['checkIn', 'ASC'], ['id', 'ASC']], limit,
+});
+exports.countUndatedAttendance = ({ roomId }) => model('Attendance').count({
+  where: { checkIn: null, voided: false, ...(roomId ? { roomId } : {}) }, transaction: transactionContext.getStore(),
+});
+exports.listReportChildren = (ids) => list('Child', {
+  where: { id: { [Op.in]: ids } }, attributes: ['id', 'firstName', 'lastName'],
+});
 exports.createAttendanceCorrection = (values) => create('AttendanceCorrection', values);
 exports.listAttendanceCorrections = async (attendanceId) => (await list('AttendanceCorrection', { where: { attendanceId } }))
   .sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt) || a.after.version - b.after.version);
