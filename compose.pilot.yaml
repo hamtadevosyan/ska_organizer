@@ -79,8 +79,8 @@ services:
     depends_on:
       server: {condition: service_healthy}
     healthcheck:
-      # A TLS health request uses Caddy's own local CA, never --insecure.
-      test: [CMD-SHELL, 'curl --fail --silent --cacert /data/caddy/pki/authorities/local/root.crt --resolve "$${PILOT_HOST}:8443:127.0.0.1" "https://$${PILOT_HOST}:8443/api/ready" >/dev/null']
+      # Keep TLS verification and expose failures in Docker's health history.
+      test: [CMD, /usr/local/bin/skao-web-healthcheck]
       interval: 20s
       timeout: 15s
       start_period: 20s

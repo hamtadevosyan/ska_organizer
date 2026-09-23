@@ -51,6 +51,8 @@ jobs:
           dc() { docker compose --env-file .pilot/runtime.env -f compose.pilot.yaml "$@"; }
           dc config --quiet
           dc --profile operations build server web tools
+          # Exercise the actual image/config under the service's capability policy.
+          dc run --rm --no-deps -T web caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
           dc up -d --wait --wait-timeout 120 db
           dc run --rm --no-deps -T server node scripts/database.js migrate
           # Only this disposable one-shot fixture command enables demo seeding.
@@ -83,6 +85,25 @@ jobs:
           assert result['coverage']['meals'] and result['coverage']['accounts']
           assert any(t['name'] == 'SequelizeMeta' and t['count'] > 0 for t in result['tables'])
           PY
+      - name: Show pilot startup and health diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          if [ ! -f .pilot/runtime.env ]; then
+            printf 'Pilot settings were not created; inspect the preceding setup error.\n'
+            exit 0
+          fi
+          dc() { docker compose --env-file .pilot/runtime.env -f compose.pilot.yaml "$@"; }
+          dc ps --all || true
+          for service in db server web; do
+            container=$(dc ps --all --quiet "$service") || continue
+            if [ -n "$container" ]; then
+              # State includes healthcheck exit codes/output, not secret-bearing Config/Env.
+              docker inspect --format 'Name={{.Name}} State={{json .State}}' "$container" || true
+            fi
+          done
+          # This workflow uses synthetic records only. Collect logs before cleanup.
+          dc logs --no-color --tail 100 web server db || true
       - name: Clean up only this hosted runner's synthetic pilot
         if: always()
         shell: bash
