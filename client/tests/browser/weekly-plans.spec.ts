@@ -60,10 +60,16 @@ test('save, reload, preserve drafts and reopen two independent weeks through rea
   const savedShopping = (await (await request.get(`${api}/shelf/final?weekStart=2026-09-07`)).json()).data;
   expect(savedShopping.items.find((item: { ingredient: { id: string } }) => item.ingredient.id === eggs.id)).toMatchObject({ quantity: 15, inStorage: 2, toBuy: 13 });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Toggle navigation' }).click();
-  await expect(page.getByRole('button', { name: 'Close navigation' })).toBeVisible();
-  // Close via the visible navigation link; the overlay is partly behind the drawer.
-  await page.getByRole('link', { name: 'Meals', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Close navigation' })).toHaveCount(0);
+  const navigation = page.getByRole('navigation', { name: 'Mobile navigation' });
+  await expect(navigation).toBeVisible();
+  await navigation.getByRole('button', { name: 'More', exact: true }).click();
+  const more = page.getByRole('dialog', { name: 'More', exact: true });
+  await expect(more).toBeVisible();
+  await more.getByRole('button', { name: 'Close more' }).click();
+  await expect(more).toHaveCount(0);
+  await navigation.getByRole('link', { name: 'Meals', exact: true }).click();
+  // Opening navigation or reselecting the current page must not reset its saved week.
+  await expect(page.getByLabel('Children', { exact: true })).toHaveValue('4');
+  await expect(page.getByRole('button', { name: 'Print List' })).toBeEnabled();
   expect(errors).toEqual([]);
 });

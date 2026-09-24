@@ -163,6 +163,9 @@ PUT /api/activity/:id
 
 📱 Mobile Ready
 
+The client now has phone-sized bottom navigation and a More sheet while retaining
+the desktop sidebar. See [Mobile navigation and verification](docs/mobile-navigation.md).
+
 The backend is designed as a REST API and can be consumed by:
 Web frontend (current)
 Future mobile app (React Native / Flutter / iOS / Android)

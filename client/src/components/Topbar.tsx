@@ -1,46 +1,32 @@
 // src/components/Topbar.tsx
-import { useState } from "react";
 import { useAuth, roleLabels } from "../auth/context";
-import { PasswordForm } from "../auth/AuthGate";
-import { authError } from "../auth/transport";
-import { Menu } from "lucide-react";
 
-const Topbar = ({ onToggleSidebar }: { onToggleSidebar: () => void }) => {
-  const { account, signOut } = useAuth();
-  const [passwordOpen, setPasswordOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  return (<>
-    <header className="print:hidden flex justify-between items-center px-6 py-4 bg-white shadow-sm border-b">
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Hamburger Icon (Mobile) */}
-        <button
-          aria-label="Toggle navigation"
-          onClick={onToggleSidebar}
-          className="md:hidden p-2 text-gray-700 hover:bg-gray-200 rounded"
-        >
-          <Menu size={24} />
-        </button>
-        <h1 className="text-xl font-bold text-gray-900 font-serif">
-          Smart Kids Academy
-        </h1>
+type Props = { onChangePassword: () => void; onSignOut: () => void; signingOut: boolean };
+
+const Topbar = ({ onChangePassword, onSignOut, signingOut }: Props) => {
+  const { account } = useAuth();
+  return (
+    <header className="app-topbar flex flex-wrap items-center justify-between gap-3 border-b bg-white shadow-sm print:hidden">
+      <div className="flex min-w-0 items-center gap-3">
+        <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-800 text-xs font-bold text-white md:hidden">SKA</span>
+        <div>
+          <p className="text-lg font-bold text-slate-950 md:hidden">SKA Organizer</p>
+          <p className="text-xs text-slate-600 md:hidden">Smart Kids Academy</p>
+          <p className="hidden font-serif text-xl font-bold text-gray-900 md:block">Smart Kids Academy</p>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <select className="border rounded px-2 py-1 text-sm">
+      <div className="hidden flex-wrap items-center gap-3 md:flex">
+        <select aria-label="Language" className="min-h-11 rounded border px-2 py-1 text-sm">
           <option>English</option>
           <option>Spanish</option>
         </select>
         <span className="text-sm text-gray-700">{account?.displayName} · {account && roleLabels[account.role]}</span>
-        <button onClick={() => setPasswordOpen(true)} className="text-sm underline">Change password</button>
-        <button disabled={busy} onClick={() => { setBusy(true); setError(''); void signOut().catch((failure) => setError(authError(failure, 'Could not sign out.'))).finally(() => setBusy(false)); }} className="text-sm underline">{busy ? 'Signing out…' : 'Sign out'}</button>
+        <button type="button" onClick={onChangePassword} className="min-h-11 px-2 text-sm underline">Change password</button>
+        <button type="button" disabled={signingOut} onClick={onSignOut} className="min-h-11 px-2 text-sm underline">{signingOut ? 'Signing out…' : 'Sign out'}</button>
       </div>
     </header>
-    {error && <p role="alert" className="bg-red-50 p-3 text-red-800">{error}</p>}
-    {passwordOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div role="dialog" aria-modal="true" aria-label="Change password" className="w-full max-w-md rounded-xl bg-white p-6"><PasswordForm onDone={() => setPasswordOpen(false)} /></div></div>}
-    </>
   );
 };
 
 export default Topbar;
-
