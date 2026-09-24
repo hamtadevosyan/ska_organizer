@@ -1,65 +1,18 @@
 // src/components/Sidebar.tsx
 import { useAuth } from "../auth/context";
 import { NavLink } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Boxes,
-  CalendarDays,
-  Utensils,
-  Users,
-  FileText,
-  Building2,
-} from "lucide-react";
+import { getNavigationItems } from "./navigation";
 
-const navItems = [
-  { to: "/attendance", label: "Attendance", icon: <CalendarDays size={20} /> },
-  { to: "/children", label: "Children", icon: <Users size={20} /> },
-  { to: "/rooms", label: "Rooms & Classes", icon: <Building2 size={20} /> },
-  {
-    to: "/dashboard",
-    label: "Dashboard",
-    icon: <LayoutDashboard size={20} />,
-  },
-  {
-    to: "/inventory",
-    label: "Inventory",
-    icon: <Boxes size={20} />,
-  },
-  {
-    to: "/activities",
-    label: "Activity Planner",
-    icon: <CalendarDays size={20} />,
-  },
-  {
-    to: "/meals",
-    label: "Meals",
-    icon: <Utensils size={20} />,
-  },
-  {
-    to: "/staff",
-    label: "Staff",
-    icon: <Users size={20} />,
-  },
-  {
-    to: "/reports",
-    label: "Reports",
-    icon: <FileText size={20} />,
-  },
-];
-
-export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export default function Sidebar() {
   const { account } = useAuth();
-  const items = account?.role === "admin" ? [...navItems, { to: "/accounts", label: "Accounts", icon: <Users size={20} /> }] : navItems;
+  const items = getNavigationItems(account?.role);
   return (
-    <>
-    {isOpen && <button aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-20 bg-black/40 md:hidden" />}
-    <aside className={`${isOpen ? 'block' : 'hidden'} fixed inset-y-0 left-0 z-30 w-72 min-h-screen bg-slate-950 text-white p-6 md:static md:block print:hidden`}>
-      <nav className="space-y-3">
+    <aside className="app-sidebar hidden w-72 shrink-0 bg-slate-950 p-6 text-white md:block print:hidden">
+      <nav aria-label="Desktop navigation" className="space-y-3">
         {items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
-            onClick={onClose}
             className={({ isActive }) =>
               `flex items-center gap-4 rounded-xl px-4 py-3 text-sm font-semibold transition ${
                 isActive
@@ -68,12 +21,11 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
               }`
             }
           >
-            {item.icon}
+            <item.icon size={20} aria-hidden="true" />
             <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
     </aside>
-    </>
   );
 }
