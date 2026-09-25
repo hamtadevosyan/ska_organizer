@@ -102,3 +102,14 @@ test('unmount aborts an outstanding request', () => {
   const signal = vi.mocked(axios.get).mock.calls.at(-1)![1]!.signal!;
   view.unmount(); expect(signal.aborted).toBe(true);
 });
+
+test('Home actions lead to real workflows even when the dashboard is unavailable', async () => {
+  vi.mocked(axios.get).mockRejectedValueOnce(new Error('Offline'));
+  show();
+  await screen.findByRole('alert');
+  const actions = within(screen.getByRole('navigation', { name: 'Quick actions' }));
+  for (const [name, path] of [['Take attendance', '/attendance'], ['Find a child', '/attendance?find=child'], ['Activities', '/activities'], ['Meals', '/meals']]) {
+    expect(actions.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', path);
+  }
+  expect(screen.queryByRole('region', { name: 'Present now' })).not.toBeInTheDocument();
+});

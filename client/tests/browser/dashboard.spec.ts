@@ -23,7 +23,7 @@ test('dashboard refreshes real counts, opens low stock, and reads the saved date
   await page.getByRole('link', { name: /Running low/ }).click();
   await expect(page).toHaveURL(/\/inventory\?status=low$/);
   await expect(page.getByRole('row').filter({ hasText: stock.name })).toContainText('Low stock');
-  await page.getByRole('link', { name: 'Dashboard', exact: true }).click();
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
   const visit = await client.post(api + '/attendance/checkin', { data: { childId: child.id, roomId: room.id } });
   expect(visit.status()).toBe(201);
   await page.getByRole('button', { name: 'Refresh dashboard' }).click();

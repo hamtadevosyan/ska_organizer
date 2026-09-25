@@ -51,9 +51,9 @@ test('primary navigation uses the existing routes and tracks the active page', (
   expect(nav.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/dashboard');
   expect(nav.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
   expect(nav.getByRole('link', { name: 'Meals' })).toHaveAttribute('href', '/meals');
-  fireEvent.click(nav.getByRole('link', { name: 'Children' }));
-  expect(screen.getByRole('heading', { name: '/children' })).toBeInTheDocument();
-  expect(nav.getByRole('link', { name: 'Children' })).toHaveAttribute('aria-current', 'page');
+  fireEvent.click(nav.getByRole('link', { name: 'Attendance' }));
+  expect(screen.getByRole('heading', { name: '/attendance' })).toBeInTheDocument();
+  expect(nav.getByRole('link', { name: 'Attendance' })).toHaveAttribute('aria-current', 'page');
   expect(nav.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current');
 });
 
@@ -64,7 +64,7 @@ test.each(['admin', 'editor', 'viewer'] as const)('More and desktop preserve %s 
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const more = within(screen.getByRole('navigation', { name: 'More navigation' }));
   expect(more.getAllByRole('link').map((link) => link.textContent)).toEqual([
-    'Attendance', 'Rooms & Classes', 'Inventory', 'Activity Planner', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts'] : []),
+    'Children', 'Rooms & Classes', 'Inventory', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts'] : []),
   ]);
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
 });
@@ -77,9 +77,9 @@ test('More highlights secondary routes including filters and closes after naviga
   expect(trigger).toHaveAttribute('aria-expanded', 'true');
   const dialog = within(screen.getByRole('dialog', { name: 'More' }));
   expect(dialog.getByRole('link', { name: 'Inventory' })).toHaveAttribute('aria-current', 'page');
-  fireEvent.click(dialog.getByRole('link', { name: 'Attendance' }));
+  fireEvent.click(dialog.getByRole('link', { name: 'Children' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: '/attendance' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: '/children' })).toBeInTheDocument();
   expect(trigger).toHaveAttribute('aria-expanded', 'false');
 });
 

@@ -57,7 +57,7 @@ export function AttendanceCorrectionForm({ record: initial, name, rooms, zone, c
     } catch (failure) { setError(authError(failure, 'Could not save the correction.')); }
     finally { setSaving(false); }
   }
-  return <section aria-label="Attendance record" className="space-y-4 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+  return <section aria-label="Attendance record" className="space-y-4 rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Attendance for {name}</h2><p className="text-sm text-slate-600">All times use {zone}.</p></div>
       <button disabled={saving} onClick={onClose} className="rounded-lg border px-3 py-2">Close record</button></div>
     {loading && <p role="status">Loading record…</p>}
@@ -76,7 +76,7 @@ export function AttendanceCorrectionForm({ record: initial, name, rooms, zone, c
         ].map((field) => <label key={field.label}>{field.label}<select value={field.value} onChange={(event) => field.change(event.target.value)} className="ml-2 rounded border p-2"><option value="">Ask if ambiguous</option><option value="earlier">First occurrence</option><option value="later">Second occurrence</option></select></label>)}</div>
       </details>}
       <label className="block">Correction reason<textarea value={reason} maxLength={1000} onChange={(event) => setReason(event.target.value)} className="mt-1 block w-full rounded-lg border p-2" /></label>
-      <button type="submit" className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save correction'}</button>
+      <button type="submit" className="ska-button is-primary">{saving ? 'Saving…' : 'Save correction'}</button>
     </fieldset></form>}
     {!loading && recordReady && <div><h3 className="font-semibold">Correction history</h3>{!history.length ? <p className="mt-2 text-sm text-slate-600">No corrections recorded.</p> : <ol className="mt-3 space-y-3">{history.map((entry) => <li key={entry.id} className="rounded-lg bg-slate-50 p-3 text-sm">
       <p className="font-semibold">{attendanceTime(entry.occurredAt, zone)} · {entry.actorUsername}</p><p className="my-2 whitespace-pre-wrap">{entry.reason}</p>

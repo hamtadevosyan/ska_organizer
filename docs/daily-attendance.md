@@ -1,6 +1,6 @@
 # Daily attendance — SKAO-23
 
-Open **Attendance** in the sidebar. Administrators and editors can record arrivals, departures and corrections. Viewers can read attendance and correction history. These are the existing account roles; no self-service teacher or parent sign-in workflow is added.
+Open **Attendance** in the sidebar or the phone navigation. Administrators and editors can record arrivals, departures and corrections. Viewers can read attendance and correction history. These are the existing account roles; no self-service teacher or parent sign-in workflow is added.
 
 ## Record attendance
 
@@ -8,11 +8,13 @@ Open **Attendance** in the sidebar. Administrators and editors can record arriva
 2. Today lists active children assigned to the room, plus recorded visits and unresolved older visits. Search by a child's name or preferred name.
 3. Select **Check in** when the child arrives. The server records the current time and the signed-in account. The child changes to **Present**.
 4. Select **Check out** for the open visit when the child leaves. The child changes to **Checked out**. A later arrival creates a separate visit.
-5. Use **Refresh attendance** to read updates from another device. Attendance is not automatically polled.
+5. Use **Refresh** to read updates from another device. Attendance is not automatically polled.
 
 Assign unassigned children to an active, configured room through **Children** before checking them in through this screen. An open visit remains visible after a child's room, enrollment or the room's active status changes, so it can still be checked out. Visits retain their recorded room. **View profile** opens the child's existing profile.
 
 Repeated or concurrent check-ins cannot create two valid open visits for one child. Repeated checkout returns the original departure time. Browser retries retain a request identifier until a successful response; replaying it after checkout returns the earlier record rather than opening another visit. Failed actions display an error and do not optimistically change attendance.
+
+Visit details are collapsed during ordinary check-in/out. Older, incomplete, or multiple open visits are expanded so review controls stay visible. Viewers can expand details and use **View history** without arrival, departure, or correction controls.
 
 ## Dates and facility time
 
@@ -30,7 +32,7 @@ Use today's view for live arrival/departure actions. A request using an older fa
 
 ## Corrections and legacy records
 
-Select **Correct / history**, review the current record, edit its room or times, explain why it changed, and confirm **Save correction**. Times entered in the form are facility-local times. During the fall clock change, choose the first or second occurrence when prompted. Nonexistent spring-forward times are rejected.
+Expand **Visit details** under the child, select **Correct / history**, review the current record, edit its room or times, explain why it changed, and confirm **Save correction**. Times entered in the form are facility-local times. During the fall clock change, choose the first or second occurrence when prompted. Nonexistent spring-forward times are rejected.
 
 Every correction stores the original and resulting values, reason, acting account ID and username, and correction time. These values are written in the same transaction as the attendance change and the audit event. A stale version, overlapping visit, future timestamp, departure before arrival, or missing reason is rejected. After a conflict, your typed correction remains in the form; use **Reload current record** to deliberately discard it and read the latest record.
 

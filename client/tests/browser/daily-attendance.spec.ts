@@ -14,7 +14,7 @@ test('check in by room, reload, correct a visit with history and check out throu
   const config = await (await http.get(api + '/attendance/config')).json();
   await page.goto('/attendance');
   await page.getByRole('combobox', { name: 'Attendance room', exact: true }).selectOption(room.id);
-  const row = page.getByRole('row', { name: 'Browser Attendance Child', exact: true });
+  const row = page.getByRole('article', { name: 'Browser Attendance Child', exact: true });
   await expect(row.getByText('Not checked in', { exact: true })).toBeVisible();
   await row.getByRole('button', { name: 'Check in Browser Attendance Child', exact: true }).click();
   await expect(row.getByText('Present', { exact: true })).toBeVisible();
@@ -25,6 +25,7 @@ test('check in by room, reload, correct a visit with history and check out throu
   const visit = records[0];
   const repeated = await http.post(api + '/attendance/checkin', { data: { childId: child.id, roomId: room.id, date: config.today } });
   expect((await repeated.json()).id).toBe(visit.id);
+  await row.locator('summary').click();
   await row.getByRole('button', { name: 'Correct / history', exact: true }).click();
   const form = page.getByRole('region', { name: 'Attendance record', exact: true });
   await expect(form.getByText('No corrections recorded.')).toBeVisible();
@@ -33,6 +34,7 @@ test('check in by room, reload, correct a visit with history and check out throu
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await form.getByRole('button', { name: 'Save correction', exact: true }).click();
   await expect(page.getByText('Attendance correction saved with its history.')).toBeVisible();
+  await row.locator('summary').click();
   await row.getByRole('button', { name: 'Correct / history', exact: true }).click();
   await expect(form.getByText('Synthetic visit entered for the wrong arrival.')).toBeVisible();
   const history = await (await http.get(api + '/attendance/' + visit.id + '/corrections')).json();

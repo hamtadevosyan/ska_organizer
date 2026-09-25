@@ -21,6 +21,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
   // Close stale overlays on browser back/forward, including query-only navigation.
   useEffect(() => { setPanel(null); }, [location.key]);
   useEffect(() => {
+    const labels: Record<string, string> = { dashboard: 'Home', attendance: 'Attendance', activities: 'Activities', meals: 'Meals',
+      children: 'Children', rooms: 'Rooms & Classes', inventory: 'Inventory', staff: 'Staff', reports: 'Reports', accounts: 'Accounts' };
+    document.title = `Smart Kids Academy · ${labels[location.pathname.split('/')[1]] || 'Home'}`;
+  }, [location.pathname]);
+  useEffect(() => {
     const desktop = window.matchMedia('(min-width: 768px)');
     const closeMobilePanel = () => { if (desktop.matches) setPanel((current) => current === 'more' ? null : current); };
     desktop.addEventListener('change', closeMobilePanel);
@@ -42,10 +47,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return <div className="app-shell">
     <a href="#main-content" className="app-skip-link">Skip to content</a>
-    <Topbar {...accountActions} />
-    {error && panel !== 'more' && <p role="alert" className="bg-red-50 p-3 text-red-800">{error}</p>}
-    <div className="app-shell-body">
-      <Sidebar />
+    <Sidebar />
+    <div className="app-workspace">
+      <Topbar {...accountActions} />
+      {error && panel !== 'more' && <p role="alert" className="ska-alert is-error">{error}</p>}
       <main id="main-content" tabIndex={-1} className="app-main">{children}</main>
     </div>
     <MobileNavigation moreOpen={panel === 'more'} onMore={() => setPanel('more')} />

@@ -62,7 +62,7 @@ test('staff changes persist, update active totals and leave sign-in accounts unc
   await page.getByRole('checkbox', { name: 'Active staff member' }).check();
   await page.getByRole('button', { name: 'Save staff', exact: true }).click();
   await expect(page.getByText(/Staff record updated/)).toBeVisible();
-  await page.getByRole('link', { name: 'Dashboard', exact: true }).click();
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
   await expect(page.getByText('Active Staff', { exact: true }).locator('..')).toContainText(String(activeTotal + 1));
   expect(errors).toEqual([]);
 });

@@ -1,6 +1,6 @@
 # Mobile navigation
 
-The signed-in app uses a compact header and a fixed bottom navigation below
+The signed-in app uses a compact header and a floating bottom navigation below
 768 CSS pixels. At 768 pixels and above it keeps the desktop sidebar and
 header account controls. No API, authentication, database, HTTPS, or PWA
 installation settings are changed by this layout.
@@ -8,10 +8,10 @@ installation settings are changed by this layout.
 ## On a phone
 
 - **Home** opens the existing `/dashboard` page.
-- **Children** opens `/children`.
+- **Attendance** opens `/attendance`.
+- **Activities** opens `/activities`.
 - **Meals** opens `/meals`.
-- **More** opens Attendance, Rooms & Classes, Inventory, Activity Planner,
-  Staff, Reports, and account actions. Accounts is visible only to administrators,
+- **More** opens Children, Rooms & Classes, Inventory, Staff, Reports, and account actions. Accounts is visible only to administrators,
   matching the desktop navigation; server-side permissions are unchanged.
 - More also contains the signed-in user's name, role, Change password, and
   Sign out. Password changes and sign-out use the existing authentication flow.
@@ -35,7 +35,7 @@ when it is still present.
 - Bottom spacing reserves the navigation height plus the device's safe-area inset.
 - The header and sheets also account for safe-area insets.
 - Existing wide pages can scroll horizontally within the main content region.
-  Redesigning individual forms, tables, and operational pages is separate work.
+  Home and Attendance use the approved SKAO-96 design; the remaining operational pages retain their existing forms and tables.
 - Print layouts exclude the application navigation and its mobile spacing.
 - This is a responsive website change, not a PWA installation or offline feature.
 
@@ -70,7 +70,7 @@ authentication suite continues to verify server-side account permissions.
 After applying the update to a test installation:
 
 1. Open it in iPhone Safari and Android Chrome; sign in with a test account.
-2. Visit Home, Children, Meals, and every More destination.
+2. Visit Home, Attendance, Activities, Meals, and every More destination.
 3. Scroll to the bottom; confirm the last action is reachable above the bottom bar.
 4. Rotate the phone, open and close More, and use the browser's back button.
 5. Open Change password; check keyboard/field visibility, scrolling, and Cancel.
