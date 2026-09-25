@@ -40,9 +40,9 @@ for (const width of [320, 375, 390, 430]) {
       const lastCard = (await page.getByRole('region', { name: 'Recent changes' }).boundingBox())!;
       expect(lastCard.y + lastCard.height).toBeLessThanOrEqual(box.y);
 
-      await nav.getByRole('link', { name: 'Children' }).click();
-      await expect(page).toHaveURL(/\/children$/);
-      await expect(nav.getByRole('link', { name: 'Children' })).toHaveAttribute('aria-current', 'page');
+      await nav.getByRole('link', { name: 'Attendance' }).click();
+      await expect(page).toHaveURL(/\/attendance$/);
+      await expect(nav.getByRole('link', { name: 'Attendance' })).toHaveAttribute('aria-current', 'page');
       await nav.getByRole('link', { name: 'Meals' }).click();
       await expect(page).toHaveURL(/\/meals$/);
       await expect(nav.getByRole('link', { name: 'Meals' })).toHaveAttribute('aria-current', 'page');
@@ -50,8 +50,8 @@ for (const width of [320, 375, 390, 430]) {
       const sheet = page.getByRole('dialog', { name: 'More', exact: true });
       await expect(sheet).toBeVisible();
       await expect(sheet.getByRole('link', { name: 'Accounts', exact: true })).toBeVisible();
-      await sheet.getByRole('link', { name: 'Attendance', exact: true }).click();
-      await expect(page).toHaveURL(/\/attendance$/);
+      await sheet.getByRole('link', { name: 'Children', exact: true }).click();
+      await expect(page).toHaveURL(/\/children$/);
       await expect(sheet).toHaveCount(0);
       await expect(nav.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'true');
       await page.reload();
@@ -109,7 +109,7 @@ test('resize and browser history cannot leave an invisible modal blocking the de
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
-  await mobile.getByRole('link', { name: 'Children' }).click();
+  await mobile.getByRole('link', { name: 'Attendance' }).click();
   await mobile.getByRole('button', { name: 'More' }).click();
   await page.goBack();
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -134,10 +134,10 @@ test('a mobile session expiry removes navigation and private page state', async 
   await page.goto('/dashboard');
   const nav = page.getByRole('navigation', { name: 'Mobile navigation' });
   await expect(nav).toBeVisible();
-  await page.route('**/api/children**', (route) => route.fulfill({
+  await page.route('**/api/attendance/daily**', (route) => route.fulfill({
     status: 401, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Sign in to continue.' } }),
   }));
-  await nav.getByRole('link', { name: 'Children' }).click();
+  await nav.getByRole('link', { name: 'Attendance' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
   await expect(page.getByRole('status')).toContainText('session has expired');
   await expect(nav).toHaveCount(0);

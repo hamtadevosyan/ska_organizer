@@ -15,7 +15,7 @@ export default function MoreNavigation({ onDismiss, onChangePassword, onSignOut,
     <nav aria-label="More navigation" className="grid gap-1">
       {getMoreItems(account?.role).map((item) => <NavLink key={item.to} to={item.to} onClick={onDismiss}
         className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-xl px-3 py-3 font-medium ${
-          isActive ? 'bg-emerald-50 text-emerald-900' : 'text-slate-700 hover:bg-slate-100'}`}>
+          isActive ? 'bg-blue-50 text-blue-800' : 'text-slate-700 hover:bg-slate-100'}`}>
         <item.icon size={20} aria-hidden="true" /><span>{item.label}</span>
       </NavLink>)}
     </nav>

@@ -29,7 +29,7 @@ beforeEach(() => {
     return { data: record };
   });
 });
-function renderPage(viewer = false) { return render(<MemoryRouter><SignedIn account={viewer ? { ...testAccount, role: 'viewer' } : testAccount}><Attendance /></SignedIn></MemoryRouter>); }
+function renderPage(viewer = false, path = '/attendance') { return render(<MemoryRouter initialEntries={[path]}><SignedIn account={viewer ? { ...testAccount, role: 'viewer' } : testAccount}><Attendance /></SignedIn></MemoryRouter>); }
 
 test('arrivals and departures refresh status and persist through remount', async () => {
   const view = renderPage();
@@ -77,15 +77,16 @@ test('a late response cannot overwrite a newly selected date', async () => {
   fireEvent.change(screen.getByLabelText(/^Attendance date/), { target: { value: '2026-09-07' } });
   await screen.findByText('No children or recorded visits match these filters.');
   await act(async () => old.resolve({ data: baseline() }));
-  expect(screen.queryByRole('row', { name: 'Synthetic Attendance' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('article', { name: 'Synthetic Attendance' })).not.toBeInTheDocument();
   expect(screen.getByLabelText(/^Attendance date/)).toHaveValue('2026-09-07');
 });
 
 test('viewers can read visits and history without mutation controls', async () => {
   daily.rows[0] = { ...daily.rows[0], records: [visit], openVisits: [visit], canCheckIn: false };
   renderPage(true);
-  const row = await screen.findByRole('row', { name: 'Synthetic Attendance' });
+  const row = await screen.findByRole('article', { name: 'Synthetic Attendance' });
   expect(within(row).queryByRole('button', { name: /Check in|Check out/ })).not.toBeInTheDocument();
+  fireEvent.click(within(row).getByText('Visit details'));
   fireEvent.click(within(row).getByRole('button', { name: 'View history' }));
   await screen.findByText('No corrections recorded.');
   expect(screen.queryByRole('button', { name: 'Save correction' })).not.toBeInTheDocument();
@@ -116,4 +117,57 @@ test('a failed record load leaves corrections disabled until a successful retry'
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith('/corrections') ? [] : visit }));
   fireEvent.click(screen.getByRole('button', { name: 'Reload current record' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save correction' })).toBeEnabled());
+});
+
+test('Find a child focuses search, matches preferred names, and restores keyboard focus after arrival', async () => {
+  daily.rows[0].child = { ...child, preferredName: 'Sunny' };
+  renderPage(false, '/attendance?find=child');
+  const search = screen.getByRole('searchbox', { name: 'Search attendance' });
+  expect(search).toHaveFocus();
+  await screen.findByRole('article', { name: 'Synthetic Attendance' });
+  fireEvent.change(search, { target: { value: 'Sunny' } });
+  const row = screen.getByRole('article', { name: 'Synthetic Attendance' });
+  fireEvent.click(within(row).getByRole('button', { name: 'Check in Synthetic Attendance' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Check out Synthetic Attendance' })).toHaveFocus());
+  fireEvent.change(search, { target: { value: 'Missing child' } });
+  expect(screen.queryByRole('article')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+  expect(search).toHaveFocus();
+  expect(screen.getByRole('article', { name: 'Synthetic Attendance' })).toBeInTheDocument();
+});
+
+test('historical visits expose history but never offer a live arrival or departure', async () => {
+  daily = { ...baseline(), date: '2026-09-07', presentCount: null };
+  daily.rows[0] = { ...daily.rows[0], canCheckIn: false, records: [{ ...visit, checkIn: '2026-09-07T16:00:00Z', checkOut: '2026-09-07T20:00:00Z' }] };
+  renderPage(false, '/attendance?date=2026-09-07');
+  const row = await screen.findByRole('article', { name: 'Synthetic Attendance' });
+  expect(within(row).queryByRole('button', { name: /Check in|Check out/ })).not.toBeInTheDocument();
+  expect(screen.queryByText('Here now')).not.toBeInTheDocument();
+  fireEvent.click(within(row).getByText('Visit details'));
+  expect(within(row).getByRole('button', { name: 'Correct / history' })).toBeVisible();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('an older open visit stays expanded for review and has only its record-specific checkout', async () => {
+  const older = { ...visit, checkIn: '2026-09-07T16:00:00Z', needsReview: true };
+  daily.rows[0] = { ...daily.rows[0], records: [], openVisits: [older], canCheckIn: false };
+  renderPage();
+  const row = await screen.findByRole('article', { name: 'Synthetic Attendance' });
+  expect(within(row).getByText('Needs review')).toBeVisible();
+  expect(within(row).getByText('Visit details').closest('details')).toHaveAttribute('open');
+  expect(within(row).getAllByRole('button', { name: 'Check out Synthetic Attendance' })).toHaveLength(1);
+  fireEvent.click(within(row).getByRole('button', { name: 'Check out Synthetic Attendance' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/visit/checkout'), { date: daily.today, version: older.version }));
+});
+
+test('a failed refresh hides the prior roster and recovery reloads it', async () => {
+  renderPage();
+  await screen.findByRole('article', { name: 'Synthetic Attendance' });
+  vi.mocked(axios.get).mockRejectedValueOnce(new Error('Offline'));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh attendance' }));
+  await screen.findByRole('alert');
+  expect(screen.queryByRole('article')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Check in Synthetic Attendance' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh attendance' }));
+  await screen.findByRole('article', { name: 'Synthetic Attendance' });
 });

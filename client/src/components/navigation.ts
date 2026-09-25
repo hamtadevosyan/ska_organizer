@@ -1,4 +1,4 @@
-import { Building2, Boxes, CalendarDays, FileText, LayoutDashboard, Users, Utensils } from 'lucide-react';
+import { Building2, Boxes, ClipboardCheck, FileText, House, Palette, Users, Utensils } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '../auth/context';
 
@@ -6,13 +6,13 @@ export type NavigationItem = { to: string; label: string; icon: LucideIcon; admi
 
 // Desktop and phone navigation share the same routes and account visibility rule.
 const navigation = {
-  attendance: { to: '/attendance', label: 'Attendance', icon: CalendarDays },
+  dashboard: { to: '/dashboard', label: 'Home', icon: House },
+  attendance: { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
+  activities: { to: '/activities', label: 'Activities', icon: Palette },
+  meals: { to: '/meals', label: 'Meals', icon: Utensils },
   children: { to: '/children', label: 'Children', icon: Users },
   rooms: { to: '/rooms', label: 'Rooms & Classes', icon: Building2 },
-  dashboard: { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   inventory: { to: '/inventory', label: 'Inventory', icon: Boxes },
-  activities: { to: '/activities', label: 'Activity Planner', icon: CalendarDays },
-  meals: { to: '/meals', label: 'Meals', icon: Utensils },
   staff: { to: '/staff', label: 'Staff', icon: Users },
   reports: { to: '/reports', label: 'Reports', icon: FileText },
   accounts: { to: '/accounts', label: 'Accounts', icon: Users, adminOnly: true },
@@ -20,7 +20,7 @@ const navigation = {
 
 const allItems: NavigationItem[] = Object.values(navigation);
 export const primaryNavigation: NavigationItem[] = [
-  { ...navigation.dashboard, label: 'Home' }, navigation.children, navigation.meals,
+  navigation.dashboard, navigation.attendance, navigation.activities, navigation.meals,
 ];
 
 export function getNavigationItems(role?: Role) {

@@ -22,7 +22,7 @@ test('manage a room, select it for activities, and preserve it after archival', 
   await expect(page.getByRole('article', { name: 'Browser Sunflower' })).toContainText('14 children assigned');
   await page.reload();
   await expect(page.getByRole('article', { name: 'Browser Sunflower' })).toContainText('14 children assigned');
-  await page.getByRole('link', { name: 'Activity Planner', exact: true }).click();
+  await page.getByRole('link', { name: 'Activities', exact: true }).click();
   await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(saved.id);
   await expect(page.getByText('No schedule saved yet. Choose activities below.', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Rooms & Classes', exact: true }).click();
