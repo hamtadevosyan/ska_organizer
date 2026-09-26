@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>Activity Planner · Smart Kids Academy · Review</title>
+<style>
+@font-face{font-family:Academy;src:url(data:font/ttf;base64,{{LOCAL_FONT}}) format('truetype');font-weight:200 800;font-display:swap}
+:root{font-family:Academy,'Segoe UI',sans-serif;color:#23344e;background:#fbfcff;font-synthesis:none;--blue:#2866da;--line:#e6ecf4;--muted:#5c6b80}
+*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer;touch-action:manipulation}button:disabled{opacity:.5;cursor:not-allowed}button,a,input,select,textarea,summary{outline-offset:4px}*:focus-visible{outline:3px solid #2866da}button{border:1px solid #d5e0ef;background:#fff;border-radius:12px;min-height:46px;padding:10px 15px;font-size:13px;font-weight:700}button:hover:not(:disabled){background:#edf5ff}button.primary{color:white;background:var(--blue);border-color:var(--blue);box-shadow:0 5px 16px #2866da22}button.primary:hover:not(:disabled){background:#2057bd}button.quiet{border-color:transparent;background:transparent}button.danger{color:#a32d45}svg{width:22px;height:22px;flex-shrink:0;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}button svg{width:18px;height:18px;margin-right:6px}h1,h2,h3,p{margin:0}p{line-height:1.7}.muted{color:var(--muted);font-size:13px}.review{padding:10px 20px;background:#273756;color:white;text-align:center;font-size:12px;line-height:1.6}.review strong{color:#ffe193}.brand{display:flex;align-items:center;gap:13px;font-weight:750;line-height:1.5;font-size:15px}.brand img{width:56px;height:58px;object-fit:contain;background:#fffbee;border-radius:15px;padding:4px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:18px max(22px,calc((100vw - 1200px)/2));background:white;border-bottom:1px solid var(--line)}.tag{padding:8px 13px;border-radius:25px;background:#f3e8ff;color:#604091;font-size:12px;font-weight:700}.wrap{max-width:1244px;padding:30px 22px 110px;margin:auto}.hero{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:26px}.kicker{font-size:11px;font-weight:750;letter-spacing:1.8px;color:#676b8c;text-transform:uppercase;margin-bottom:9px}h1{font-size:clamp(28px,3.4vw,42px);font-weight:750;letter-spacing:-1.5px;line-height:1.2}.hero p{margin-top:12px;color:var(--muted);font-size:14px}.spark{width:112px;height:100px;position:relative;display:grid;place-items:center;background:linear-gradient(145deg,#ece0ff,#d6bdff);border-radius:29px;transform:rotate(5deg);box-shadow:9px 9px 0 #fff0c5;flex-shrink:0}.spark svg{width:50px;height:50px;color:#6540ae;transform:rotate(-5deg)}.spark:before{content:'';width:18px;height:18px;background:#ffc4a7;border-radius:50%;position:absolute;left:-10px;top:10px}.toolbar{display:flex;align-items:end;gap:13px;flex-wrap:wrap;padding:20px;border:1px solid var(--line);border-radius:22px;background:#fff}.field{display:block;font-size:12px;font-weight:700}.field input,.field select,.field textarea{display:block;width:100%;min-width:0;min-height:46px;margin-top:7px;border:1px solid #cddbec;border-radius:11px;padding:10px 12px;background:white;font-size:14px;font-weight:500}.field textarea{min-height:92px;resize:vertical}.toolbar .field{flex:1;min-width:190px}.toolbar .actions{display:flex;flex-wrap:wrap;gap:8px}.viewline{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:23px 0 17px;flex-wrap:wrap}.segmented{display:flex;gap:3px;background:#eef1f8;padding:4px;border-radius:14px}.segmented button{border:0;min-height:42px;background:transparent}.segmented button[aria-pressed=true]{background:white;box-shadow:0 2px 7px #27375615;color:#2057bd}.status{font-size:13px;font-weight:650;padding:9px 13px;background:#edf5ff;border-radius:30px}.status.dirty{background:#fff1b4;color:#754e14}.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px;margin:0 0 20px}.days button{display:flex;flex-direction:column;gap:7px;align-items:center;padding:14px 5px;background:white;border:1px solid var(--line);border-radius:17px}.days button[aria-pressed=true]{background:#2866da;color:#fff;border-color:#2866da;box-shadow:0 5px 15px #2866da20}.days .num{font-size:21px;font-weight:750}.days .count{font-size:10px;font-weight:500}.panel{background:#fff;border:1px solid var(--line);border-radius:24px;overflow:hidden}.panelhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:22px 24px;border-bottom:1px solid var(--line);background:linear-gradient(115deg,#fcf9ff,#fff8ec)}h2{font-size:20px;font-weight:750;letter-spacing:-.6px}.panelhead p{margin-top:5px}.list{padding:12px 24px}.entry{display:grid;grid-template-columns:90px 44px minmax(0,1fr) auto;gap:15px;align-items:center;padding:17px 0;border-bottom:1px solid #edf0f5}.entry:last-child{border:0}.time{font-size:13px;font-weight:750;line-height:1.5}.time span{display:block;color:var(--muted);font-size:11px;font-weight:500}.tile{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;color:#64468e;background:#eee3ff}.tile.coral{background:#ffe4d2;color:#aa5030}.tile.yellow{background:#fff0b7;color:#89631e}.tile.blue{background:#e0edff;color:#31659a}.entry h3{font-size:14px;font-weight:750}.entry p{font-size:12px;color:var(--muted);margin-top:3px}.entry details{font-size:12px;color:var(--muted);margin-top:7px}.entry summary{cursor:pointer;padding:6px 0}.entry .edit{min-width:60px}.empty{padding:40px 20px;text-align:center}.empty h3{font-size:20px;margin-bottom:8px}.empty button{margin-top:18px}.bottomadd{margin:0 24px 23px;border:1px dashed #b6c8e2;width:calc(100% - 48px);color:#2057bd}.notice{background:#fff3c9;border:1px solid #f0ddb1;border-radius:14px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.7}.notice.error{background:#fff0f2;border-color:#f2c4ce;color:#98324b}.notice button{margin-left:10px}.weekgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}.weekcard{padding:14px 10px;background:#fff;border:1px solid var(--line);border-radius:19px;min-width:0}.weekcard h3{font-size:13px;margin:3px 0 13px}.weekcard .mini{padding:10px;border-radius:11px;margin-bottom:8px;background:#f3e8ff;font-size:11px;line-height:1.6;overflow-wrap:anywhere}.weekcard .mini time{display:block;font-size:10px;color:#594874}.weekcard button{font-size:11px;padding:8px;width:100%;margin-top:7px}.materials{margin-top:20px;padding:20px 24px;background:#fff;border:1px solid var(--line);border-radius:20px}.materials summary{cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;min-height:30px}.materials p{margin-top:12px}.materials ul{padding-left:20px;font-size:13px;line-height:1.8}.demo{margin-top:26px;color:var(--muted);font-size:12px;line-height:1.8}.demo summary{cursor:pointer;min-height:36px}.demo .row{margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.savebar{position:fixed;bottom:0;left:0;right:0;background:#fffffff5;border-top:1px solid #dde5f0;box-shadow:0 -5px 24px #243b6210;z-index:5}.saveinner{max-width:1200px;margin:auto;padding:13px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px}.saveinner p{font-size:12px;color:var(--muted)}.saveinner strong{font-size:13px}.saveinner button{min-width:140px}.modal{border:1px solid #d9e2f0;border-radius:25px;padding:0;width:min(580px,calc(100% - 28px));max-height:calc(100dvh - 40px);box-shadow:0 30px 100px #1d31584a;color:inherit}.modal::backdrop{background:#263a5966;backdrop-filter:blur(3px)}.modalhead{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:22px 24px 12px}.modalhead h2{font-size:23px}.modalbody{padding:0 24px 24px}.modalbody>p{margin-bottom:18px}.modal .field{margin-bottom:16px}.modal .twocol{display:grid;grid-template-columns:1fr 1fr;gap:13px}.modalfooter{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px;border-top:1px solid var(--line);padding:16px 24px;background:#fafbfe;border-radius:0 0 25px 25px}.choice{width:100%;display:flex;align-items:center;text-align:left;gap:12px;margin-bottom:9px;border-color:var(--line);padding:12px}.choice .sub{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:4px}.choice .arrow{margin-left:auto}.errorline{color:#a32d45;background:#fff0f2;padding:12px;border-radius:12px;margin:10px 0;font-size:13px}.confirmbox{padding:15px;border:1px solid #f0ddb1;background:#fff6d8;border-radius:13px;margin:16px 0;font-size:13px}.confirmbox button{margin-top:10px;margin-right:8px}.printonly{display:none}[hidden]{display:none!important}
+@media(min-width:1200px){.list{padding-left:32px;padding-right:32px}.entry{grid-template-columns:110px 46px minmax(0,1fr) auto;gap:20px}}
+@media(max-width:1100px){.weekgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.top{padding:14px 18px}.top .tag{display:none}.brand{font-size:13px}.brand img{width:45px;height:48px}.wrap{padding:24px 15px 120px}.hero{gap:10px}.hero p{font-size:12px;max-width:240px}.spark{width:68px;height:67px;border-radius:20px;margin-right:6px}.spark svg{width:34px;height:34px}h1{font-size:30px}.toolbar{padding:15px;gap:14px}.toolbar .actions{width:100%}.toolbar .actions button{flex:1;font-size:12px}.toolbar .field{min-width:160px}.field input,.field select,.field textarea{font-size:16px}.days{gap:4px}.days button{padding:12px 2px;font-size:10px;border-radius:12px}.days .num{font-size:17px}.days .count{font-size:9px}.panelhead{padding:18px 17px}.panelhead h2{font-size:18px}.panelhead .primary{font-size:12px;padding:10px}.list{padding:3px 16px}.entry{grid-template-columns:58px 34px minmax(0,1fr) auto;gap:9px;padding:16px 0}.entry .tile{width:34px;height:37px;border-radius:11px}.entry .tile svg{width:19px;height:19px}.entry h3{font-size:12px}.time{font-size:11px}.time span{font-size:10px}.entry p{font-size:11px}.entry .edit{min-width:44px;padding:8px;font-size:11px}.weekgrid{grid-template-columns:1fr}.weekcard{padding:18px}.weekcard h3{font-size:17px}.weekcard .mini{font-size:13px}.weekcard .mini time{font-size:12px}.materials{padding:17px}.saveinner{padding:12px 15px}.saveinner p{font-size:10px}.saveinner button{min-width:120px}.modalhead{padding:18px 18px 12px}.modalbody{padding:0 18px 18px}.modalfooter{padding:14px 18px}.modalhead h2{font-size:20px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+@media print{@page{margin:12mm}body>*:not(.printonly){display:none!important}.printonly{display:block;font-family:Arial,sans-serif}.printonly h1{font-size:22px}.printonly h2{font-size:17px;margin:20px 0 10px}.printonly p{font-size:11px}.printonly article{break-inside:avoid;border-bottom:1px solid #ccc;padding:9px 0}.printonly small{display:block;margin-top:5px}}
+</style>
+</head>
+<body>
+<div class="review"><strong>SKAO-66 · Clickable proposal</strong> &nbsp; Fictional examples. “Save” lasts until this tab is reloaded. No connection to your app.</div>
+<header class="top"><div class="brand"><img src="data:image/png;base64,{{LOCAL_LOGO}}" alt="Smart Kids Academy crest"><span>Smart Kids<br>Academy</span></div><span class="tag">Little people. Extraordinary days.</span></header>
+<main class="wrap">
+<div class="hero"><div><div class="kicker">A day full of possibilities</div><h1>Activity Planner</h1><p>A little planning. A wonderful day.</p></div><div class="spark" id="hero-icon" aria-hidden="true"></div></div>
+<section class="toolbar" aria-label="Choose a plan">
+<label class="field">Room<select id="room"><option value="rainbow">Rainbow · ages 3–5</option><option value="little">Little Stars · ages 2–3</option></select></label>
+<label class="field">Week<select id="week"><option value="2026-09-28">Sep 28 – Oct 4, 2026</option><option value="2026-10-05">Oct 5 – 11, 2026</option></select></label>
+<div class="actions"><button id="reuse">Copy a week</button><button id="print">Print week</button></div>
+</section>
+<div class="viewline"><div class="segmented" aria-label="Planner view"><button id="day-view" aria-pressed="true">Day</button><button id="week-view" aria-pressed="false">Week</button></div><span class="status" id="status"></span></div>
+<div id="message" role="status" aria-live="polite"></div>
+<nav class="days" id="days" aria-label="Choose a day"></nav>
+<div id="content"></div>
+<details class="materials"><summary><span id="materials-icon" aria-hidden="true"></span>Materials for this week <span class="tag">Example</span></summary><p class="muted">The app will show the current stock check here. Planning and printing never use up or reserve supplies.</p><ul><li>Consumables: total needed for all activities in the week.</li><li>Reusable equipment: enough for activities happening at the same time.</li><li>If a check fails, show “Check unavailable” with a Retry action.</li></ul><p class="muted">This proposal does not calculate inventory or make stock-availability claims.</p></details>
+<details class="demo"><summary>Review controls &amp; limits</summary><p>All rooms and activities here are fictional. The proposal keeps drafts in memory while switching room, week or view. Refreshing resets everything.</p><div class="row"><label><input type="checkbox" id="readonly"> View as read-only staff</label><label><input type="checkbox" id="fail-save"> Make the next Save week fail</label></div><p>Staff preview shows the last saved plan. Approval/publishing, live stock checks, server permissions and version conflicts are not simulated. These remain explicit review or implementation requirements.</p><div class="row"><button id="leave">Try leaving with unsaved work</button><button id="reload">Reload saved week</button></div></details>
+</main>
+<footer class="savebar"><div class="saveinner"><div style="min-width:0"><strong id="save-title"></strong><p id="save-help"></p></div><div style="display:flex;gap:8px;flex-shrink:0"><button id="undo-latest" style="min-width:0" hidden>Undo</button><button class="primary" id="save">Save week</button></div></div></footer>
+<dialog class="modal" id="modal" aria-labelledby="modal-title"></dialog>
+<section class="printonly" id="print-output"></section>
+<script>
+// Standalone review only. No network calls, storage, credentials or production API.
+const $ = (id) => document.getElementById(id);
+const esc = (value) => String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const paths = {
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18m-13 5 3 3 5-5"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/>',
+  book:'<path d="M12 5v16M3 4c4-1 7 0 9 2 2-2 5-3 9-2v15c-4-1-7 0-9 2-2-2-5-3-9-2Z"/>',
+  palette:'<path d="M21 12a9 9 0 1 0-9 9c3 0 1-3 3-4s6 0 6-5Z"/><circle cx="8" cy="8" r="1"/><circle cx="13" cy="6" r="1"/><circle cx="17" cy="10" r="1"/><circle cx="6" cy="13" r="1"/>',
+  blocks:'<rect x="3" y="12" width="9" height="9" rx="1"/><path d="M12 12h9v9h-9M7 12V3h10v9M7 17h1m8 0h1M11 7h2"/>',
+  music:'<path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="16" rx="3" ry="3"/>',
+  moon:'<path d="M20 14A9 9 0 0 1 10 3 9 9 0 1 0 20 14Z"/>',
+  meal:'<path d="M4 3v6c0 3 6 3 6 0V3M7 3v18M18 3v18m0-18c-4 3-4 10 0 10"/>',
+  heart:'<path d="m12 21-8-8C-4 4 8-2 12 6c4-8 16-2 8 7Z"/>',
+  box:'<path d="m3 7 9-4 9 4-9 4-9-4v11l9 4 9-4V7M12 11v11M7 5l10 4"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>'
+};
+const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.calendar}</svg>`;
+const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const rooms = {rainbow:{name:'Rainbow',min:36,max:60},little:{name:'Little Stars',min:24,max:36}};
+const clock = (n) => `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
+const minutes = (s) => Number(s.slice(0,2))*60+Number(s.slice(3));
+const shortTime = (s) => s === '24:00' ? 'midnight' : new Date(`2000-01-01T${s}:00Z`).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZone:'UTC'});
+const addDate = (date, n) => { const d = new Date(date+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
+const dateLabel = (date) => new Date(date+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'});
+let serial = 0;
+const uid = () => 'example-'+(++serial);
+const seed = [
+ ['Arrival & welcome',45,'heart','coral','Welcome children and settle into the room.'],
+ ['Breakfast',30,'meal','yellow','Follow the room’s usual meal routine.'],
+ ['Hello circle',15,'sun','yellow','Share a greeting and talk about the day.'],
+ ['Color studio',45,'palette','','Explore shapes and colors with paper and crayons.'],
+ ['Outdoor discovery',45,'sun','blue','Explore the outdoor play space together.'],
+ ['Snack time',15,'meal','yellow','Follow the room’s usual snack routine.'],
+ ['Build & imagine',45,'blocks','coral','Build with blocks and describe what you made.'],
+ ['Lunch',45,'meal','yellow','Follow the room’s usual meal routine.'],
+ ['Rest & quiet choices',120,'moon','','Follow each child’s established rest routine.'],
+ ['Story adventures',30,'book','blue','Read together and talk about the story.'],
+ ['Snack time',15,'meal','yellow','Follow the room’s usual snack routine.'],
+ ['Music & movement',30,'music','','Sing, move and make a rhythm together.'],
+ ['Choice play',90,'blocks','coral','Offer familiar play choices in the room.'],
+ ['Goodbyes',30,'heart','coral','Prepare for collection and share the day’s highlights.']
+];
+const catalog = [...new Map(seed.map(([name,duration,art,color,description]) => [name,{id:uid(),name,duration,art,color,description,min:0,max:216}])).values()];
+catalog.push({id:uid(),name:'Pattern detectives',duration:25,art:'blocks',color:'blue',description:'Find and continue simple patterns.',min:36,max:72});
+let room='rainbow', week='2026-09-28', day=0, view='day', readonly=false;
+const saved = new Map(), drafts = new Map(), undo = new Map();
+const key = () => room+'|'+week;
+function fullDay(dayIndex) {
+  let start=450;
+  return seed.map(([name,duration]) => { const activity=catalog.find(a=>a.name===name); const entry={id:uid(),day:dayIndex,start:clock(start),end:clock(start+duration),activity:clone(activity)}; start+=duration; return entry; });
+}
+for (const roomId of Object.keys(rooms)) {
+  saved.set(roomId+'|2026-09-21', [0,1,2,3,4].flatMap(fullDay));
+  saved.set(roomId+'|2026-09-28', [...fullDay(0),...fullDay(1).slice(0,3)]);
+  saved.set(roomId+'|2026-10-05', []);
+}
+function draft() { if(!drafts.has(key())) drafts.set(key(),clone(saved.get(key()) || [])); return drafts.get(key()); }
+function displayed() { return readonly ? saved.get(key()) || [] : draft(); }
+function dirty() { return JSON.stringify(draft()) !== JSON.stringify(saved.get(key()) || []); }
+function ordered(entries) { return [...entries].sort((a,b)=>a.day-b.day || a.start.localeCompare(b.start) || a.id.localeCompare(b.id)); }
+function entriesOn(d) { return ordered(displayed().filter(e=>e.day===d)); }
+function change(fn, message) {
+  if(readonly) return;
+  const stack=undo.get(key()) || []; stack.push(clone(draft())); undo.set(key(),stack);
+  const next=clone(draft()); fn(next); drafts.set(key(),next); render(); notice(message,true);
+}
+function notice(text, canUndo=false, error=false) {
+  $('message').innerHTML=`<div class="notice${error?' error':''}">${esc(text)}${canUndo?'<button id="undo">Undo</button>':''}</div>`;
+  if(canUndo) $('undo').onclick=undoLast;
+}
+function undoLast() { const stack=undo.get(key());if(stack?.length){drafts.set(key(),stack.pop());render();notice('Change undone.');} }
+function row(entry) {
+  const a=entry.activity;
+  const overlap=entriesOn(entry.day).some(other=>other.id!==entry.id && entry.start<other.end && entry.end>other.start);
+  return `<article class="entry" data-entry="${entry.id}"><div class="time">${shortTime(entry.start)}<span>to ${shortTime(entry.end)}</span></div><div class="tile ${a.color}">${icon(a.art)}</div><div><h3>${esc(a.name)}</h3><p>${minutes(entry.end)-minutes(entry.start)} minutes${overlap?' · Overlaps another activity':''}</p><details><summary>Instructions</summary>${esc(a.description || 'No instructions added.')}</details></div>${readonly?'':`<button class="edit" data-edit="${entry.id}" aria-label="Edit ${esc(a.name)} at ${shortTime(entry.start)}">Edit</button>`}</article>`;
+}
+function render() {
+  $('room').value=room; $('week').value=week;
+  $('status').textContent=readonly?'Viewing saved plan':dirty()?'Unsaved changes':'Week saved';
+  $('status').className='status'+(!readonly&&dirty()?' dirty':'');
+  $('day-view').setAttribute('aria-pressed',String(view==='day'));
+  $('week-view').setAttribute('aria-pressed',String(view==='week'));
+  $('days').hidden=view!=='day';
+  $('days').innerHTML=dayNames.map((name,i)=>`<button data-day="${i}" aria-label="${name}, ${dateLabel(addDate(week,i))}" aria-pressed="${day===i}"><span>${name.slice(0,3)}</span><span class="num">${Number(addDate(week,i).slice(8))}</span><span class="count">${entriesOn(i).length} planned</span></button>`).join('');
+  document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{day=Number(b.dataset.day);render();});
+  const rows=entriesOn(day);
+  if(view==='day') $('content').innerHTML=`<section class="panel" aria-label="${dayNames[day]} plan"><div class="panelhead"><div><h2>${dayNames[day]}, ${dateLabel(addDate(week,day))}</h2><p class="muted">${rooms[room].name} · ${rows.length} activities${rows.length?' · '+shortTime(rows[0].start)+' to '+shortTime(rows.reduce((end,e)=>e.end>end?e.end:end,'00:00')):''}</p></div>${readonly?'':'<button class="primary" id="add">'+icon('plus')+'Add activity</button>'}</div>${rows.length?'<div class="list">'+rows.map(row).join('')+'</div>':'<div class="empty"><h3>A fresh start for this day</h3><p class="muted">Add an activity or copy a day you already planned.</p></div>'}${readonly?'':'<button class="bottomadd" id="copy-day">Copy another day</button>'}</section>`;
+  else $('content').innerHTML='<section class="weekgrid" aria-label="Full week">'+dayNames.map((name,i)=>`<article class="weekcard"><h3>${name}<br><span class="muted">${dateLabel(addDate(week,i))}</span></h3>${entriesOn(i).map(e=>`<div class="mini"><time>${shortTime(e.start)} – ${shortTime(e.end)}</time>${esc(e.activity.name)}</div>`).join('') || '<p class="muted">Nothing planned yet.</p>'}<button data-open-day="${i}">Open ${name}</button></article>`).join('')+'</section>';
+  if($('add')) $('add').onclick=()=>openPicker();
+  if($('copy-day')) $('copy-day').onclick=()=>copyDay();
+  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editEntry(b.dataset.edit));
+  document.querySelectorAll('[data-open-day]').forEach(b=>b.onclick=()=>{day=Number(b.dataset.openDay);view='day';render();});
+  $('reuse').hidden=readonly; $('save').hidden=readonly;
+  $('undo-latest').hidden=readonly || !undo.get(key())?.length;
+  $('save').disabled=!dirty();
+  $('save-title').textContent=readonly?'Read-only staff view':dirty()?'Your week has unsaved changes':'All scheduled changes saved';
+  $('save-help').textContent=readonly?'Shows the last saved example; no edit actions.':'Prototype only · saved in this tab until you refresh.';
+  $('leave').hidden=readonly; $('reload').hidden=readonly;
+  $('message').innerHTML='';
+  $('print-output').innerHTML=`<h1>${esc(rooms[room].name)} · Activity plan</h1><p>${dateLabel(week)} – ${dateLabel(addDate(week,6))}, 2026 · FICTIONAL REVIEW EXAMPLE${!readonly&&dirty()?' · DRAFT — not saved':''}</p>`+dayNames.map((name,i)=>`<h2>${name}, ${dateLabel(addDate(week,i))}</h2>${entriesOn(i).map(e=>`<article><strong>${shortTime(e.start)} – ${shortTime(e.end)} · ${esc(e.activity.name)}</strong><small>${esc(e.activity.description || 'No instructions added.')}</small></article>`).join('') || '<p>Nothing planned.</p>'}`).join('')+'<p>Materials calculation is not simulated in this prototype.</p>';
+}
+let closeCheck=null, opener=null;
+function modal(title, body, footer='') {
+  const dialog=$('modal'); if(!dialog.open) opener=document.activeElement;
+  closeCheck=null;
+  dialog.innerHTML=`<div class="modalhead"><h2 id="modal-title">${esc(title)}</h2><button class="quiet" id="close-modal" aria-label="Close dialog">✕</button></div><div class="modalbody">${body}</div>${footer?'<div class="modalfooter">'+footer+'</div>':''}`;
+  if(!dialog.open) dialog.showModal();
+  $('close-modal').onclick=()=>attemptClose();
+  const focusTarget=dialog.querySelector('[autofocus],input,select,textarea,button.choice');
+  if(focusTarget) focusTarget.focus();
+}
+function closeModal() { $('modal').close();closeCheck=null;if(opener?.isConnected)opener.focus();else $('day-view').focus(); }
+function attemptClose() { if(closeCheck) closeCheck(); else closeModal(); }
+$('modal').addEventListener('cancel',event=>{event.preventDefault();attemptClose();});
+function askDiscard(onDiscard) {
+  if($('discard-box')) return;
+  const box=document.createElement('div');box.id='discard-box';box.className='confirmbox';box.setAttribute('role','group');box.setAttribute('aria-label','Discard entered details');
+  box.innerHTML='<p>Discard the details you just entered?</p><button id="keep-editing">Keep editing</button><button class="danger" id="discard-details">Discard details</button>';
+  $('modal').querySelector('.modalbody').append(box);
+  $('keep-editing').onclick=()=>{box.remove();$('modal').querySelector('input')?.focus();};
+  $('discard-details').onclick=onDiscard;$('keep-editing').focus();
+}
+function openPicker() {
+  modal('Add to '+dayNames[day],'<p class="muted">Choose an activity for '+esc(rooms[room].name)+'. You can change the time next.</p><label class="field">Find an activity<input id="search" type="search" placeholder="Try story, music or snack" autofocus></label><div id="choices"></div>','<button id="create">Create an activity</button>');
+  function filter() {
+    const query=$('search').value.trim().toLowerCase(), r=rooms[room];
+    const choices=catalog.filter(a=>a.min<=r.min&&a.max>=r.max&&a.name.toLowerCase().includes(query));
+    $('choices').innerHTML=choices.map(a=>`<button class="choice" data-choice="${a.id}"><span class="tile ${a.color}">${icon(a.art)}</span><span>${esc(a.name)}<span class="sub">${a.duration} minutes · suitable for this room</span></span><span class="arrow" aria-hidden="true">→</span></button>`).join('') || '<p class="muted">No matching activities. Try another name or create one below.</p>';
+    document.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>entryForm(catalog.find(a=>a.id===b.dataset.choice)));
+  }
+  $('search').oninput=filter;$('create').onclick=()=>entryForm(null);filter();
+}
+function editEntry(id) { const entry=draft().find(e=>e.id===id);entryForm(entry.activity,entry); }
+function entryForm(activity, existing=null) {
+  const creating=!activity;
+  const last=entriesOn(day).reduce((end,e)=>Math.max(end,minutes(e.end)),450);
+  const start=existing?.start || clock(last>=1440?450:last);
+  const end=existing?.end || clock(Math.min(1440,minutes(start)+(activity?.duration || 20)));
+  modal(existing?'Edit scheduled activity':creating?'Create an activity':'Add '+activity.name,
+    `<p class="muted">${creating?'Save the new activity to your library and add it to this day. Then Save week to save the schedule.':existing?'Changes affect this scheduled entry. The library activity stays as it is.':'Check the time, then add it to your day. Save week when you are ready.'}</p>
+    ${creating?'<label class="field">Activity name<input id="activity-name" maxlength="100" autofocus placeholder="Give it a simple name"></label>':'<p><strong>'+esc(activity.name)+'</strong></p>'}
+    <div class="twocol"><label class="field">Start<input id="start" type="time" value="${start}"></label><label class="field">End<input id="end" type="time" value="${end==='24:00'?'00:00':end}"></label></div>
+    <p class="muted">An end time of 12:00 AM means midnight at the end of this day.</p>
+    ${existing?'<label class="field">Day<select id="move-day">'+dayNames.map((n,i)=>`<option value="${i}"${i===existing.day?' selected':''}>${n}, ${dateLabel(addDate(week,i))}</option>`).join('')+'</select></label>':''}
+    ${creating?'<label class="field">Instructions (optional)<textarea id="instructions" maxlength="4000" placeholder="What will we do?"></textarea></label><p class="muted">Starts with this room’s age range. Detailed age and inventory editing remain in the app’s activity library.</p>':''}
+    <div id="form-error" role="alert" tabindex="-1"></div>`,
+    `${existing?'<button class="danger" id="remove-entry">Remove from day</button>':''}<button id="cancel-entry">Cancel</button><button class="primary" id="confirm-entry">${existing?'Apply changes':creating?'Save activity & add':'Add to '+dayNames[day]}</button>`);
+  let touched=false;
+  $('modal').querySelectorAll('input,textarea,select').forEach(el=>el.addEventListener('input',()=>{touched=true;}));
+  closeCheck=()=>{if(touched)askDiscard(closeModal);else closeModal();};
+  $('cancel-entry').onclick=()=>attemptClose();
+  if(existing) $('remove-entry').onclick=()=>{change(entries=>entries.splice(entries.findIndex(e=>e.id===existing.id),1),'Activity removed from this day. It is still in your library.',true);closeModal();};
+  $('confirm-entry').onclick=()=>{
+    const s=$('start').value, rawEnd=$('end').value, e=rawEnd==='00:00'?'24:00':rawEnd;
+    const name=creating?$('activity-name').value.trim():activity.name;
+    const error=!name?'Give this activity a name.':!s||!e?'Enter a start and end time.':e<=s?'End time must be after start time. Change the times and try again.':'';
+    if(error){$('form-error').className='errorline';$('form-error').textContent=error;$('form-error').focus();return;}
+    let selected=activity;
+    if(creating){selected={id:uid(),name,duration:minutes(e)-minutes(s),description:$('instructions').value.trim(),min:rooms[room].min,max:rooms[room].max,art:'palette',color:''};catalog.push(selected);}
+    const target=existing?Number($('move-day').value):day;
+    change(entries=>{
+      if(existing){const item=entries.find(row=>row.id===existing.id);item.start=s;item.end=e;item.day=target;}
+      else entries.push({id:uid(),day:target,start:s,end:e,activity:clone(selected)});
+    },creating?'Activity saved to the example library and added to your draft. Save week to save the schedule.':existing?'Changes applied to your draft. Save week when ready.':'Added to your draft. Save week when ready.');
+    closeModal();
+  };
+}
+function copyDay() {
+  const sources=dayNames.map((name,i)=>({name,i,count:draft().filter(e=>e.day===i).length})).filter(d=>d.i!==day&&d.count);
+  modal('Copy another day',`<p class="muted">Add a copy to ${dayNames[day]}, ${dateLabel(addDate(week,day))}. Everything already on this day stays.</p>${sources.length?'<label class="field">Copy from<select id="source-day">'+sources.map(d=>`<option value="${d.i}">${d.name} · ${d.count} activities</option>`).join('')+'</select></label><p id="copy-summary" class="notice"></p>':'<p class="notice">There are no other planned days in this draft. Add your first activity, or use Copy a week.</p>'}`,`<button id="cancel-copy">Cancel</button>${sources.length?'<button class="primary" id="confirm-copy">Add copied activities</button>':''}`);
+  $('cancel-copy').onclick=closeModal;
+  if(!sources.length) return;
+  const preview=()=>{$('copy-summary').textContent=`${draft().filter(e=>e.day===Number($('source-day').value)).length} activities will be added to ${dayNames[day]}. This can create overlapping times. Nothing is saved until you Save week.`;};
+  $('source-day').onchange=preview;preview();
+  $('confirm-copy').onclick=()=>{const source=Number($('source-day').value), additions=draft().filter(e=>e.day===source).map(e=>({...clone(e),id:uid(),day}));change(entries=>entries.push(...additions),'Day copied into your draft. Existing activities were kept.');closeModal();};
+}
+function copyWeek() {
+  const previous=addDate(week,-7), source=saved.get(room+'|'+previous) || [];
+  const emptyDays=dayNames.map((_,i)=>i).filter(i=>!draft().some(e=>e.day===i));
+  const additions=source.filter(e=>emptyDays.includes(e.day));
+  const names=[...new Set(additions.map(e=>e.day))].map(i=>dayNames[i]);
+  modal('Copy last week',`<p class="muted">${esc(rooms[room].name)} · saved week of ${dateLabel(previous)} → week of ${dateLabel(week)}</p><p><strong>Fill empty days only</strong></p><p class="muted">Days you already planned will stay exactly as they are.</p><div class="notice">${additions.length?`${additions.length} activities will be copied to ${names.join(', ')}.`:'There are no activities to copy into empty days.'}</div><p class="muted">The source week is kept. Copied activities keep their saved instructions and times. Review the draft, then Save week.</p>`,'<button id="cancel-copy">Cancel</button><button class="primary" id="confirm-copy"'+(!additions.length?' disabled':'')+'>Copy into this week</button>');
+  $('cancel-copy').onclick=closeModal;
+  $('confirm-copy').onclick=()=>{change(entries=>entries.push(...additions.map(e=>({...clone(e),id:uid()}))),'Previous week copied into empty days. Review it, then Save week.');closeModal();};
+}
+function saveWeek() {
+  if(readonly) return false;
+  if($('fail-save').checked){$('fail-save').checked=false;notice('Example save failed. Your changes are still here. Try Save week again.',false,true);return false;}
+  saved.set(key(),clone(draft()));undo.delete(key());render();notice('Week saved in this review tab.');return true;
+}
+function leave() {
+  if(!dirty()){notice('You could leave now. This standalone proposal has no other app pages.');return;}
+  modal('Save before leaving?','<p>Your week has unsaved changes. Keep editing, save them, or discard them.</p><div id="leave-error" role="alert"></div>','<button id="keep">Keep editing</button><button class="danger" id="discard-week">Discard changes</button><button class="primary" id="save-leave">Save & continue</button>');
+  $('keep').onclick=closeModal;
+  $('discard-week').onclick=()=>{drafts.delete(key());undo.delete(key());render();closeModal();notice('Unsaved schedule changes discarded. In the app, navigation would now continue.');};
+  $('save-leave').onclick=()=>{if(saveWeek()){closeModal();notice('Week saved. In the app, navigation would now continue.');}else{$('leave-error').className='errorline';$('leave-error').textContent='Save failed. Your changes are still here. Retry Save & continue or keep editing.';}};
+}
+$('room').onchange=event=>{room=event.target.value;render();};
+$('week').onchange=event=>{week=event.target.value;render();};
+$('day-view').onclick=()=>{view='day';render();};
+$('week-view').onclick=()=>{view='week';render();};
+$('reuse').onclick=copyWeek;
+$('print').onclick=()=>{render();window.print();};
+$('save').onclick=saveWeek;
+$('undo-latest').onclick=undoLast;
+$('leave').onclick=leave;
+$('readonly').onchange=event=>{readonly=event.target.checked;render();};
+$('reload').onclick=()=>{
+  if(!dirty()){drafts.delete(key());render();notice('Saved example reloaded.');return;}
+  modal('Reload the saved week?','<p>This will discard the unsaved schedule changes for this room and week.</p>','<button id="keep">Keep editing</button><button class="danger" id="confirm-reload">Discard & reload</button>');
+  $('keep').onclick=closeModal;$('confirm-reload').onclick=()=>{drafts.delete(key());undo.delete(key());render();closeModal();notice('Saved example reloaded.');};
+};
+window.addEventListener('beforeunload',event=>{
+  if([...drafts].some(([k,v])=>JSON.stringify(v)!==JSON.stringify(saved.get(k)||[])) || closeCheck){event.preventDefault();event.returnValue='';}
+});
+$('hero-icon').innerHTML=icon('calendar');$('materials-icon').innerHTML=icon('box');render();
+</script>
+</body>
+</html>
