@@ -105,12 +105,12 @@ export default function Staff() {
   const fieldError = (name: string) => fields[name] && <p id={'staff-error-' + name} className="mt-1 text-sm text-red-700">{fields[name]}</p>;
   const assignedRoom = roomState.rooms.find((room) => room.id === form.roomId);
 
-  return <div className="mx-auto max-w-6xl space-y-6 p-2 sm:p-6">
-    <header className="flex flex-wrap items-center justify-between gap-4">
-      <div><h1 className="text-3xl font-bold text-slate-900">Staff</h1><p className="mt-2 text-slate-600">Keep staff details and room assignments up to date.</p></div>
-      <div className="flex gap-3">
-        <button disabled={busy || loading || roomState.loading} onClick={() => void Promise.all([refresh(), roomState.refresh()])} className={buttonClass}>Refresh staff</button>
-        {admin && <button disabled={busy || formOpen} onClick={() => open(null)} className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50"><Plus size={18} />Add staff</button>}
+  return <div className="ska-page ska-core-page space-y-6">
+    <header className="ska-page-head">
+      <div><h1><span className="ska-heading-icon is-purple"><Users size={24} aria-hidden="true" /></span>Staff</h1><p className="mt-2 text-slate-600">Keep staff details and room assignments up to date.</p></div>
+      <div className="ska-header-actions">
+        {admin && <button disabled={busy || formOpen} onClick={() => open(null)} className="ska-button is-primary"><Plus size={18} aria-hidden="true" />Add staff</button>}
+        <button disabled={busy || loading || roomState.loading} onClick={() => void Promise.all([refresh(), roomState.refresh()])} className="ska-button">Refresh staff</button>
       </div>
     </header>
     <p className="text-sm text-slate-600">Staff records do not provide app access. An administrator manages sign-in accounts separately in Accounts.</p>
@@ -144,7 +144,7 @@ export default function Staff() {
     </form>}
 
     <form role="search" aria-label="Filter staff" onSubmit={(event) => { event.preventDefault(); applyFilters({ q: search.trim() }); }} className="rounded-2xl border bg-white p-4">
-      <fieldset disabled={busy} className="flex flex-wrap items-end gap-4">
+      <fieldset disabled={busy} className="ska-filter-fields">
         <label className="min-w-48 flex-1">Search staff<input type="search" maxLength={100} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name" className={inputClass} /></label>
         <button className={buttonClass}>Search</button>
         <label>Status<select value={filters.active} onChange={(event) => applyFilters({ active: event.target.value as StaffFilters['active'] })} className={inputClass}>
@@ -164,18 +164,18 @@ export default function Staff() {
         <Users className="mx-auto mb-3 text-emerald-700" size={32} /><p className="font-semibold">No staff match these filters.</p>
         <p className="mt-2 text-slate-600">Try All statuses or reset the filters.{admin ? ' Use Add staff to create a record.' : ''}</p>
       </div> : <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
-        <table className="w-full text-left"><caption className="sr-only">Staff directory</caption>
-          <thead className="bg-slate-50 text-sm text-slate-600"><tr><th scope="col" className="p-4">Name</th><th scope="col" className="p-4">Job role</th><th scope="col" className="p-4">Room</th><th scope="col" className="p-4">Status</th>{admin && <th scope="col" className="p-4">Actions</th>}</tr></thead>
-          <tbody>{data.items.map((person) => <tr key={person.id} className="border-t">
-            <th scope="row" className="p-4 font-semibold">{person.name}</th><td className="p-4">{person.role}</td>
-            <td className="p-4">{person.room ? person.room.name + (person.room.active ? '' : ' (archived)') : person.roomId ? 'Room unavailable' : 'Unassigned'}</td>
-            <td className="p-4"><span className={'rounded-full px-3 py-1 text-xs font-semibold ' + (person.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600')}>{person.active ? 'Active' : 'Inactive'}</span></td>
-            {admin && <td className="p-4"><div className="flex gap-4"><button disabled={busy || formOpen} aria-label={'Edit ' + person.name} onClick={() => open(person)} className="font-semibold text-emerald-800 disabled:opacity-50">Edit</button>
+        <table role="table" className="ska-record-table w-full text-left"><caption className="sr-only">Staff directory</caption>
+          <thead role="rowgroup" className="bg-slate-50 text-sm text-slate-600"><tr role="row"><th role="columnheader" scope="col" className="p-4">Name</th><th role="columnheader" scope="col" className="p-4">Job role</th><th role="columnheader" scope="col" className="p-4">Room</th><th role="columnheader" scope="col" className="p-4">Status</th>{admin && <th role="columnheader" scope="col" className="p-4">Actions</th>}</tr></thead>
+          <tbody role="rowgroup">{data.items.map((person) => <tr role="row" key={person.id} className="border-t">
+            <th role="rowheader" scope="row" className="p-4 font-semibold">{person.name}</th><td role="cell" data-label="Job role" className="p-4">{person.role}</td>
+            <td role="cell" data-label="Room" className="p-4">{person.room ? person.room.name + (person.room.active ? '' : ' (archived)') : person.roomId ? 'Room unavailable' : 'Unassigned'}</td>
+            <td role="cell" data-label="Status" className="p-4"><span className={'rounded-full px-3 py-1 text-xs font-semibold ' + (person.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600')}>{person.active ? 'Active' : 'Inactive'}</span></td>
+            {admin && <td role="cell" className="ska-record-actions p-4"><div className="ska-table-actions"><button disabled={busy || formOpen} aria-label={'Edit ' + person.name} onClick={() => open(person)} className="font-semibold text-emerald-800 disabled:opacity-50">Edit</button>
               {person.active && <button disabled={busy || formOpen} aria-label={'Deactivate ' + person.name} onClick={() => void deactivate(person)} className="text-slate-600 disabled:opacity-50">Deactivate</button>}</div></td>}
           </tr>)}</tbody>
         </table>
       </div>}
-      {pages > 1 && <nav aria-label="Staff pages" className="flex items-center justify-between gap-3">
+      {pages > 1 && <nav aria-label="Staff pages" className="ska-pagination">
         <button disabled={busy || filters.page === 1} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} className={buttonClass}>Previous page</button>
         <span>Page {filters.page} of {pages}</span>
         <button disabled={busy || filters.page >= pages} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} className={buttonClass}>Next page</button>

@@ -19,10 +19,10 @@ export function ActivityDay({ date, entries, choices, catalog, room, disabledRea
       const latest = catalog.find((activity) => activity.id === entry.activityId);
       const overlaps = entry.startTime && entry.endTime && entries.some((other) => other.id !== entry.id && other.startTime && other.endTime && entry.startTime! < other.endTime && entry.endTime! > other.startTime);
       return <fieldset key={entry.id} aria-label={label} className="rounded-xl border bg-slate-50 p-3">
-        <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[8.5rem_8.5rem_minmax(0,1fr)_auto]">
+        <div className="ska-phone-times grid grid-cols-2 items-end gap-3 xl:grid-cols-[8.5rem_8.5rem_minmax(0,1fr)_auto]">
           <label className="text-sm font-semibold">Start<input type="time" aria-label={label + ' start'} value={entry.startTime || ''} disabled={locked} onChange={(e) => changeTime(entry.id, 'startTime', e.target.value)} className={input} /></label>
           <label className="text-sm font-semibold">End<input type="time" aria-label={label + ' end'} value={entry.endTime === '24:00' ? '00:00' : entry.endTime || ''} disabled={locked} onChange={(e) => changeTime(entry.id, 'endTime', e.target.value)} className={input} /></label>
-          <label className="col-span-2 text-sm font-semibold sm:col-span-1">Activity<select aria-label={label} value={entry.activityId} disabled={locked} autoFocus={!entry.activityId} onChange={(e) => chooseActivity(entry.id, e.target.value)} className={input}>
+          <label className="col-span-2 text-sm font-semibold xl:col-span-1">Activity<select aria-label={label} value={entry.activityId} disabled={locked} autoFocus={!entry.activityId} onChange={(e) => chooseActivity(entry.id, e.target.value)} className={input}>
             <option value="">Choose activity</option>
             {entry.activity && !choices.some((activity) => activity.id === entry.activityId) && <option value={entry.activityId}>{entry.activity.name} (saved)</option>}
             {choices.map((activity) => <option key={activity.id} value={activity.id}>{entry.activityId === activity.id ? entry.activity?.name || activity.name : activity.name}</option>)}

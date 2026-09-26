@@ -34,8 +34,13 @@ when it is still present.
 - Navigation controls have at least 44-by-44 CSS-pixel targets.
 - Bottom spacing reserves the navigation height plus the device's safe-area inset.
 - The header and sheets also account for safe-area insets.
-- Existing wide pages can scroll horizontally within the main content region.
-  Home and Attendance use the approved SKAO-96 design; the remaining operational pages retain their existing forms and tables.
+- Home and Attendance use the approved SKAO-96 design. SKAO-77 adds labeled
+  record cards and touch-sized controls to the remaining core screens, while
+  keeping their existing workflows. Print layouts retain full tables.
+  See `docs/mobile-core-screens.md` for the coverage review and validation limits.
+- The shell can still contain horizontal overflow as a fallback. Core-screen
+  checks also measure the main content region so this containment cannot mask
+  a page that requires sideways scrolling to reach its normal actions.
 - Print layouts exclude the application navigation and its mobile spacing.
 - This is a responsive website change, not a PWA installation or offline feature.
 

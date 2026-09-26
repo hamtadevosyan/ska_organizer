@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { CalendarDays } from 'lucide-react';
 import { useAuth } from '../auth/context';
 import { RoomSelect } from '../components/rooms/RoomSelect';
 import { useRooms } from '../components/rooms/useRooms';
@@ -52,14 +53,14 @@ export default function Activities() {
     setDayIndex(index);
     setForm((current) => current?.scheduleDate ? { ...current, scheduleDate: allDates[index] } : current);
   }
-  return <div className="activity-planner mx-auto max-w-7xl space-y-5 p-3 sm:p-6">
+  return <div className="activity-planner ska-page ska-core-page space-y-5">
     <div className="activity-screen space-y-5 print:hidden">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div><h1 className="text-3xl font-bold">Activity Planner</h1><p className="mt-1 text-slate-600">Plan the whole day, one activity at a time.</p></div>
+      <header className="ska-page-head">
+        <div><h1><span className="ska-heading-icon is-purple"><CalendarDays size={24} aria-hidden="true" /></span>Activity Planner</h1><p className="mt-1 text-slate-600">Plan the whole day, one activity at a time.</p></div>
         {editable && <button className={button} disabled={!!form || planner.saving} onClick={() => setForm({ activity: null })}>Add activity</button>}
       </header>
       {form && <ActivityForm activity={form.activity} room={room} scheduleDate={form.scheduleDate} nameInputRef={activityNameRef} onBusyChange={setActivitySaving} onClose={() => setForm(null)} onSaved={(activity) => { planner.activitySaved(activity); if (form.scheduleDate) planner.addEntry(form.scheduleDate, activity); setForm(null); }} />}
-      <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-white p-4 shadow-sm">
+      <div className="ska-phone-stack flex flex-wrap items-end gap-4 rounded-2xl bg-white p-4 shadow-sm">
         <label className="min-w-48 flex-1">Room<RoomSelect rooms={rooms.rooms} value={planner.roomId} onChange={planner.chooseRoom} allowArchived disabled={rooms.loading || planner.saving || !!form} className="mt-1 block w-full rounded-lg border p-2.5" /></label>
         <label>Week starting Monday<input type="date" value={planner.weekStart} min="1970-01-05" step="7" disabled={planner.saving || !!form} onChange={(e) => planner.chooseWeek(e.target.value)} className="mt-1 block rounded-lg border p-2.5" /></label>
         {editable && <button disabled={!ready || locked || !!form || incomplete || (!planner.dirty && !!planner.plan?.savedAt)} onClick={() => void planner.save()} className="rounded-lg bg-emerald-700 px-5 py-2.5 font-semibold text-white disabled:opacity-50">{planner.saving ? 'Saving…' : 'Save week'}</button>}
@@ -92,10 +93,10 @@ export default function Activities() {
           <p className="mt-3 text-sm text-slate-600">For this room and week. Uses current stock; planning does not use or reserve anything. Reusable items can be used again; activities at the same time need enough for both.</p>
           <button onClick={planner.checkMaterials} disabled={planner.previewBusy || planner.saving} className="my-3 text-sm underline">Check materials again</button>
           {incomplete ? <p>Finish choosing activities and times to check materials.</p> : planner.previewError ? <p role="alert" className="text-red-800">{planner.previewError}</p> : planner.previewBusy ? <p>Checking current stock…</p> : !planner.materials.length ? <p>No materials listed for these activities.</p> :
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm"><caption className="sr-only">Activity material availability</caption>
-              <thead><tr><th className="p-2">Item</th><th className="p-2">Needed</th><th className="p-2">Available</th><th className="p-2">To get</th></tr></thead>
-              <tbody>{planner.materials.map((item) => <tr key={item.itemId + materialUnitLabel(item.unit)} className="border-t"><th scope="row" className="p-2">{item.name}<span className="block font-normal text-slate-500">{item.location}</span>{item.issue && <span className="block text-red-700">{item.issue}</span>}</th>
-                <td className="p-2">{item.needed} {materialUnitLabel(item.unit)}</td><td className="p-2">{item.issue ? 'Check item' : item.available + ' ' + materialUnitLabel(item.unit)}</td><td className="p-2 font-semibold">{item.shortage === '0' ? 'Ready' : item.shortage + ' ' + materialUnitLabel(item.unit)}</td></tr>)}</tbody>
+            <div className="overflow-x-auto"><table role="table" className="ska-record-table w-full text-left text-sm"><caption className="sr-only">Activity material availability</caption>
+              <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col" className="p-2">Item</th><th role="columnheader" scope="col" className="p-2">Needed</th><th role="columnheader" scope="col" className="p-2">Available</th><th role="columnheader" scope="col" className="p-2">To get</th></tr></thead>
+              <tbody role="rowgroup">{planner.materials.map((item) => <tr role="row" key={item.itemId + materialUnitLabel(item.unit)} className="border-t"><th role="rowheader" scope="row" className="p-2">{item.name}<span className="block font-normal text-slate-500">{item.location}</span>{item.issue && <span className="block text-red-700">{item.issue}</span>}</th>
+                <td role="cell" data-label="Needed" className="p-2">{item.needed} {materialUnitLabel(item.unit)}</td><td role="cell" data-label="Available" className="p-2">{item.issue ? 'Check item' : item.available + ' ' + materialUnitLabel(item.unit)}</td><td role="cell" data-label="To get" className="p-2 font-semibold">{item.shortage === '0' ? 'Ready' : item.shortage + ' ' + materialUnitLabel(item.unit)}</td></tr>)}</tbody>
             </table></div>}
         </details>
       </>}

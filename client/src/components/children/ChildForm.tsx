@@ -96,7 +96,7 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
         {selectedRoom && <p>Current displayed count: {selectedRoom.assignedChildCount}. Proposed count: {proposedCount}. Capacity: {selectedRoom.capacity}.</p>}
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmCapacity} onChange={(event) => setConfirmCapacity(event.target.checked)} className="mt-1" />I acknowledge the capacity warning and want to continue.</label>
       </div>}
-      <div className="flex gap-3"><button disabled={loadingRooms || !!duplicates.length && !confirmDuplicate || capacityWarning && !confirmCapacity} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save child'}</button>
+      <div className="flex flex-wrap gap-3"><button disabled={loadingRooms || !!duplicates.length && !confirmDuplicate || capacityWarning && !confirmCapacity} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save child'}</button>
         <button type="button" onClick={onCancel} className="rounded-lg border px-4 py-2">Cancel</button></div>
     </fieldset>
   </form>;

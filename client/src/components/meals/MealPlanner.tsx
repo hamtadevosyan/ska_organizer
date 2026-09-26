@@ -142,7 +142,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="ska-meal-actions grid grid-cols-1 gap-3 sm:grid-cols-3">
             <ActionButton
               label="Generate Menu"
               icon={<RefreshCw size={18} />}
@@ -168,7 +168,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
         </div>
       </section>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm flex flex-wrap items-end gap-4 print:hidden">
+      <section className="ska-phone-stack rounded-2xl bg-white p-5 shadow-sm flex flex-wrap items-end gap-4 print:hidden">
         <label className="text-sm font-semibold text-gray-700">
           Week starting Monday
           <input type="date" aria-label="Week starting Monday" value={planner.weekStart}
@@ -237,7 +237,7 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
         onApply={(date, count) => update((draft) => ({ dailyChildrenCounts: { ...draft.dailyChildrenCounts, [date]: String(count) } }))} />}
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr] print:hidden">
-        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+        <div className="ska-phone-panel rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h3 className="text-2xl font-bold text-gray-800">
@@ -268,9 +268,9 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
               {weeklyMenu.map((day, dayIndex) => (
                 <div
                   key={day.day}
-                  className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4"
+                  className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4"
                 >
-                  <h4 className="mb-4 text-lg font-bold text-emerald-700">
+                  <h4 className="mb-4 text-lg font-bold text-amber-800">
                     {day.day}
                   </h4>
                   <label className="mb-3 block text-sm text-slate-600">Children for {day.day}
@@ -302,8 +302,8 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
           )}
         </div>
 
-        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-          <div className="mb-5 flex items-center justify-between gap-4">
+        <div className="ska-phone-panel rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="ska-phone-stack mb-5 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="text-2xl font-bold text-gray-800">Shopping Items</h3>
               <p className="text-sm text-gray-500">
@@ -397,8 +397,8 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
         </div>
       </section>
 
-      <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl print:bg-white print:text-black print:shadow-none">
-        <div className="mb-5 flex items-center justify-between gap-4">
+      <section className="ska-phone-panel rounded-3xl bg-slate-950 p-6 text-white shadow-xl print:bg-white print:text-black print:shadow-none">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <ShoppingCart size={22} />
@@ -433,16 +433,16 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-white/10 print:border-gray-300">
-            <table className="w-full text-left">
-              <thead className="bg-white/10 text-xs uppercase tracking-wide text-slate-100 print:bg-gray-100 print:text-gray-700">
-                <tr>
-                  <th className="p-4">Item</th>
-                  <th className="p-4">Needed</th>
-                  <th className="p-4">Already have</th>
-                  <th className="p-4">Buy</th>
+            <table role="table" aria-label="Printable shopping list" className="ska-record-table is-dark w-full text-left">
+              <thead role="rowgroup" className="bg-white/10 text-xs uppercase tracking-wide text-slate-100 print:bg-gray-100 print:text-gray-700">
+                <tr role="row">
+                  <th role="columnheader" scope="col" className="p-4">Item</th>
+                  <th role="columnheader" scope="col" className="p-4">Needed</th>
+                  <th role="columnheader" scope="col" className="p-4">Already have</th>
+                  <th role="columnheader" scope="col" className="p-4">Buy</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {finalShoppingItems.map((item) => {
                   const itemId = getIngredientId(item);
                   const sourceUnit = getIngredientUnit(item);
@@ -455,20 +455,20 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
                   const buy = convertToUS(item.toBuy, sourceUnit, needed.unit);
 
                   return (
-                    <tr
+                    <tr role="row"
                       key={itemId}
                       className="border-t border-white/10 text-slate-100 print:border-gray-200 print:text-black"
                     >
-                      <td className="p-4 font-semibold text-white print:text-black">
+                      <td role="cell" data-primary className="p-4 font-semibold text-white print:text-black">
                         {getIngredientName(item)}
                       </td>
-                      <td className="p-4 text-slate-200 print:text-black">
+                      <td role="cell" data-label="Needed" className="p-4 text-slate-200 print:text-black">
                         {needed.value} {needed.unit}
                       </td>
-                      <td className="p-4 text-slate-200 print:text-black">
+                      <td role="cell" data-label="Already have" className="p-4 text-slate-200 print:text-black">
                         {stock.value} {stock.unit}
                       </td>
-                      <td
+                      <td role="cell" data-label="Buy"
                         className={`p-4 font-bold print:text-black ${
                           item.toBuy > 0
                             ? 'text-emerald-300'
@@ -509,7 +509,7 @@ const ActionButton = ({
     className={`flex items-center justify-center gap-2 rounded-2xl px-5 py-4 text-sm font-bold shadow-sm transition ${
       disabled
         ? 'cursor-not-allowed bg-gray-100 text-gray-400'
-        : 'bg-emerald-600 text-white hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-lg'
+        : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg'
     }`}
   >
     {loading ? <Loader2 className="animate-spin" size={18} /> : icon}

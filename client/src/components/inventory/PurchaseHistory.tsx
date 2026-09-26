@@ -25,15 +25,15 @@ export function PurchaseHistory({ itemId, itemName, onClose }: { itemId?: string
     {loading && <p role="status">Loading purchases…</p>}
     {error && <div role="alert">{error} <button className={button} onClick={() => setRetry((n) => n + 1)}>Retry purchases</button></div>}
     {!loading && !error && data && <>
-      {!data.items.length ? <p>No purchases recorded yet.</p> : <div className="overflow-x-auto"><table className="w-full text-left"><caption className="sr-only">Received purchases</caption>
-        <thead><tr>{['Received', 'Item and location', 'Quantity', 'Supplier', 'Total cost', 'Recorded by'].map((label) => <th scope="col" key={label} className="p-3">{label}</th>)}</tr></thead>
-        <tbody>{data.items.map((receipt) => <tr key={receipt.id} className="border-t">
-          <td className="p-3">{receipt.receivedOn}</td><th scope="row" className="p-3 font-normal"><strong>{receipt.itemSnapshot.name}</strong><p className="text-sm text-slate-500">{receipt.itemSnapshot.location}</p></th>
-          <td className="p-3">{receipt.quantity} {receipt.unit}</td><td className="p-3">{receipt.supplier || 'Not recorded'}</td>
-          <td className="p-3">{receipt.totalCost === null ? 'Not recorded' : receipt.totalCost + ' ' + receipt.currency}</td>
-          <td className="p-3">{receipt.actorUsername}<p className="text-xs text-slate-500">{new Date(receipt.recordedAt).toLocaleString(undefined, { timeZone: data.timeZone })} ({data.timeZone})</p></td>
+      {!data.items.length ? <p>No purchases recorded yet.</p> : <div className="overflow-x-auto"><table role="table" className="ska-record-table w-full text-left"><caption className="sr-only">Received purchases</caption>
+        <thead role="rowgroup"><tr role="row">{['Received', 'Item and location', 'Quantity', 'Supplier', 'Total cost', 'Recorded by'].map((label) => <th role="columnheader" scope="col" key={label} className="p-3">{label}</th>)}</tr></thead>
+        <tbody role="rowgroup">{data.items.map((receipt) => <tr role="row" key={receipt.id} className="border-t">
+          <td role="cell" data-label="Received" className="p-3">{receipt.receivedOn}</td><th role="rowheader" scope="row" className="p-3 font-normal"><strong>{receipt.itemSnapshot.name}</strong><p className="text-sm text-slate-500">{receipt.itemSnapshot.location}</p></th>
+          <td role="cell" data-label="Quantity" className="p-3">{receipt.quantity} {receipt.unit}</td><td role="cell" data-label="Supplier" className="p-3">{receipt.supplier || 'Not recorded'}</td>
+          <td role="cell" data-label="Total cost" className="p-3">{receipt.totalCost === null ? 'Not recorded' : receipt.totalCost + ' ' + receipt.currency}</td>
+          <td role="cell" data-label="Recorded by" className="p-3">{receipt.actorUsername}<p className="text-xs text-slate-500">{new Date(receipt.recordedAt).toLocaleString(undefined, { timeZone: data.timeZone })} ({data.timeZone})</p></td>
         </tr>)}</tbody></table></div>}
-      {data.total > data.pageSize && <nav aria-label="Purchase pages" className="flex items-center justify-between"><button className={button} disabled={page === 1} onClick={() => setPage(page - 1)}>Previous purchases</button><span>Page {page} of {Math.ceil(data.total / data.pageSize)}</span><button className={button} disabled={page * data.pageSize >= data.total} onClick={() => setPage(page + 1)}>Next purchases</button></nav>}
+      {data.total > data.pageSize && <nav aria-label="Purchase pages" className="ska-pagination"><button className={button} disabled={page === 1} onClick={() => setPage(page - 1)}>Previous purchases</button><span>Page {page} of {Math.ceil(data.total / data.pageSize)}</span><button className={button} disabled={page * data.pageSize >= data.total} onClick={() => setPage(page + 1)}>Next purchases</button></nav>}
     </>}
   </section>;
 }

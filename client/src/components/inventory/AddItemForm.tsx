@@ -96,7 +96,7 @@ export function AddItemForm({ groups, initialGroupId, onCancel, onSaved, onBusy 
           setChosenFood(candidate); setName(candidate.name.slice(0, 100)); setUnit(defaultUnit(candidate.unit));
         }}>{candidate.name}{sameName.length > 1 ? ' (' + unitNames[candidate.unit] + ')' : ''}</button>)}</div>}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div><label>2. How much do you have?<input className={control} inputMode="decimal" {...attributes('openingQuantity')} value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>{fieldError('openingQuantity')}</div>
         <div><label>Measured in<select className={control} {...attributes('unit')} value={unit} onChange={(event) => setUnit(event.target.value)}>{(isFood ? foodUnits : inventoryUnits).filter((candidate) => !isFood || !food || compatibleStockUnits(candidate, food.unit)).map((candidate) => <option key={candidate} value={candidate}>{unitNames[candidate]}</option>)}</select></label>{fieldError('unit')}</div>
       </div>
@@ -109,7 +109,7 @@ export function AddItemForm({ groups, initialGroupId, onCancel, onSaved, onBusy 
       </div></details>
       {name.trim() && location.trim() && validQuantity(quantity) && <p className="rounded-lg bg-emerald-50 p-3">You have {quantity} {unitNames[unit]} of {name.trim()} in {location.trim()}.</p>}
       {conflict && <p>Cancel and check the item list before adding this again. It may already be saved.</p>}
-      <div className="flex gap-3"><button disabled={conflict || (isFood && (loading || !!loadError))} className="min-h-11 rounded-lg bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save item'}</button><button type="button" className={button} onClick={onCancel}>Cancel</button></div>
+      <div className="flex flex-wrap gap-3"><button disabled={conflict || (isFood && (loading || !!loadError))} className="min-h-11 rounded-lg bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save item'}</button><button type="button" className={button} onClick={onCancel}>Cancel</button></div>
     </fieldset>
   </form>;
 }

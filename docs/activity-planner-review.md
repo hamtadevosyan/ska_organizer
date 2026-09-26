@@ -1,6 +1,10 @@
 # SKAO-66 — Activity Planner workflow review
 
-Status: review started; owner walkthrough pending. Baseline: `development` at
+Status: closed at the owner's request on September 25, 2026 (America/Los_Angeles).
+The owner said the proposal looks OK for now and will be revisited during AI
+integration. SKAO-97/98/99 remain backlog candidates for that later review. This
+closure does not deploy the prototype or settle the open workflow questions below.
+Baseline: `development` at
 `1fb6eb7` (SKAO-96 merged in PR #16). The production planner is unchanged by this
 review package. Proposed behavior below is not a claim that it is already in
 the application.
@@ -141,8 +145,8 @@ review; priority expresses the recommended order, not a delivery commitment.
   verification. No real server/database, permissions or stock calculation is
   exercised by the prototype. It is not a production security boundary.
 - No production application code, dependencies, migration or deployment changed.
-  SKAO-66 remains In Progress until the owner reviews the concrete flow and the
-  remaining routine/approval questions are recorded.
+  SKAO-66 was subsequently closed at the owner's request; the remaining
+  routine/approval questions are deferred until the AI integration review.
 
 ## Owner walkthrough still needed
 
