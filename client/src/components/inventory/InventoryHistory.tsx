@@ -21,7 +21,7 @@ export function InventoryHistory({ itemId, onClose }: { itemId: string; onClose:
     return () => request.abort();
   }, [itemId, page, retry]);
   return <section aria-label="Inventory history" className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm">
-    <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold">Item history{data ? ': ' + data.item.name : ''}</h2><button onClick={onClose} className="rounded-lg border px-3 py-2">Close history</button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Item history{data ? ': ' + data.item.name : ''}</h2><button onClick={onClose} className="rounded-lg border px-3 py-2">Close history</button></div>
     {loading && <p role="status">Loading movement history…</p>}
     {error && <div><p role="alert" className="text-red-800">{error}</p><button onClick={() => setRetry(retry + 1)} className="mt-2 rounded-lg border px-3 py-2">Retry history</button></div>}
     {!loading && !error && data && <>
@@ -34,7 +34,7 @@ export function InventoryHistory({ itemId, onClose }: { itemId: string; onClose:
         <p className="mt-1 text-sm text-slate-600">{describe(movement.after)}</p>
         {movement.type === 'details' && movement.before && <p className="mt-1 text-sm text-slate-500">Previously: {describe(movement.before)}; warning at {movement.before.reorderThreshold}. Now warning at {movement.after.reorderThreshold}.</p>}
       </li>)}</ol>
-      {data.total > data.pageSize && <nav aria-label="History pages" className="flex items-center justify-between">
+      {data.total > data.pageSize && <nav aria-label="History pages" className="ska-pagination">
         <button disabled={page === 1} onClick={() => setPage(page - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-50">Previous changes</button>
         <span>Page {page} of {Math.ceil(data.total / data.pageSize)}</span>
         <button disabled={page * data.pageSize >= data.total} onClick={() => setPage(page + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-50">Next changes</button>

@@ -187,7 +187,7 @@ export default function MealSetup({ initialMealId, onBusyChange }: { initialMeal
               const value = ingredients.find((item) => item.id === link.ingredientId);
               const name = value?.name || 'Missing ingredient';
               return <div key={link.id} className="flex flex-wrap items-end gap-3 rounded-lg bg-gray-50 p-3">
-                <div className="min-w-48 flex-1"><Field id={`quantity-${link.id}`} label={`${name} quantity per person (${value?.unit || '?'})`} error={field(link.id, 'quantity')}>
+                <div className="ska-recipe-quantity min-w-0 flex-1"><Field id={`quantity-${link.id}`} label={`${name} quantity per person (${value?.unit || '?'})`} error={field(link.id, 'quantity')}>
                   <input id={`quantity-${link.id}`} {...attributes(link.id, 'quantity', `quantity-${link.id}`)} className={control} type="number" min="0.000001" step="any" value={quantities[link.id] ?? ''} onChange={(event) => setQuantities({ ...quantities, [link.id]: event.target.value })} />
                 </Field>{value?.archived && <p className="text-sm text-amber-800">Archived ingredient — restore or remove it.</p>}</div>
                 <button type="button" className={button} onClick={() => void saveQuantity(link)} aria-label={`Save quantity for ${name}`}>Save quantity</button>

@@ -1,0 +1,77 @@
+/* SKAO-77: presentation only. Home/Attendance keep their approved page styles. */
+.ska-core-page { min-width: 0; }
+.ska-core-page :where(section, form, fieldset, label, details, .grid, .flex > div) { min-width: 0; }
+.ska-core-page :where(h1, h2, h3, h4, p, li, dt, dd, th, td, button, a, summary) { overflow-wrap: anywhere; }
+.ska-core-page :where(input, select, textarea) { min-width: 0; max-width: 100%; }
+.ska-core-page :where(button, summary) { min-height: 44px; min-width: 44px; }
+.ska-core-page summary { align-content: center; }
+.ska-core-page button { max-width: 100%; }
+.ska-core-page button svg { flex-shrink: 0; }
+.ska-core-page :where(input:not([type='checkbox']):not([type='radio']), select) { min-height: 44px; }
+.ska-core-page input:is([type='checkbox'], [type='radio']) { width: 20px; height: 20px; flex-shrink: 0; }
+.ska-core-page label:has(> input:is([type='checkbox'], [type='radio'])) { min-height: 44px; align-items: center; }
+.ska-core-page a { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; }
+.ska-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.ska-heading-icon { display: inline-grid; place-items: center; width: 46px; height: 46px; flex-shrink: 0; border-radius: 16px; color: #3378c5; background: #e8f3ff; }
+.ska-heading-icon.is-coral { color: #ae4c29; background: var(--ska-coral-soft); }
+.ska-heading-icon.is-purple { color: #7449a1; background: var(--ska-purple-soft); }
+.ska-heading-icon.is-yellow { color: #89610e; background: var(--ska-yellow-soft); }
+.ska-core-page .ska-page-head h1 { flex-wrap: wrap; }
+.ska-meal-tabs { display: flex; flex-wrap: wrap; gap: 8px; width: fit-content; max-width: 100%; padding: 6px; border: 1px solid var(--ska-line); border-radius: 18px; background: #fff; }
+.ska-meal-tabs button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 18px; border-radius: 12px; font-size: 13px; font-weight: 700; color: var(--ska-muted); }
+.ska-meal-tabs button[aria-pressed='true'] { background: var(--ska-meal-fill); color: #624814; }
+.ska-meal-tabs button:disabled { opacity: .55; }
+.ska-core-page .ska-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.ska-core-page .ska-filter-fields { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); align-items: end; }
+.ska-core-page .ska-filter-fields label { width: 100%; }
+.ska-core-page .ska-filter-fields :where(input, select) { width: 100%; }
+.ska-core-page .ska-table-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ska-core-page .ska-table-actions button { padding: 9px 12px; border: 1px solid var(--ska-line); border-radius: 10px; }
+.ska-core-page .ska-table-actions button:hover:not(:disabled) { background: var(--ska-blue-soft); }
+
+/* One semantic table/one set of actions, presented as labelled records on phones
+   and small tablets. Explicit table roles retain semantics when display changes.
+   Screen-only rules leave the full print tables intact. */
+@media screen and (max-width: 1023px) {
+  .ska-record-table { display: block; width: 100%; }
+  .ska-record-table > thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .ska-record-table > tbody { display: grid; gap: 14px; padding: 12px; }
+  .ska-record-table > tbody > tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 16px; border: 1px solid var(--ska-line); border-radius: 17px; background: white; }
+  .ska-record-table > tbody > tr > :is(td, th) { display: block; min-width: 0; padding: 0; border: 0; font-size: 13px; }
+  .ska-record-table [data-label]::before { content: attr(data-label); display: block; margin-bottom: 5px; color: var(--ska-muted); font-size: 11px; font-weight: 600; }
+  .ska-record-table > tbody > tr > :is(th[scope='row'], [data-primary], .ska-record-actions) { grid-column: 1 / -1; }
+  .ska-record-table > tbody > tr > :is(th[scope='row'], [data-primary]) { font-size: 16px; }
+  .ska-record-table .ska-record-actions { padding-top: 12px; border-top: 1px solid var(--ska-line); }
+  .ska-record-table .ska-table-actions button { flex: 1 1 auto; }
+  .ska-record-table.is-dark > tbody > tr { background: #19253a; border-color: #46536b; }
+  .ska-record-table.is-dark [data-label]::before { color: #cad4e4; }
+}
+
+@media screen and (max-width: 767px) {
+  .ska-core-page :where(input:not([type='checkbox']):not([type='radio']), select, textarea) { font-size: 16px; }
+  .ska-header-actions { width: 100%; }
+  .ska-header-actions > button { flex: 1 1 auto; }
+  .ska-core-page .ska-phone-stack { display: flex; flex-direction: column; align-items: stretch; }
+  .ska-core-page .ska-phone-stack > :is(label, button) { width: 100%; }
+  .ska-core-page .ska-phone-stack :where(input, select) { width: 100%; }
+  .ska-core-page :is(.min-w-48, .min-w-40) { min-width: 0; flex-basis: 100%; }
+  .ska-core-page .ska-pagination > span { order: -1; width: 100%; text-align: center; }
+  .ska-meal-tabs { width: 100%; }
+  .ska-meal-tabs button { flex: 1 1 auto; padding: 12px; }
+  .ska-core-page .ska-phone-panel { padding: 16px; }
+  .ska-core-page .ska-meal-actions { grid-template-columns: minmax(0, 1fr); }
+  .ska-core-page .ska-recipe-quantity { flex-basis: 100%; }
+}
+
+@media screen and (max-width: 359px) {
+  .ska-record-table > tbody { padding: 8px; }
+  .ska-record-table > tbody > tr { grid-template-columns: minmax(0, 1fr); padding: 13px; }
+  .ska-core-page .ska-phone-times { grid-template-columns: minmax(0, 1fr); }
+  .ska-core-page .ska-phone-times > label { grid-column: auto; }
+}
+
+/* Shared display rules must not override the existing print-hidden utilities. */
+@media print {
+  .ska-core-page { max-width: none; }
+  .ska-core-page .print\:hidden { display: none; }
+}

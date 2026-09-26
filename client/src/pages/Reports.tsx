@@ -78,7 +78,7 @@ export default function Reports() {
     if (config) setFilters((current) => ({ ...current, ...dateRange(value, config.today) }));
   }
 
-  return <div className="reports-page mx-auto max-w-7xl space-y-5 p-2 sm:p-6 print:max-w-none print:p-0">
+  return <div className="reports-page ska-page ska-core-page space-y-5 print:max-w-none print:p-0">
     <style>{`@media print {
       body:has(.reports-page), body:has(.reports-page) #root { height: auto !important; background: white !important; }
       body:has(.reports-page) #root > div, body:has(.reports-page) #root > div > div, body:has(.reports-page) main { display: block !important; height: auto !important; overflow: visible !important; padding: 0 !important; }
@@ -87,8 +87,8 @@ export default function Reports() {
       .reports-page th, .reports-page td { overflow-wrap: anywhere; }
       .reports-page thead { display: table-header-group; }
     }`}</style>
-    <header className="print:hidden"><h1 className="flex items-center gap-3 text-3xl font-bold text-slate-900"><FileText className="text-emerald-700" />Reports</h1>
-      <p className="mt-2 text-slate-600">Choose dates to review attendance or purchases.</p></header>
+    <header className="ska-page-head print:hidden"><div><h1><span className="ska-heading-icon"><FileText size={24} aria-hidden="true" /></span>Reports</h1>
+      <p>Choose dates to review attendance or purchases.</p></div></header>
     {!config && !configError && <p role="status">Loading report settings…</p>}
     {configError && <div role="alert" className="rounded-lg bg-red-50 p-4 text-red-800">{configError} <button className={button} onClick={() => setConfigRetry((n) => n + 1)}>Retry report settings</button></div>}
     {config && <section aria-label="Report filters" className="space-y-4 rounded-2xl border bg-white p-5 print:hidden">
@@ -98,7 +98,7 @@ export default function Reports() {
       </div>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Quick dates">{(['today', 'week', 'month'] as const).map((value) =>
         <button key={value} className={button} onClick={() => preset(value)}>{value === 'today' ? 'Today' : value === 'week' ? 'This week' : 'This month'}</button>)}</div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <label>From<input type="date" min="1900-01-01" max="9999-12-30" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} className="mt-1 block w-full rounded-lg border p-2.5" /></label>
         <label>To<input type="date" min="1900-01-01" max="9999-12-30" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} className="mt-1 block w-full rounded-lg border p-2.5" /></label>
         {kind === 'attendance' && <div>
@@ -126,7 +126,7 @@ export default function Reports() {
       {!visible.rows.length ? <p className="rounded-lg bg-slate-50 p-5">{kind === 'attendance' ? 'No attendance recorded for these dates and room.' : 'No purchases recorded for these dates.'}</p> : <>
         <div className="print:hidden" data-testid="screen-report"><ReportTable report={visible} rows={visible.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} /></div>
         <div className="hidden print:block" data-testid="printed-report"><ReportTable report={visible} rows={visible.rows} /></div>
-        {visible.rows.length > PAGE_SIZE && <nav aria-label="Report pages" className="flex items-center justify-between gap-3 print:hidden">
+        {visible.rows.length > PAGE_SIZE && <nav aria-label="Report pages" className="ska-pagination print:hidden">
           <button className={button} disabled={page === 1} onClick={() => setPage(page - 1)}>Previous page</button><span>Page {page} of {Math.ceil(visible.rows.length / PAGE_SIZE)} · {visible.rows.length} records</span>
           <button className={button} disabled={page * PAGE_SIZE >= visible.rows.length} onClick={() => setPage(page + 1)}>Next page</button>
         </nav>}

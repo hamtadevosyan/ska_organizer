@@ -17,7 +17,7 @@ export function ChildProfile({ id, rooms, onClose }: { id: string; rooms: Pick<R
     return () => controller.abort();
   }, [id]);
   return <section className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm" aria-label="Child profile">
-    <div className="flex items-start justify-between gap-4"><h2 className="text-xl font-bold">{profile ? childName(profile.child) : 'Child profile'}</h2>
+    <div className="flex flex-wrap items-start justify-between gap-4"><h2 className="text-xl font-bold">{profile ? childName(profile.child) : 'Child profile'}</h2>
       <button onClick={onClose} className="rounded-lg border px-3 py-1">Close profile</button></div>
     {error && <p role="alert" className="text-red-800">{error}</p>}
     {!profile && !error && <p role="status">Loading profile…</p>}
@@ -30,11 +30,11 @@ export function ChildProfile({ id, rooms, onClose }: { id: string; rooms: Pick<R
       </dl>
       <div><h3 className="font-semibold">Operational notes</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{profile.child.notes || 'No notes recorded.'}</p></div>
       <div><h3 className="font-semibold">Recent attendance</h3><p className="mt-1 text-sm text-slate-500">The 10 most recent records, including attendance before room or enrollment changes. Times use {profile.timeZone}.</p>
-        {!profile.recentAttendance.length ? <p className="mt-3 text-sm">No attendance recorded.</p> : <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr className="border-b"><th className="py-2 pr-3">Room</th><th className="py-2 pr-3">Check-in</th><th className="py-2">Check-out</th></tr></thead>
-          <tbody>{profile.recentAttendance.map((record) => <tr key={record.id} className="border-b">
-            <td className="py-2 pr-3">{rooms.find((room) => room.id === record.roomId)?.name || 'Historical room'}{record.voided ? ' · Voided' : ''}</td>
-            <td className="py-2 pr-3">{attendanceTime(record.checkIn, profile.timeZone)}</td><td className="py-2">{record.checkOut ? attendanceTime(record.checkOut, profile.timeZone) : record.voided ? 'Voided visit' : 'Not checked out'}</td>
+        {!profile.recentAttendance.length ? <p className="mt-3 text-sm">No attendance recorded.</p> : <div className="mt-3 overflow-x-auto"><table role="table" aria-label="Recent attendance" className="ska-record-table w-full text-left text-sm">
+          <thead role="rowgroup"><tr role="row" className="border-b"><th role="columnheader" scope="col" className="py-2 pr-3">Room</th><th role="columnheader" scope="col" className="py-2 pr-3">Check-in</th><th role="columnheader" scope="col" className="py-2">Check-out</th></tr></thead>
+          <tbody role="rowgroup">{profile.recentAttendance.map((record) => <tr role="row" key={record.id} className="border-b">
+            <td role="cell" data-label="Room" data-primary className="py-2 pr-3">{rooms.find((room) => room.id === record.roomId)?.name || 'Historical room'}{record.voided ? ' · Voided' : ''}</td>
+            <td role="cell" data-label="Check-in" className="py-2 pr-3">{attendanceTime(record.checkIn, profile.timeZone)}</td><td role="cell" data-label="Check-out" className="py-2">{record.checkOut ? attendanceTime(record.checkOut, profile.timeZone) : record.voided ? 'Voided visit' : 'Not checked out'}</td>
           </tr>)}</tbody></table></div>}
       </div>
     </>}

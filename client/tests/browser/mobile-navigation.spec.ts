@@ -67,9 +67,7 @@ for (const width of [320, 375, 390, 430]) {
 test('More contains keyboard focus, dismisses correctly, and handles account actions', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   // Sign out a separate session so the shared layout-test session stays valid.
-  // Login deliberately revokes an incoming old session cookie, so clear it first.
-  await page.context().clearCookies();
-  await authenticatedApi(page);
+  await authenticatedApi(page, { freshSession: true });
   await page.goto('/children');
   const nav = page.getByRole('navigation', { name: 'Mobile navigation' });
   const more = nav.getByRole('button', { name: 'More' });

@@ -37,4 +37,4 @@ After applying this commit and rebuilding the installed client:
 
 For an existing Windows pilot installation, use its existing update path after this change is committed locally: `./scripts/pilot.ps1 update`. It builds the selected commit and performs the existing backup/recovery workflow. Do not rerun `init` for an installed pilot.
 
-Remaining SKAO-96 work includes target-device visual review, the other operational screens, and first-time-user usability evaluation. This increment is not a deployment or a completion of SKAO-96.
+The owner subsequently closed SKAO-96 after approving the Bloom direction and merging its implementation in PR #16. SKAO-77 now addresses the remaining phone layouts; see `docs/mobile-core-screens.md`. Target-device validation and first-time-user usability evaluation were not established by that closure.

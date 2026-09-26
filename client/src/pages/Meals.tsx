@@ -12,30 +12,17 @@ const Meals = () => {
   const [catalogBusy, setCatalogBusy] = useState(false);
 
   return (
-    <div className="p-6 space-y-6">
-      <section className="print:hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 p-8 text-white shadow-xl">
-        <div className="flex items-center gap-4">
-          <div className="rounded-2xl bg-white/20 p-4">
-            <Utensils size={32} />
-          </div>
-          <div>
-            <h2 className="text-4xl font-bold">Meals</h2>
-            <p className="mt-2 text-sm text-emerald-50">
-              Manage meals, build recipes, generate menus, and prepare shopping lists.
-            </p>
-          </div>
-        </div>
-      </section>
+    <div className="ska-page ska-core-page space-y-6">
+      <header className="ska-page-head print:hidden"><div>
+        <h1><span className="ska-heading-icon is-yellow"><Utensils size={24} aria-hidden="true" /></span>Meals</h1>
+        <p>Plan the week’s meals and see what to buy.</p>
+      </div></header>
 
-      <div className="print:hidden rounded-2xl bg-white p-2 shadow-sm border border-gray-100 flex gap-2 w-fit">
+      <div className="ska-meal-tabs print:hidden" role="group" aria-label="Meal views">
         <button
           disabled={catalogBusy}
           onClick={() => setActiveTab('planner')}
-          className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold ${
-            activeTab === 'planner'
-              ? 'bg-emerald-500 text-white'
-              : 'text-gray-600 hover:bg-gray-50'
-          }`}
+          aria-pressed={activeTab === 'planner'}
         >
           <CalendarDays size={18} />
           Planner
@@ -44,11 +31,7 @@ const Meals = () => {
         <button
           disabled={catalogBusy || !canWrite}
           onClick={() => { setRecipeMealId(undefined); setActiveTab('setup'); }}
-          className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold ${
-            activeTab === 'setup'
-              ? 'bg-orange-500 text-white'
-              : 'text-gray-600 hover:bg-gray-50'
-          }`}
+          aria-pressed={activeTab === 'setup'}
         >
           <Settings size={18} />
           Meal Setup

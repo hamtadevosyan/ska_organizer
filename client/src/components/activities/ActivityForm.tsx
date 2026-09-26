@@ -118,11 +118,11 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, onBus
         </div>
       </details>
       {error && <p ref={errorRef} tabIndex={-1} role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{error}</p>}
-      <div className="flex gap-3"><button type="submit" className="rounded-lg bg-emerald-700 px-5 py-2.5 font-semibold text-white">{busy ? 'Saving…' : scheduleDate ? 'Add to day' : 'Save activity'}</button>
+      <div className="flex flex-wrap gap-3"><button type="submit" className="rounded-lg bg-emerald-700 px-5 py-2.5 font-semibold text-white">{busy ? 'Saving…' : scheduleDate ? 'Add to day' : 'Save activity'}</button>
         <button type="button" onClick={() => { if (changed) setConfirmCancel(true); else onClose(); }} className="rounded-lg border px-4 py-2">Cancel</button></div>
       {confirmCancel && <div role="group" aria-label="Discard activity changes" className="rounded-lg bg-amber-50 p-3">
         <p>Discard the activity details you entered?</p>
-        <div className="mt-2 flex gap-3"><button type="button" onClick={onClose} className="rounded-lg bg-red-700 px-4 py-2 font-semibold text-white">Discard activity</button>
+        <div className="mt-2 flex flex-wrap gap-3"><button type="button" onClick={onClose} className="rounded-lg bg-red-700 px-4 py-2 font-semibold text-white">Discard activity</button>
           <button type="button" onClick={() => setConfirmCancel(false)} className="rounded-lg border bg-white px-4 py-2">Keep editing</button></div>
       </div>}
     </fieldset>

@@ -65,11 +65,11 @@ export default function Children() {
     const room = rooms.find((item) => item.id === id);
     return room ? room.name + (room.active ? '' : ' (archived)') : id ? 'Room unavailable' : 'Unassigned';
   };
-  return <div className="mx-auto max-w-6xl space-y-6 p-2 sm:p-6">
-    <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-3xl font-bold text-slate-900">Children</h1>
+  return <div className="ska-page ska-core-page space-y-6">
+    <header className="ska-page-head"><div><h1><span className="ska-heading-icon is-coral"><Users size={24} aria-hidden="true" /></span>Children</h1>
       <p className="mt-2 text-slate-600">Maintain the roster, enrollment details and room assignments.</p></div>
-      <div className="flex gap-3"><button disabled={loading || !!busyId || formOpen} onClick={() => { setRevision((value) => value + 1); void refreshRooms(); }} className="rounded-lg border bg-white px-4 py-2 disabled:opacity-50">Refresh roster</button>
-        {canEdit && !formOpen && <button disabled={!!busyId} onClick={() => open(null)} className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white"><Plus size={18} />Add child</button>}</div>
+      <div className="ska-header-actions">{canEdit && !formOpen && <button disabled={!!busyId} onClick={() => open(null)} className="ska-button is-primary"><Plus size={18} aria-hidden="true" />Add child</button>}
+        <button disabled={loading || !!busyId || formOpen} onClick={() => { setRevision((value) => value + 1); void refreshRooms(); }} className="ska-button">Refresh roster</button></div>
     </header>
     {(error || roomError) && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{error || roomError}</p>}
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-800">{message}</p>}
@@ -85,12 +85,12 @@ export default function Children() {
       </div>
       {loading ? <p role="status" className="py-8">Loading roster…</p> : error ? <p className="py-8">Use Refresh roster to try again.</p> : !children.length ? <div className="py-10 text-center"><Users className="mx-auto mb-3 text-emerald-700" /><p>No children match these filters.</p></div> : <>
         <p className="my-4 text-sm text-slate-500">{total} {total === 1 ? 'child' : 'children'} · Page {page} of {Math.max(1, Math.ceil(total / pageSize))}</p>
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b bg-slate-50"><th className="p-3">Name</th><th className="p-3">Date of birth</th><th className="p-3">Room</th><th className="p-3">Enrollment</th><th className="p-3">Actions</th></tr></thead>
-          <tbody>{children.map((child) => <tr key={child.id} className="border-b" aria-label={childName(child)}>
-            <td className="p-3 font-semibold">{childName(child)}{child.preferredName && <span className="mt-1 block font-normal text-slate-500">Goes by {child.preferredName}</span>}</td>
-            <td className="p-3">{child.dateOfBirth || 'Not recorded'}</td><td className="p-3">{roomName(child.roomId)}</td>
-            <td className="p-3"><span className={'rounded-full px-2 py-1 text-xs ' + (child.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600')}>{child.active ? 'Active' : 'Inactive'}</span></td>
-            <td className="p-3"><div className="flex flex-wrap gap-3"><button disabled={formOpen || !!busyId} onClick={() => setProfileId(child.id)} aria-label={'View ' + childName(child)} className="text-emerald-800 disabled:opacity-50">View profile</button>
+        <div className="overflow-x-auto"><table role="table" aria-label="Child roster records" className="ska-record-table w-full text-left text-sm"><thead role="rowgroup"><tr role="row" className="border-b bg-slate-50"><th role="columnheader" scope="col" className="p-3">Name</th><th role="columnheader" scope="col" className="p-3">Date of birth</th><th role="columnheader" scope="col" className="p-3">Room</th><th role="columnheader" scope="col" className="p-3">Enrollment</th><th role="columnheader" scope="col" className="p-3">Actions</th></tr></thead>
+          <tbody role="rowgroup">{children.map((child) => <tr role="row" key={child.id} className="border-b" aria-label={childName(child)}>
+            <td role="cell" data-primary className="p-3 font-semibold">{childName(child)}{child.preferredName && <span className="mt-1 block font-normal text-slate-500">Goes by {child.preferredName}</span>}</td>
+            <td role="cell" data-label="Date of birth" className="p-3">{child.dateOfBirth || 'Not recorded'}</td><td role="cell" data-label="Room" className="p-3">{roomName(child.roomId)}</td>
+            <td role="cell" data-label="Enrollment" className="p-3"><span className={'rounded-full px-2 py-1 text-xs ' + (child.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600')}>{child.active ? 'Active' : 'Inactive'}</span></td>
+            <td role="cell" className="ska-record-actions p-3"><div className="ska-table-actions"><button disabled={formOpen || !!busyId} onClick={() => setProfileId(child.id)} aria-label={'View ' + childName(child)} className="text-emerald-800 disabled:opacity-50">View profile</button>
               {canEdit && <><button disabled={formOpen || !!busyId} onClick={() => open(child)} aria-label={'Edit ' + childName(child)} className="text-emerald-800 disabled:opacity-50">Edit</button>
                 {child.active && <button disabled={formOpen || !!busyId} onClick={() => void end(child)} aria-label={'End enrollment for ' + childName(child)} className="text-slate-600 disabled:opacity-50">{busyId === child.id ? 'Saving…' : 'End enrollment'}</button>}</>}
             </div></td>
