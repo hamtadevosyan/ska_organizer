@@ -64,6 +64,17 @@ jobs:
           dc up -d --no-build --wait --wait-timeout 180 server web
           docker cp "$(dc ps -q web):/data/caddy/pki/authorities/local/root.crt" .pilot/root.crt
           curl --fail --silent --show-error --cacert .pilot/root.crt https://localhost:8443/api/ready
+          curl --fail --silent --show-error --cacert .pilot/root.crt -D .pilot/worker-headers -o .pilot/sw.js https://localhost:8443/sw.js
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          headers = Path('.pilot/worker-headers').read_text().lower()
+          assert 'no-store' in headers and 'javascript' in headers
+          worker = Path('.pilot/sw.js').read_text()
+          manifest = json.loads(re.search(r'const STATIC_FILES = (.*);', worker)[1])
+          assert manifest and any(entry['url'] == '/index.html' for entry in manifest)
+          assert all(entry['url'] == '/index.html' or entry['url'].startswith('/assets/') for entry in manifest)
+          PY
           code=$(curl --silent --cacert .pilot/root.crt -o /dev/null -w '%{http_code}' https://localhost:8443/api/rooms)
           test "$code" = 401
           curl --fail --silent --show-error --cacert .pilot/root.crt -D .pilot/login-headers -o /dev/null \

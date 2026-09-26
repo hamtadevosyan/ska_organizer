@@ -191,3 +191,11 @@ execute SQL during restore.
 Follow [Backup, update and recovery](backup-recovery.md), then record the exact
 release and results in [Pilot acceptance](pilot-checklist.md). The
 [API index](api.md) links the maintained feature contracts.
+
+The production build can cache its public application shell for connection
+guidance. It does not cache API responses or queue offline saves. Keep using
+the trusted HTTPS address; plain HTTP on a LAN IP does not support this worker.
+Close all app tabs and reopen after an update when unsaved work is finished so
+a waiting worker can activate. See [Static caching and local connections](pwa-caching.md)
+for outage recovery, limits and checks. Install buttons and device installation
+help are follow-up work in SKAO-80.

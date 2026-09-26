@@ -27,6 +27,7 @@ jobs:
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npm run test:pwa
       - run: npm run lint
       - run: npm test
       - name: Install browser-test server dependencies
@@ -34,3 +35,4 @@ jobs:
         run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+      - run: npm run test:browser:pwa

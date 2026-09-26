@@ -14,7 +14,19 @@ https://{$PILOT_HOST}:8443 {
     }
     @api path /api /api/*
     handle @api {
+        header Cache-Control "no-store"
         reverse_proxy server:3001
+    }
+    # Never replace a missing worker or asset with the SPA HTML fallback.
+    handle /sw.js {
+        root * /srv
+        header Cache-Control "no-cache, no-store, must-revalidate"
+        file_server
+    }
+    handle /assets/* {
+        root * /srv
+        header Cache-Control "no-cache"
+        file_server
     }
     handle {
         root * /srv
@@ -24,6 +36,7 @@ https://{$PILOT_HOST}:8443 {
     }
     # No access log: request paths and cookies may contain operational information.
     handle_errors {
-        respond "The organizer is temporarily unavailable. Please try again." 503
+        header Cache-Control "no-store"
+        respond "The academy computer is temporarily unavailable. Please try again." 503
     }
 }
