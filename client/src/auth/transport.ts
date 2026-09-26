@@ -8,6 +8,7 @@ let csrf = '';
 let epoch = 0;
 let pending = new AbortController();
 const expired = new Set<() => void>();
+const unavailable = new Set<() => void>();
 const isApi = (url?: string) => !!url && (url === `${API_BASE_URL}/api` || url.startsWith(`${API_BASE_URL}/api/`));
 export function replaceSession(token = '') {
   pending.abort();
@@ -18,6 +19,14 @@ export function replaceSession(token = '') {
 export function onSessionExpired(callback: () => void) {
   expired.add(callback);
   return () => { expired.delete(callback); };
+}
+export function isServerUnavailable(error: unknown) {
+  return !axios.isCancel(error) && axios.isAxiosError(error) &&
+    (!error.response || [502, 503, 504].includes(error.response.status));
+}
+export function onServerUnavailable(callback: () => void) {
+  unavailable.add(callback);
+  return () => { unavailable.delete(callback); };
 }
 axios.interceptors.request.use((config) => {
   if (isApi(config.url)) {
@@ -32,6 +41,9 @@ axios.interceptors.response.use((response) => {
   if (response.config.skaoEpoch !== undefined && response.config.skaoEpoch !== epoch) throw new axios.CanceledError('Session changed.');
   return response;
 }, (error: unknown) => {
+  if (axios.isAxiosError(error) && error.config?.skaoEpoch === epoch && isServerUnavailable(error)) {
+    unavailable.forEach(callback => callback());
+  }
   if (axios.isAxiosError(error) && error.config?.skaoEpoch === epoch && error.response?.status === 401 &&
       !error.config.url?.endsWith('/auth/login')) {
     replaceSession();

@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from 'react';
 import { useAuth } from './context';
 import { authError } from './transport';
 import AcademyBrand from '../components/AcademyBrand';
+import ServerConnection from '../components/ServerConnection';
 
 export function PasswordForm({ onDone }: { onDone?: () => void }) {
   const { changePassword, account, signOut } = useAuth();
@@ -33,7 +34,7 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
   </form>;
 }
 export default function AuthGate({ children }: { children: ReactNode }) {
-  const { account, ready, notice, signIn } = useAuth();
+  const { account, ready, notice, signIn, serverUnavailable, retry } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -45,8 +46,13 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     finally { setBusy(false); }
   }
   if (!ready) return <div role="status" className="p-8">Checking your session…</div>;
-  if (account && !account.mustChangePassword) return <Fragment key={`${account.id}:${account.role}`}>{children}</Fragment>;
-  return <main className="auth-screen">
+  if (!account && serverUnavailable) return <ServerConnection standalone retry={retry} />;
+  const connectionNotice = serverUnavailable ? <ServerConnection retry={retry} /> :
+    account && notice ? <p role="status" className="server-reconnected print:hidden">{notice}</p> : null;
+  if (account && !account.mustChangePassword) return <Fragment key={`${account.id}:${account.role}`}>
+    {connectionNotice}{children}
+  </Fragment>;
+  return <>{connectionNotice}<main className="auth-screen">
     <section className="auth-card">
       <AcademyBrand />
       {account ? <PasswordForm /> : <form onSubmit={submit} className="space-y-4">
@@ -60,5 +66,5 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         <p className="text-sm text-slate-500">Need access or a password reset? Contact your administrator.</p>
       </form>}
     </section>
-  </main>;
+  </main></>;
 }

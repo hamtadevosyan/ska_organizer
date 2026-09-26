@@ -36,7 +36,7 @@ function CurrentPage() {
 }
 function setup(path = '/dashboard', role: Role = 'admin', overrides: Partial<AuthState> = {}) {
   const state: AuthState = {
-    account: { ...testAccount, role }, ready: true, notice: '', signIn: vi.fn(async () => {}),
+    account: { ...testAccount, role }, ready: true, notice: '', serverUnavailable: false, signIn: vi.fn(async () => {}),
     signOut: vi.fn(async () => {}), changePassword: vi.fn(async () => {}), retry: vi.fn(async () => {}), ...overrides,
   };
   render(<AuthContext.Provider value={state}><MemoryRouter initialEntries={[path]}>

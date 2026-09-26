@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react';
 export type Role = 'admin' | 'editor' | 'viewer';
 export type Account = { id: string; username: string; displayName: string; role: Role; disabled: boolean; mustChangePassword: boolean };
 export type AuthState = {
-  account: Account | null; ready: boolean; notice: string;
+  account: Account | null; ready: boolean; notice: string; serverUnavailable: boolean;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   changePassword: (currentPassword: string, password: string) => Promise<void>;
