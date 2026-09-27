@@ -3,9 +3,9 @@ name: Pilot deployment checks
 on:
   push:
     branches: [main, development, 'feature/**']
-    paths: ['server/**', 'client/**', 'deploy/**', 'compose.pilot.yaml', '.dockerignore', '.gitattributes', 'scripts/pilot.ps1', '.github/workflows/ci.yml']
+    paths: ['server/**', 'client/**', 'deploy/**', 'compose.pilot.yaml', '.dockerignore', '.gitattributes', 'SKAO.cmd', 'scripts/**', '.github/workflows/ci.yml']
   pull_request:
-    paths: ['server/**', 'client/**', 'deploy/**', 'compose.pilot.yaml', '.dockerignore', '.gitattributes', 'scripts/pilot.ps1', '.github/workflows/ci.yml']
+    paths: ['server/**', 'client/**', 'deploy/**', 'compose.pilot.yaml', '.dockerignore', '.gitattributes', 'SKAO.cmd', 'scripts/**', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 permissions:
@@ -17,12 +17,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - name: Parse the Windows helper without executing it
+      - name: Parse Windows helpers and test isolated automation
         shell: powershell
         run: |
-          $tokens = $null; $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$pwd/scripts/pilot.ps1", [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count) { $errors | Format-List; exit 1 }
+          Get-ChildItem scripts -Filter *.ps1 -Recurse | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { $errors | Format-List; exit 1 }
+          }
+          & ./scripts/tests/pilot-automation.tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   test:
     runs-on: ubuntu-latest

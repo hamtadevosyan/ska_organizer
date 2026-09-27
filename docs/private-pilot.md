@@ -76,7 +76,19 @@ before `.pilot/runtime.env` was created, preserve the directory and diagnose the
 filesystem/permission failure before proceeding. Existing pilot volumes require
 their matching settings and passwords.
 
-## Allow selected computers on the private LAN
+## Allow phones and computers on the private LAN
+
+For an **already installed pilot**, use the reusable launcher:
+
+```powershell
+.\SKAO.cmd setup-phone
+```
+
+It detects the Windows LAN address, configures HTTPS and a narrow firewall rule,
+checks readiness and exports the public phone certificate. Run it again to repair
+the settings or follow an address change. Double-click `SKAO.cmd` for a menu with
+update, restart, diagnostics and backup. See [pilot commands](pilot-commands.md).
+The following explicit `init` example is only for a **new** pilot.
 
 Choose the Windows host's fixed/private IPv4 address, not the Ubuntu VM address.
 For example, on a **new installation**, replace the sample IP with your actual
@@ -110,10 +122,10 @@ Chrome and confirm it trusts the certificate. Never bypass a certificate warning
 or copy the CA's private key to clients. Caddy's private CA keys stay in its Docker
 volume. See [Caddy local HTTPS](https://caddyserver.com/docs/automatic-https).
 
-For a later host/address change: pause use, run a backup, stop the pilot, edit the
-single-quoted `PILOT_HOST` and `PILOT_BIND` values in `.pilot/runtime.env`, then run
-`start`. Update DNS, firewall and bookmarks together. Caddy issues the new local
-certificate; browser origins must match the new address exactly.
+For a later address change, pause use and rerun `SKAO.cmd setup-phone`. It uses the
+Windows LAN IPv4 address as the URL, saves the old settings, and restores them if
+the configuration checks fail. Caddy retains its CA and issues the matching local
+certificate. Use the newly printed URL on every device.
 
 ## Everyday operation
 

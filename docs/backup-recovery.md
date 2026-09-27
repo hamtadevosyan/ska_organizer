@@ -81,7 +81,17 @@ covering all domains and verify again; every coverage flag must be `true`.
 First complete all Ubuntu and CI checks for the proposed commit. Arrange a short
 pause in use. Keep your current backups and images.
 
-On Windows, bring the **already tested/merged** code into the clean checkout:
+On Windows, the reusable command brings the **already tested/merged** code into
+the clean release checkout and deploys it:
+
+```powershell
+.\SKAO.cmd update
+```
+
+It fast-forwards the existing `development` or `main` branch and stops on local
+changes or divergent history. Repeating it on the selected commit checks service
+health without creating another database copy. For separate Git/deployment control,
+the original commands remain available:
 
 ```powershell
 git status
