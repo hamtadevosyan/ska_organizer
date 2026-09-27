@@ -52,8 +52,11 @@ function Invoke-SkaoAction([string]$Name) {
     if ($Name -eq 'update') { Update-SkaoCheckout }
     $PilotAction = $Name
     if ($Name -eq 'setup-phone') { $PilotAction = 'lan' }
-    & powershell.exe -NoProfile -File (Join-Path $PSScriptRoot 'pilot.ps1') $PilotAction | Out-Host
-    return $LASTEXITCODE
+    # Keep the child's console handles: piping it through Out-Host redirects
+    # stdout and can break Docker's Windows console/progress detection.
+    $Arguments = '-NoProfile -File "{0}" {1}' -f (Join-Path $PSScriptRoot 'pilot.ps1'), $PilotAction
+    $Process = Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments -WorkingDirectory $Repo -NoNewWindow -Wait -PassThru -ErrorAction Stop
+    return $Process.ExitCode
 }
 
 # Dot-sourcing loads functions for the isolated tests, without starting a menu or process.

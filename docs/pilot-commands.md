@@ -94,6 +94,26 @@ A new release uses the existing verified-copy migration and backup workflow in
 commit starts/checks that release without making another database copy. `restart`
 always uses the saved release, even if the checkout contains a newer commit.
 
+The launcher keeps the child PowerShell process connected to the console. Compose
+uses plain progress with ANSI disabled, including during builds, so Windows output
+redirection does not cause `failed to get console: The handle is invalid.` Errors
+identify the failed Compose operation and keep Docker's original output visible.
+
+For an older checkout with this console error, the following settings apply only
+to the current PowerShell session and its child processes. Run these in the same
+window before retrying the update:
+
+```powershell
+$env:COMPOSE_ANSI = 'never'
+$env:COMPOSE_PROGRESS = 'plain'
+$env:BUILDKIT_PROGRESS = 'plain'
+.\SKAO.cmd update
+```
+
+The fixed script supplies the Compose flags itself, so these manual settings are
+not needed after merging the fix. No Docker reinstall or pilot initialization is
+required for this console issue.
+
 `doctor` is diagnostic: it changes no service/network configuration, but refreshes
 the local public certificate file for its TLS check. A pass covers only the pilot
 containers and managed rule, not a security audit of unrelated Windows programs,
