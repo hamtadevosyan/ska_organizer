@@ -57,14 +57,17 @@ function Record([string]$Program, [string[]]$Arguments) { $script:Calls.Add([psc
 function Assert-PilotAdministrator { }
 function Test-SkaoAdministrator { return $script:Admin }
 function GitRelease { return $script:Initial.PILOT_RELEASE }
-function powershell.exe {
-    [CmdletBinding()]param([switch]$NoProfile, [string]$File, [Parameter(Position=0)][string]$PilotAction)
-    Record 'powershell.exe' @('-NoProfile','-File',$File,$PilotAction)
-    $script:LASTEXITCODE = $script:ChildExit
-}
 function Start-Process {
-    [CmdletBinding()]param($FilePath,$ArgumentList,$WorkingDirectory,$Verb,[switch]$Wait,[switch]$PassThru)
-    Record 'elevate' @($FilePath,$ArgumentList,$Verb)
+    [CmdletBinding()]param($FilePath,$ArgumentList,$WorkingDirectory,$Verb,[switch]$NoNewWindow,[switch]$Wait,[switch]$PassThru)
+    Assert ($Wait -and $PassThru) 'Did not wait for the child exit code.'
+    if ($Verb -eq 'RunAs') {
+        Assert (!$NoNewWindow) 'Combined elevation with NoNewWindow.'
+        Record 'elevate' @($FilePath,$ArgumentList,$Verb)
+    } else {
+        Assert ($NoNewWindow) 'Did not preserve the console connection.'
+        Assert ($WorkingDirectory -eq $Repo) 'Changed the child working directory.'
+        Record $FilePath @($ArgumentList)
+    }
     return [pscustomobject]@{ ExitCode = $script:ChildExit }
 }
 function Copy-Item {
@@ -414,7 +417,7 @@ try {
     Test 'Launcher forwards restart and the child failure code' {
         $script:ChildExit = 7
         Assert ((Invoke-SkaoAction 'restart') -eq 7) 'Lost child exit code.'
-        Assert ($script:Calls.Count -eq 1 -and $script:Calls[0].Arguments[-1] -eq 'restart') 'Ran another action.'
+        Assert ($script:Calls.Count -eq 1 -and $script:Calls[0].Arguments[0] -match '^\-NoProfile -File "[^"]+pilot\.ps1" restart$') 'Ran another action or lost path quoting.'
     }
     Test 'Launcher requests UAC only for setup and propagates its exit code' {
         $script:Admin = $false; $script:ChildExit = 5

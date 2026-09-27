@@ -23,12 +23,19 @@ $ComposeFile = Join-Path $Repo 'compose.pilot.yaml'
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 $Lock = $null
 
-function Native([string]$Program, [string[]]$Arguments) {
+function Native([string]$Program, [string[]]$Arguments, [string]$Operation = '') {
+    if (!$Operation) {
+        $Operation = $Program
+        if ($Program -eq 'docker' -and $Arguments.Count) { $Operation += ' ' + $Arguments[0] }
+    }
     & $Program @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Program failed (exit $LASTEXITCODE). Later steps were not run." }
+    if ($LASTEXITCODE -ne 0) { throw "$Operation failed (exit $LASTEXITCODE). See the command output above. Later steps were not run." }
 }
 function Compose([string[]]$Arguments, [string]$ConfigFile = $SettingsFile) {
-    Native 'docker' (@('compose', '--project-directory', $Repo, '--env-file', $ConfigFile, '-f', $ComposeFile) + $Arguments)
+    # Compose can detect a terminal on stderr while PowerShell captures stdout.
+    # Its build renderer then fails to open that stdout as a Windows console.
+    # Explicit flags also override inherited COMPOSE_ANSI/COMPOSE_PROGRESS values.
+    Native 'docker' (@('compose', '--ansi', 'never', '--progress', 'plain', '--project-directory', $Repo, '--env-file', $ConfigFile, '-f', $ComposeFile) + $Arguments) ("docker compose " + ($Arguments -join ' '))
 }
 function PrivateDirectory([string]$Directory) {
     New-Item -ItemType Directory -Path $Directory -Force | Out-Null
