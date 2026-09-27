@@ -21,6 +21,10 @@ with Linux containers. Keep the computer awake while phones use the app.
 The launcher requests Windows administrator access only for `setup-phone` or
 `firewall`. Use the same Windows account that owns the pilot. It does not change
 the computer's PowerShell execution policy. Managed-device policies still apply.
+The administrator window waits for a key before closing, including when PowerShell
+cannot load the script. Read any error before closing it; the launcher returns the
+original command exit code. Startup errors must be resolved before phone setup
+can finish.
 
 ## Phone setup behavior
 

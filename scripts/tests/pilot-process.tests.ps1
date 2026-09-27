@@ -94,8 +94,49 @@ exit 7
         Assert ($ExitCode -is [int] -and $ExitCode -eq 7) 'Launcher mixed child output into its exit code or lost the failure.'
         Assert ((Get-Content -LiteralPath (Join-Path $LauncherDirectory 'received-action.txt') -Raw) -eq 'restart') 'Launcher did not run the requested action.'
         $Passed++; Write-Host 'PASS The real Windows child launches from a path containing spaces and returns only its exit code'
+
+        # Exercise the batch wrapper without requesting UAC or touching the host.
+        # Its pause must survive both normal script completion and a parse error
+        # that prevents any PowerShell cleanup/finally block from running.
+        Copy-Item -LiteralPath (Join-Path $SourceRoot 'scripts/pilot-elevated.cmd') -Destination $LauncherDirectory
+        foreach ($Case in @(
+            @{ Script = 'param([string]$Action, [switch]$Elevated)'; ExitCode = 0 },
+            @{ Script = 'param('; ExitCode = 1 }
+        )) {
+            [System.IO.File]::WriteAllText((Join-Path $LauncherDirectory 'pilot-menu.ps1'), $Case.Script, $Utf8)
+            $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $StartInfo.FileName = 'cmd.exe'
+            $StartInfo.Arguments = '/d /s /c ""{0}" setup-phone"' -f (Join-Path $LauncherDirectory 'pilot-elevated.cmd')
+            $StartInfo.UseShellExecute = $false
+            $StartInfo.CreateNoWindow = $true
+            $StartInfo.RedirectStandardInput = $true
+            $StartInfo.RedirectStandardOutput = $true
+            $StartInfo.RedirectStandardError = $true
+            $Child = [System.Diagnostics.Process]::Start($StartInfo)
+            try {
+                $ErrorOutput = $Child.StandardError.ReadToEndAsync()
+                $Timer = [System.Diagnostics.Stopwatch]::StartNew()
+                do {
+                    $Line = $Child.StandardOutput.ReadLineAsync()
+                    Assert ($Line.Wait([Math]::Max(1, 15000 - [int]$Timer.ElapsedMilliseconds))) 'Wrapper did not report the child result.'
+                    $Text = $Line.Result
+                    Assert ($null -ne $Text) 'Wrapper exited before reporting the child result.'
+                } until ($Text -like 'Command exit code:*')
+                Assert ($Text -like "Command exit code: $($Case.ExitCode).*") 'Wrapper lost the original command result.'
+                Assert (!$Child.WaitForExit(250)) 'Administrator window closed without waiting for a key.'
+                $Child.StandardInput.WriteLine(' ')
+                $Child.StandardInput.Flush()
+                Assert ($Child.WaitForExit(5000)) 'Wrapper did not exit after acknowledgement.'
+                Assert ($Child.ExitCode -eq $Case.ExitCode) 'Pause replaced the original exit code.'
+                if ($Case.ExitCode -eq 1) { Assert ($ErrorOutput.Result -match 'ParserError') 'The startup error was not visible.' }
+            } finally {
+                if (!$Child.HasExited) { $Child.Kill(); $Child.WaitForExit() }
+                $Child.Dispose()
+            }
+        }
+        $Passed++; Write-Host 'PASS The administrator wrapper waits after success and startup failure, retaining the original exit code'
     } else {
-        $Skipped++; Write-Host 'SKIP Real Windows launcher: requires powershell.exe on Windows'
+        $Skipped += 2; Write-Host 'SKIP Real Windows launcher and administrator wrapper: require Windows'
     }
 } finally {
     foreach ($Name in $EnvironmentNames) { [Environment]::SetEnvironmentVariable($Name, $SavedEnvironment[$Name], 'Process') }
