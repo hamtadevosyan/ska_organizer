@@ -5,12 +5,13 @@ import AuthProvider from "./auth/AuthProvider";
 import AuthGate from "./auth/AuthGate";
 import AppShell from "./components/AppShell";
 import AppRoutes from "./router"; // router file
+import PwaProvider from "./pwa/PwaProvider";
 
 const App = () => {
   return (
-    <AuthProvider><AuthGate><BrowserRouter>
+    <PwaProvider><AuthProvider><AuthGate><BrowserRouter>
       <AppShell><AppRoutes /></AppShell>
-    </BrowserRouter></AuthGate></AuthProvider>
+    </BrowserRouter></AuthGate></AuthProvider></PwaProvider>
   );
 };
 

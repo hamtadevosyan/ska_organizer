@@ -81,6 +81,23 @@ jobs:
           assert manifest and any(entry['url'] == '/index.html' for entry in manifest)
           assert all(entry['url'] == '/index.html' or entry['url'].startswith('/assets/') for entry in manifest)
           PY
+          curl --fail --silent --show-error --cacert .pilot/root.crt -D .pilot/manifest-headers -o .pilot/manifest.json https://localhost:8443/manifest.webmanifest
+          for icon in academy-192 academy-512 academy-maskable-512 apple-touch-icon; do
+            curl --fail --silent --show-error --cacert .pilot/root.crt -o ".pilot/$icon.png" "https://localhost:8443/assets/icons/$icon.png"
+          done
+          python3 - <<'PY'
+          import json, struct
+          from pathlib import Path
+          headers = Path('.pilot/manifest-headers').read_text().lower()
+          assert 'application/manifest+json' in headers and 'no-store' in headers
+          manifest = json.loads(Path('.pilot/manifest.json').read_text())
+          assert manifest['name'] == 'Smart Kids Academy'
+          assert manifest['display'] == 'standalone' and manifest['start_url'] == '/dashboard'
+          for name, size in [('academy-192', 192), ('academy-512', 512), ('academy-maskable-512', 512), ('apple-touch-icon', 180)]:
+              png = Path(f'.pilot/{name}.png').read_bytes()
+              assert png[:8] == b'\x89PNG\r\n\x1a\n'
+              assert struct.unpack('>II', png[16:24]) == (size, size)
+          PY
           code=$(curl --silent --cacert .pilot/root.crt -o /dev/null -w '%{http_code}' https://localhost:8443/api/rooms)
           test "$code" = 401
           curl --fail --silent --show-error --cacert .pilot/root.crt -D .pilot/login-headers -o /dev/null \

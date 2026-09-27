@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { roleLabels, useAuth } from '../auth/context';
 import { getMoreItems } from './navigation';
 import AppModal from './AppModal';
+import AppHelpButton from '../pwa/AppHelpButton';
 
 type Props = {
   onDismiss: () => void; onChangePassword: () => void; onSignOut: () => void;
@@ -19,6 +20,7 @@ export default function MoreNavigation({ onDismiss, onChangePassword, onSignOut,
         <item.icon size={20} aria-hidden="true" /><span>{item.label}</span>
       </NavLink>)}
     </nav>
+    <div className="mt-4 border-t border-slate-200 px-3 pt-3"><AppHelpButton onOpen={onDismiss} /></div>
     <section aria-label="Your account" className="mt-4 border-t border-slate-200 pt-4">
       <p className="break-words font-semibold text-slate-900">{account?.displayName}</p>
       <p className="mb-3 text-sm text-slate-600">{account && roleLabels[account.role]}</p>

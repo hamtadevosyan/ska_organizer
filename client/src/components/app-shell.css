@@ -26,10 +26,10 @@
 .sidebar-note>span { display: grid; place-items: center; width: 43px; height: 43px; margin-bottom: 14px; border-radius: 16px; color: #986109; background: #ffdd69; transform: rotate(-8deg); }
 .sidebar-note p { color: #475773; font-size: 15px; font-weight: 700; line-height: 1.7; letter-spacing: -.3px; }
 .app-workspace { min-width: 0; background: radial-gradient(ellipse at 95% 0%, #e9f5ff90, transparent 45%), radial-gradient(ellipse at 3% 45%, #fff4cd45, transparent 50%), var(--ska-paper); }
-.app-topbar { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 38px; background: #ffffffbd; border-bottom: 1px solid var(--ska-line); }
+.app-topbar { min-height: 78px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 38px; background: #ffffffbd; border-bottom: 1px solid var(--ska-line); }
 .app-breadcrumb { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--ska-muted); }
 .app-breadcrumb strong { color: var(--ska-ink); font-weight: 650; }
-.desktop-account { display: flex; align-items: center; gap: 18px; }
+.desktop-account { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
 .account-name { max-width: 180px; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; }
 .account-name small { display: block; margin-top: 3px; color: var(--ska-muted); font-size: 10px; font-weight: 500; }
 .desktop-account .ska-link { font-size: 11px; }

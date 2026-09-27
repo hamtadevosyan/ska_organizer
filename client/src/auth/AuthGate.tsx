@@ -4,6 +4,7 @@ import { useAuth } from './context';
 import { authError } from './transport';
 import AcademyBrand from '../components/AcademyBrand';
 import ServerConnection from '../components/ServerConnection';
+import AppHelpButton from '../pwa/AppHelpButton';
 
 export function PasswordForm({ onDone }: { onDone?: () => void }) {
   const { changePassword, account, signOut } = useAuth();
@@ -65,6 +66,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         <button disabled={busy} className="ska-button is-primary w-full">{busy ? 'Signing in…' : 'Sign in'}</button>
         <p className="text-sm text-slate-500">Need access or a password reset? Contact your administrator.</p>
       </form>}
+      <AppHelpButton />
     </section>
   </main></>;
 }

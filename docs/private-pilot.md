@@ -209,5 +209,7 @@ guidance. It does not cache API responses or queue offline saves. Keep using
 the trusted HTTPS address; plain HTTP on a LAN IP does not support this worker.
 Close all app tabs and reopen after an update when unsaved work is finished so
 a waiting worker can activate. See [Static caching and local connections](pwa-caching.md)
-for outage recovery, limits and checks. Install buttons and device installation
-help are follow-up work in SKAO-80.
+for outage recovery, limits and checks. **App setup**, available at sign-in and
+in the desktop toolbar or phone's More menu, now provides installation help and
+update checks. See [Install Smart Kids Academy](pwa-installation.md), including
+its Android installation privacy note, before setting up designated devices.
