@@ -1,6 +1,7 @@
 *.sh text eol=lf
 *.js text eol=lf
 *.ps1 text eol=lf
+*.cmd text eol=crlf
 *.yaml text eol=lf
 *.yml text eol=lf
 *Dockerfile text eol=lf

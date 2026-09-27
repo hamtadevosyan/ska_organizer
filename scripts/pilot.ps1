@@ -2,10 +2,11 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0, Mandatory=$true)]
-    [ValidateSet('init','resume-install','start','stop','restart','status','logs','admin','trust','backup','verify','recover','import','update','schedule','firewall')]
+    [ValidateSet('init','resume-install','start','stop','restart','status','logs','admin','trust','backup','verify','recover','import','update','schedule','firewall','lan','doctor','certificate')]
     [string]$Action,
     [string]$PilotHost = 'localhost',
     [string]$BindAddress = '127.0.0.1',
+    [string]$InterfaceAlias,
     [string]$TimeZone = 'America/Los_Angeles',
     [string]$BackupDirectory,
     [string]$BackupName,
@@ -47,7 +48,7 @@ function WriteSettings([hashtable]$Values, [string]$Destination = $SettingsFile)
     Move-Item -LiteralPath $Temporary -Destination $Destination -Force
 }
 function ReadSettings {
-    if (!(Test-Path -LiteralPath $SettingsFile)) { throw 'Run init first, or restore the original .pilot settings and secrets.' }
+    if (!(Test-Path -LiteralPath $SettingsFile)) { throw 'No saved pilot settings here. Use the existing installed pilot checkout, or restore its original .pilot settings and secrets. init is only for a new installation.' }
     $Result = @{}
     foreach ($Line in [System.IO.File]::ReadAllLines($SettingsFile)) {
         if ($Line -notmatch "^([A-Z_]+)='([^']*)'$") { throw 'Invalid .pilot/runtime.env format.' }
@@ -113,10 +114,14 @@ function CopyCertificate {
     Native 'docker' @('cp', "${Container}:/data/caddy/pki/authorities/local/root.crt", (Join-Path $Private 'root.crt'))
 }
 
+. (Join-Path $PSScriptRoot 'pilot-network.ps1')
+
 try {
     if ($env:OS -ne 'Windows_NT') { throw 'Use this helper in Windows PowerShell on the Docker Desktop host. Ubuntu remains your development environment.' }
     Get-Command docker -ErrorAction Stop | Out-Null
-    Native 'docker' @('info','--format','{{.OSType}}') | Out-Null
+    if ([string](Native 'docker' @('info','--format','{{.OSType}}')) -ne 'linux') {
+        throw 'Switch Docker Desktop to Linux containers and rerun this command.'
+    }
     Native 'docker' @('compose','version') | Out-Null
     if ($Action -eq 'init') {
         if (Test-Path -LiteralPath $Private) { throw '.pilot already exists. Use start, or follow the recovery guide; init never replaces secrets.' }
@@ -149,8 +154,10 @@ try {
             PILOT_RELEASE=$Commit; PILOT_DATABASE='ska_organizer'; PILOT_BACKUP_DIR=$BackupDirectory.Replace('\','/') }
         WriteSettings $State
         [System.IO.File]::WriteAllText($InstallingFile, $Commit, $Utf8)
-    } else { $State = ReadSettings }
+    } else { $null = ReadSettings }
     $Lock = [System.IO.File]::Open((Join-Path $Private 'operation.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
+    # Read after taking the lock: another operation may have just changed settings.
+    if ($Action -ne 'init') { $State = ReadSettings }
     Compose @('config','--quiet')
     if ($Action -eq 'resume-install') {
         if (!(Test-Path -LiteralPath $InstallingFile)) { throw 'No incomplete installation is recorded. Use update for an existing pilot.' }
@@ -222,7 +229,11 @@ try {
         }
         'update' {
             $Next = $State.Clone(); $Next.PILOT_RELEASE=GitRelease
-            if ($Next.PILOT_RELEASE -eq $State.PILOT_RELEASE) { throw 'This commit is already selected. Use start or status. For a failed initial install, see the resume instructions.' }
+            if ($Next.PILOT_RELEASE -eq $State.PILOT_RELEASE) {
+                Compose @('up','-d','--no-build','--wait','--wait-timeout','180','db','server','web')
+                Write-Host 'This release is already selected and healthy. No database copy or migration was needed.'
+                break
+            }
             $Candidate = Join-Path $Private 'candidate.env'
             WriteSettings $Next $Candidate
             Compose @('--profile','operations','build','server','web','tools') $Candidate
@@ -247,11 +258,20 @@ try {
             Write-Host 'Daily backup scheduled for 03:00, or when next available while you are signed in and Docker is running. Check Task Scheduler results and backup dates regularly.'
         }
         'firewall' {
-            if ($State.PILOT_BIND -eq '127.0.0.1') { throw 'This pilot uses loopback only. A firewall rule cannot enable LAN access.' }
-            $Rule = 'SKAO private HTTPS 8443'
-            if (Get-NetFirewallRule -DisplayName $Rule -ErrorAction SilentlyContinue) { throw 'The firewall rule already exists. Review it in Windows Firewall.' }
-            New-NetFirewallRule -DisplayName $Rule -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8443 -LocalAddress $State.PILOT_BIND -RemoteAddress LocalSubnet -Profile Private | Out-Null
+            Assert-PilotAdministrator
+            $Target = Select-PilotLanAddress -RequestedAddress $State.PILOT_BIND -InterfaceAlias $InterfaceAlias
+            Assert-PilotFirewallEnabled
+            Set-PilotFirewall $Target (Get-PilotFirewallSnapshot)
+            Write-Host 'Private-network HTTPS rule is ready. Running firewall again repairs the same rule.'
         }
+        'lan' {
+            if ($PSBoundParameters.ContainsKey('PilotHost')) { throw 'lan uses the selected Windows IPv4 address as its HTTPS hostname. PilotHost applies to init only.' }
+            $RequestedAddress = ''
+            if ($PSBoundParameters.ContainsKey('BindAddress')) { $RequestedAddress = $BindAddress }
+            Set-PilotLan $State $RequestedAddress $InterfaceAlias
+        }
+        'doctor' { Test-PilotDoctor $State }
+        'certificate' { Export-PilotPhoneCertificate $State }
     }
 } catch {
     Write-Error $_.Exception.Message -ErrorAction Continue
