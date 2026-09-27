@@ -423,6 +423,7 @@ try {
         $script:Admin = $false; $script:ChildExit = 5
         Assert ((Invoke-SkaoAction 'setup-phone') -eq 5) 'Lost elevated exit code.'
         Assert ($script:Calls.Count -eq 1 -and $script:Calls[0].Program -eq 'elevate' -and $script:Calls[0].Arguments[-1] -eq 'RunAs') 'Missing elevation.'
+        Assert ($script:Calls[0].Arguments[0] -eq 'cmd.exe' -and $script:Calls[0].Arguments[1] -match '^/d /s /c ""[^"]+pilot-elevated\.cmd" setup-phone"$') 'Missing the startup-error wrapper or path quoting.'
         Assert ($script:Calls[0].Arguments[1] -notmatch 'ExecutionPolicy') 'Changed execution policy.'
     }
     Test 'Launcher does not deploy after a failed update pull' {

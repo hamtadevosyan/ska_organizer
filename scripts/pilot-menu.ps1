@@ -44,9 +44,10 @@ function Test-SkaoAdministrator {
 function Invoke-SkaoAction([string]$Name) {
     if ($Name -in @('setup-phone','firewall') -and !(Test-SkaoAdministrator)) {
         # Windows UAC applies only to firewall configuration, not everyday operations.
-        # A file path cannot contain a quote; the action has already been validated.
-        $Arguments = '-NoProfile -File "{0}" -Action {1} -Elevated' -f (Join-Path $PSScriptRoot 'pilot-menu.ps1'), $Name
-        $Process = Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments -WorkingDirectory $Repo -Verb RunAs -Wait -PassThru -ErrorAction Stop
+        # Pause outside PowerShell so policy/parse errors before script startup
+        # stay visible too. The wrapper preserves PowerShell's exit status.
+        $Arguments = '/d /s /c ""{0}" {1}"' -f (Join-Path $PSScriptRoot 'pilot-elevated.cmd'), $Name
+        $Process = Start-Process -FilePath 'cmd.exe' -ArgumentList $Arguments -WorkingDirectory $Repo -Verb RunAs -Wait -PassThru -ErrorAction Stop
         return $Process.ExitCode
     }
     if ($Name -eq 'update') { Update-SkaoCheckout }
@@ -88,8 +89,5 @@ try {
 } catch {
     $ExitCode = 1
     Write-Host $_.Exception.Message -ForegroundColor Red
-} finally {
-    # Keep the separate UAC window visible so the phone URL and any error can be read.
-    if ($Elevated) { Read-Host "Command exit code: $ExitCode. Press Enter to close this window" | Out-Null }
 }
 exit $ExitCode
