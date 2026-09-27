@@ -96,7 +96,7 @@ exit 7
         $Passed++; Write-Host 'PASS The real Windows child launches from a path containing spaces and returns only its exit code'
 
         # Exercise the batch wrapper without requesting UAC or touching the host.
-        # Its pause must survive both normal script completion and a parse error
+        # Its input prompt must survive normal script completion and a parse error
         # that prevents any PowerShell cleanup/finally block from running.
         Copy-Item -LiteralPath (Join-Path $SourceRoot 'scripts/pilot-elevated.cmd') -Destination $LauncherDirectory
         foreach ($Case in @(
@@ -123,11 +123,11 @@ exit 7
                     Assert ($null -ne $Text) 'Wrapper exited before reporting the child result.'
                 } until ($Text -like 'Command exit code:*')
                 Assert ($Text -like "Command exit code: $($Case.ExitCode).*") 'Wrapper lost the original command result.'
-                Assert (!$Child.WaitForExit(250)) 'Administrator window closed without waiting for a key.'
-                $Child.StandardInput.WriteLine(' ')
+                Assert (!$Child.WaitForExit(250)) 'Administrator window closed without waiting for Enter.'
+                $Child.StandardInput.WriteLine()
                 $Child.StandardInput.Flush()
                 Assert ($Child.WaitForExit(5000)) 'Wrapper did not exit after acknowledgement.'
-                Assert ($Child.ExitCode -eq $Case.ExitCode) 'Pause replaced the original exit code.'
+                Assert ($Child.ExitCode -eq $Case.ExitCode) 'Input acknowledgement replaced the original exit code.'
                 if ($Case.ExitCode -eq 1) { Assert ($ErrorOutput.Result -match 'ParserError') 'The startup error was not visible.' }
             } finally {
                 if (!$Child.HasExited) { $Child.Kill(); $Child.WaitForExit() }
