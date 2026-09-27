@@ -187,8 +187,13 @@ function Assert-Preserved {
 
 try {
     # A fresh synthetic CA only for public-certificate format checks. No key is written to disk.
-    $RSA = [System.Security.Cryptography.RSA]::Create()
-    $RSA.KeySize = 2048
+    # Windows PowerShell's default RSA provider exposes KeySize as read-only.
+    # Select the key size at construction on both supported PowerShell editions.
+    if ($PSVersionTable.PSEdition -eq 'Desktop') {
+        $RSA = [System.Security.Cryptography.RSACng]::new(2048)
+    } else {
+        $RSA = [System.Security.Cryptography.RSA]::Create(2048)
+    }
     $Request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=SKAO synthetic automation CA', $RSA,
         [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
     $Request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true,$false,0,$true))
