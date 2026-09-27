@@ -5,8 +5,9 @@ explain a lost connection. Records still require the academy server. This change
 does not add offline record storage, queued saves or synchronization.
 
 SKAO-79 supplies the caching policy, worker, registration and connection screens.
-The manifest, home-screen icons, install/help interface and device installation
-review belong to SKAO-80. This change alone is not the finished installable PWA.
+SKAO-80 extends that integration with a manifest, home-screen icons, installation
+help and update notices. See [Install Smart Kids Academy](pwa-installation.md)
+for device instructions and the browser-managed installation privacy boundary.
 
 ## What the worker can store
 
@@ -108,8 +109,10 @@ The worker registers only for a secure production build, with
 `updateViaCache: 'none'`. It does not call `skipWaiting` or reload open pages.
 An updated worker waits for tabs controlled by the old worker to close; after
 activation it removes only older `skao-static-v1-` caches. Close all app tabs and
-reopen after a release when ready to discard or finish unsaved work. Installation
-and update help in the app are follow-up work in SKAO-80.
+reopen after a release when unsaved work is finished. **App setup** now includes
+installation/update help, and the app watches for waiting updates. Long-lived
+visible windows check hourly, and returning to the app checks with a five-minute
+throttle. No automatic reload or forced worker activation is added.
 
 From `client`, run `npm run build`, `npm run test:pwa`, `npm test`, then the two
 browser suites sequentially: `npm run test:browser` and

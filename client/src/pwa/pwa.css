@@ -1,0 +1,25 @@
+.pwa-help { display: grid; gap: 18px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.pwa-help h3 { font-size: 17px; font-weight: 750; line-height: 1.4; }
+.pwa-intro { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 20px; background: linear-gradient(125deg, #edf5ff, #fff3bd); }
+.pwa-intro img { width: 68px; height: 68px; flex-shrink: 0; border-radius: 17px; box-shadow: 0 4px 15px #273c6110; }
+.pwa-intro div { min-width: 0; }
+.pwa-intro p { margin-top: 6px; }
+.pwa-local-note { padding: 13px 15px; border-radius: 14px; background: #fff6dd; color: #69511d; }
+.pwa-installed { display: flex; align-items: center; gap: 10px; color: #24558c; }
+.pwa-installed svg { flex-shrink: 0; }
+.pwa-device-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.pwa-device-buttons button { display: flex; align-items: center; justify-content: center; flex: 1 1 110px; gap: 7px; padding: 10px; border: 1px solid #d7e3f2; border-radius: 12px; font-weight: 700; }
+.pwa-device-buttons button[aria-pressed="true"] { background: #edf5ff; color: #245fb9; border-color: #a5c9f9; }
+.pwa-steps { list-style: decimal; padding-left: 24px; display: grid; gap: 12px; }
+.pwa-steps li::marker { color: #2866da; font-weight: 750; }
+.pwa-small { color: var(--ska-muted); font-size: 12px; }
+.pwa-update-help { display: grid; gap: 12px; padding-top: 18px; border-top: 1px solid var(--ska-line); }
+.pwa-update-help h3 { display: flex; align-items: center; gap: 8px; }
+.pwa-update-help h3 svg { flex-shrink: 0; }
+.pwa-update-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: max(14px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 14px max(20px, env(safe-area-inset-left)); background: #edf5ff; color: #24558c; border-bottom: 1px solid #cddff9; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.pwa-update-notice>div { flex: 1 1 230px; min-width: 0; }
+.pwa-update-notice>svg { flex-shrink: 0; }
+.pwa-update-notice :focus-visible, .pwa-help-button:focus-visible { outline: 3px solid #126fc1; outline-offset: 3px; }
+.auth-card>.pwa-help-button { margin-top: 20px; }
+@media (max-width: 359px) { .pwa-intro { align-items: flex-start; padding: 12px; gap: 10px; } .pwa-intro img { width: 52px; height: 52px; } }
+@media print { .pwa-update-notice, .pwa-help-button { display: none; } }

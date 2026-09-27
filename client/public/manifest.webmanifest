@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "Smart Kids Academy",
+  "short_name": "Smart Kids",
+  "description": "Your academy day, together in one place.",
+  "lang": "en",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fbfcff",
+  "theme_color": "#2866da",
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/assets/icons/academy-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/academy-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/academy-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
