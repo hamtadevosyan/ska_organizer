@@ -84,7 +84,9 @@ if (require.main === module) {
         console.log('Mock storage enabled: data is lost when the server stops.');
       }
       const port = process.env.PORT || 3001;
-      const server = app.listen(port, () => console.log(`Server running on port ${port}`));
+      // Native deployments bind loopback; Docker/development retain their default.
+      const host = process.env.BIND_HOST || undefined;
+      const server = app.listen(port, host, () => console.log(`Server running on port ${port}`));
       let closing = false;
       const shutdown = () => {
         if (closing) return;

@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew Smart Kids Academy certificate using DNS verification
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/skao/ubuntu.py _renew
+UMask=0077
+PrivateTmp=true

@@ -1,0 +1,30 @@
+[Unit]
+Description=Smart Kids Academy API
+PartOf=skao.target
+Requires=skao-firewall.service
+Wants=network-online.target postgresql.service
+After=network-online.target postgresql.service skao-firewall.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=skao-api
+Group=skao-api
+WorkingDirectory=/opt/skao/current/server
+EnvironmentFile=/etc/skao/native/server.env
+ExecStartPre=/usr/bin/test ! -e /etc/skao/native/activation.pending
+ExecStart=@NODE@ /opt/skao/current/server/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=

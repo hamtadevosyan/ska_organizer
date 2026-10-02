@@ -1,0 +1,36 @@
+[Unit]
+Description=Smart Kids Academy HTTPS
+PartOf=skao.target
+Requires=skao-firewall.service
+Wants=network-online.target skao-api.service
+After=network-online.target skao-firewall.service skao-api.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+User=skao-web
+Group=skao-web
+ExecStartPre=/usr/bin/test ! -e /etc/skao/native/activation.pending
+ExecStart=/usr/bin/caddy run --config /etc/skao/native/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/skao/native/Caddyfile --adapter caddyfile --address unix//run/skao-web/admin.sock --force
+Environment=XDG_DATA_HOME=/var/lib/skao-web
+Environment=XDG_CONFIG_HOME=/var/lib/skao-web
+StateDirectory=skao-web
+StateDirectoryMode=0700
+RuntimeDirectory=skao-web
+RuntimeDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE

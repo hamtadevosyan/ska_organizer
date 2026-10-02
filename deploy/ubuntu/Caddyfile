@@ -1,0 +1,64 @@
+{
+	admin unix//run/skao-web/admin.sock
+	auto_https off
+	servers {
+		protocols h1 h2
+	}
+	# Do not put request URLs, headers or child information in the journal.
+	log {
+		exclude http.log.error http.log.access
+	}
+}
+
+https://@DOMAIN@ {
+	bind @LAN_IP@ 127.0.0.1
+	tls /etc/skao/native/tls/fullchain.pem /etc/skao/native/tls/privkey.pem
+	encode gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Frame-Options DENY
+		-Server
+	}
+	@outside not remote_ip @LAN_CIDR@ 127.0.0.1
+	# A route preserves this access check before any application handler.
+	route {
+		respond @outside "Local network access only." 403
+		@api path /api /api/*
+		handle @api {
+			header Cache-Control "no-store"
+			reverse_proxy 127.0.0.1:3001
+		}
+		handle /sw.js {
+			root * /opt/skao/current/client/dist
+			header Cache-Control "no-cache, no-store, must-revalidate"
+			file_server
+		}
+		handle /manifest.webmanifest {
+			root * /opt/skao/current/client/dist
+			header Cache-Control "no-cache, no-store, must-revalidate"
+			file_server
+		}
+		handle /assets/* {
+			root * /opt/skao/current/client/dist
+			header Cache-Control "no-cache"
+			file_server
+		}
+		handle {
+			root * /opt/skao/current/client/dist
+			try_files {path} /index.html
+			header Cache-Control "no-cache"
+			file_server
+		}
+	}
+	handle_errors {
+		header {
+			Cache-Control "no-store"
+			X-Content-Type-Options nosniff
+			Referrer-Policy same-origin
+			X-Frame-Options DENY
+			-Server
+		}
+		respond "The academy computer is temporarily unavailable. Please try again." 503
+	}
+}
