@@ -34,6 +34,13 @@ follow [PostgreSQL setup and restart verification](docs/postgresql-setup.md).
 This includes the Ubuntu VMware / Windows Chrome workflow, migrations, optional
 sample data and isolated database tests.
 
+For Ubuntu 24.04 on an AMD64/ARM64 PC, VM or Raspberry Pi, use the
+[native LAN HTTPS setup and maintenance scripts](docs/ubuntu-native.md).
+On a development VM, `bash SKAO.sh build` validates a temporary production build
+without installing services or configuring certificates, DNS or a database.
+From the repository root, `bash SKAO.sh setup` builds the app and configures
+trusted HTTPS, local DNS, boot startup, certificate renewal and a sleep inhibitor.
+
 The meal planner now saves and reopens separate calendar weeks with headcounts,
 stock and historical recipe quantities. See [Saved weekly menus](docs/saved-weekly-menus.md)
 for the dated API, historical snapshots and usage instructions.

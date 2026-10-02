@@ -1,0 +1,21 @@
+[Unit]
+Description=Keep Smart Kids Academy available during normal idle sleep
+PartOf=skao.target
+After=systemd-logind.service
+Requires=systemd-logind.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/systemd-inhibit --what=sleep:idle --who=SKAO --why="Smart Kids Academy serves local devices" --mode=block /usr/bin/sleep infinity
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=

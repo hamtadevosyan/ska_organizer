@@ -10,3 +10,4 @@ docker/*.env
 *.dump
 *.backup
 *.log
+__pycache__/

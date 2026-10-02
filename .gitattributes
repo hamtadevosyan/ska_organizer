@@ -4,4 +4,9 @@
 *.cmd text eol=crlf
 *.yaml text eol=lf
 *.yml text eol=lf
+*.py text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+*.target text eol=lf
+*.nft text eol=lf
 *Dockerfile text eol=lf

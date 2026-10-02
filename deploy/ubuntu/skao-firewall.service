@@ -1,0 +1,15 @@
+[Unit]
+Description=Smart Kids Academy local access restrictions
+Wants=network-online.target
+After=network-online.target nftables.service ufw.service
+Before=skao-api.service skao-web.service skao-dns.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/lib/skao/ubuntu.py _firewall
+# Keep the restrictive rules when the app stops.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=CAP_NET_ADMIN

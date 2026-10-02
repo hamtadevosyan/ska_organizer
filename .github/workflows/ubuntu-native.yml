@@ -1,0 +1,42 @@
+name: Native Ubuntu deployment checks
+
+on:
+  push:
+    branches: [main, development, 'feature/**']
+    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/tests/*ubuntu*', 'deploy/ubuntu/**', 'server/index.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
+  pull_request:
+    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/tests/*ubuntu*', 'deploy/ubuntu/**', 'server/index.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Isolated automation tests
+        run: |
+          bash -n SKAO.sh
+          python3 -m py_compile scripts/ubuntu.py
+          python3 -m unittest discover -s scripts/tests -p 'test_ubuntu.py' -v
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Build the production release as an unprivileged development user
+        run: bash SKAO.sh build
+      - name: Check actual APT lock waits in an empty temporary package database
+        run: sudo python3 scripts/tests/ubuntu_apt_check.py
+      - name: Install Ubuntu configuration validators
+        run: |
+          sudo systemctl mask caddy.service
+          sudo apt-get --error-on=any update
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y caddy dnsmasq-base nftables
+      - name: Exercise real TLS, proxy, PWA and local DNS with synthetic data
+        run: sudo env SKAO_CHECK_NFT=1 python3 scripts/tests/ubuntu_config_check.py

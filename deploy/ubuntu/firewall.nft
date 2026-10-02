@@ -1,0 +1,10 @@
+# Loaded into a dedicated table. Existing firewall rules remain in place.
+table inet skao_native {
+  chain input {
+    type filter hook input priority -10; policy accept;
+    iifname "lo" accept
+    tcp dport { 3001, @DB_PORT@ } drop
+    ip daddr @LAN_IP@ ip saddr != @LAN_CIDR@ tcp dport { 53, 443 } drop
+    ip daddr @LAN_IP@ ip saddr != @LAN_CIDR@ udp dport 53 drop
+  }
+}

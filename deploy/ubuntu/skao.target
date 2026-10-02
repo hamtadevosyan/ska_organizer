@@ -1,0 +1,7 @@
+[Unit]
+Description=Smart Kids Academy local services
+Wants=network-online.target skao-api.service skao-web.service skao-dns.service skao-awake.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target
