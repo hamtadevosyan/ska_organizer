@@ -50,6 +50,11 @@ def main():
                           f'Dir::State "{root}/state";\nDir::State::status "{root}/dpkg/status";\n'
                           f'Dir::Cache "{root}/cache";\nDir::Log "{root}/log";\n')
         env = {**os.environ, 'APT_CONFIG': str(config), 'LC_ALL': 'C'}
+        # Progress messages vary with APT version and terminal settings. Verify
+        # exit status, elapsed wait and lock-release behavior instead of wording.
+        unlocked = subprocess.run(install_command(root, 1), env=env, text=True,
+                                  capture_output=True, timeout=10)
+        assert unlocked.returncode == 0, unlocked.stdout + unlocked.stderr
         for lock_name in ('lock-frontend', 'lock'):
             lock_path = root / 'dpkg' / lock_name
             with lock_path.open('a') as lock:
@@ -60,7 +65,6 @@ def main():
                                         capture_output=True, timeout=10)
                 assert result.returncode == 100, result.stdout + result.stderr
                 assert time.monotonic() - started >= 0.8, 'APT did not wait for the lock'
-                assert 'Waiting for cache lock' in result.stdout + result.stderr
                 assert lock_path.stat().st_ino == inode, 'The lock file was replaced'
                 fcntl.lockf(lock, fcntl.LOCK_UN)
             print(f'PASS APT waits and exits safely when {lock_name} remains held')
@@ -80,8 +84,7 @@ def main():
                 fcntl.lockf(lock, fcntl.LOCK_UN)
                 out, err = process.communicate(timeout=10)
                 assert process.returncode == 0, out + err
-                assert 'Waiting for cache lock' in out + err
-                assert '0 newly installed' in out + err
+                assert (root / 'dpkg/status').read_bytes() == b'', 'Fixture package database changed'
             finally:
                 # This process belongs only to the empty fixture, never to the
                 # host updater. Ensure failed tests cannot leave a child behind.
