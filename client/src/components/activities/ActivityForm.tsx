@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, Ref } from 'react';
 import { authError } from '../../auth/transport';
 import { dayLabel, materialOptions, materialUnitLabel, saveActivity, suitable } from '../../api/activities';
@@ -7,9 +7,9 @@ import type { Room } from '../../api/rooms';
 import type { InventoryItem } from '../../api/inventory';
 
 type Props = { activity: Activity | null; room?: Room; scheduleDate?: string; nameInputRef?: Ref<HTMLInputElement>;
-  onBusyChange: (busy: boolean) => void; onSaved: (activity: Activity) => void; onClose: () => void };
+  onDirtyChange?: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void; onSaved: (activity: Activity) => void; onClose: () => void };
 const input = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2.5';
-export function ActivityForm({ activity, room, scheduleDate, nameInputRef, onBusyChange, onSaved, onClose }: Props) {
+export function ActivityForm({ activity, room, scheduleDate, nameInputRef, onDirtyChange, onBusyChange, onSaved, onClose }: Props) {
   // Older rooms can have equal age bounds. Do not copy an invalid range into a new activity.
   const roomHasAges = room?.ageMinMonths != null && room?.ageMaxMonths != null &&
     Number.isInteger(room.ageMinMonths) && Number.isInteger(room.ageMaxMonths) &&
@@ -47,6 +47,7 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, onBus
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
   }, [changed]);
+  useLayoutEffect(() => { onDirtyChange?.(changed); }, [changed, onDirtyChange]);
   function addMaterial() {
     const item = items.find((value) => value.id === itemId);
     if (!item || !/^(0|[1-9]\d{0,11})(\.\d{1,6})?$/.test(quantity) || Number(quantity) <= 0) { setError('Choose a material and enter a quantity greater than zero.'); return; }

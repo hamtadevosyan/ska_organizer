@@ -1,12 +1,18 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import axios from 'axios';
+
+import { createMemoryRouter, RouterProvider, Link, useLocation } from 'react-router-dom';
+import AuthGate from '../auth/AuthGate';
+import UnsavedChangesProvider from '../components/UnsavedChangesProvider';
 import Activities from './Activities';
 import { SignedIn } from '../tests/authFixture';
 import { testAccount } from '../tests/authAccount';
 import type { Activity, ActivityPlan, Entry } from '../api/activities';
 import type { Room } from '../api/rooms';
 
+const { transferableAbortController } = await vi.importActual<{ transferableAbortController: () => AbortController }>('node:util');
+afterEach(() => vi.unstubAllGlobals());
 vi.mock('axios');
 const room: Room = { id: 'saved-room', name: 'Sunflower', ageMinMonths: 24, ageMaxMonths: 60, capacity: 12, active: true, needsConfiguration: false, assignedChildCount: 0, availablePlaces: 12, overCapacity: false };
 const art: Activity = { id: 'saved-art', name: 'Paint a tree', description: 'Paint leaves.', durationMinutes: 20, ageMinMonths: 18, ageMaxMonths: 72, materials: [], roomId: null, version: 1 };
@@ -365,4 +371,135 @@ test('a failed activity save shows an error and restores editing and day navigat
   fail = false; fireEvent.click(within(form).getByRole('button', { name: 'Add to day' }));
   await screen.findByText('Unsaved changes');
   expect(selected(1, 'Tuesday')).toHaveValue('new-art');
+});
+
+function navigationDom() {
+  // Node fetch requires its own AbortSignal; jsdom's controller has a different realm.
+  vi.stubGlobal('AbortController', class { constructor() { return transferableAbortController(); } });
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
+}
+function navigationApp(role: 'admin' | 'viewer' = 'admin') {
+  navigationDom();
+  const router = createMemoryRouter([{ path: '*', element:
+    <SignedIn account={{ ...testAccount, role }}><UnsavedChangesProvider>
+      <Link to="/home">Home</Link><ActivityNavigationPage />
+    </UnsavedChangesProvider></SignedIn>,
+  }], { initialEntries: ['/home', '/activities'], initialIndex: 1 });
+  render(<RouterProvider router={router} />);
+  return router;
+}
+// The real planner must unmount on navigation, just as it does in AppRoutes.
+function ActivityNavigationPage() {
+  const location = useLocation();
+  return location.pathname === '/activities' ? <Activities /> : <h1>Destination</h1>;
+}
+
+test('schedule navigation keeps edits on cancel, guards history and explicitly discards', async () => {
+  const router = navigationApp(); await chooseRoom(); add();
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('dialog', { name: 'Leave your unsaved work?' });
+  expect(router.state.location.pathname).toBe('/activities');
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  expect(selected()).toHaveValue(art.id);
+  await act(async () => { await router.navigate(-1); });
+  await screen.findByRole('dialog');
+  fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
+  await screen.findByRole('heading', { name: 'Destination' });
+  await act(async () => { await router.navigate(1); });
+  await chooseRoom();
+  expect(screen.queryByRole('combobox', { name: 'Monday activity 1' })).not.toBeInTheDocument();
+});
+
+test('unfinished activity survives cancel and day changes; leaving never creates a catalog activity', async () => {
+  navigationApp(); await chooseRoom();
+  fireEvent.click(screen.getByRole('button', { name: 'Add activity' }));
+  fireEvent.change(screen.getByLabelText('Activity name'), { target: { value: 'Unfinished synthetic activity' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Tuesday' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('dialog');
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  expect(screen.getByLabelText('Activity name')).toHaveValue('Unfinished synthetic activity');
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Discard and leave' }));
+  await screen.findByRole('heading', { name: 'Destination' });
+  expect(vi.mocked(axios.post).mock.calls.some(([url]) => url.endsWith('/activity'))).toBe(false);
+});
+
+test('failed and conflicting week saves preserve the draft and its navigation guard', async () => {
+  navigationApp(); await chooseRoom(); add();
+  vi.mocked(axios.post).mockImplementation(async (url) => {
+    if (url.endsWith('/preview')) return response({ materials: [] });
+    throw { response: { status: 409, data: { error: 'Another user changed this week.' } } };
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save week' }));
+  await screen.findByRole('alert');
+  expect(selected()).toHaveValue(art.id);
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('dialog');
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  expect(selected()).toHaveValue(art.id);
+});
+
+test('successful save and readonly navigation do not prompt', async () => {
+  navigationApp(); await chooseRoom(); add();
+  fireEvent.click(screen.getByRole('button', { name: 'Save week' }));
+  await screen.findByText('Week saved.');
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('heading', { name: 'Destination' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+test('readonly planner does not block leaving', async () => {
+  navigationApp('viewer'); await chooseRoom();
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('heading', { name: 'Destination' });
+});
+
+test('navigation waits for an in-flight save and a failure keeps entered work', async () => {
+  navigationApp(); await chooseRoom(); add();
+  let rejectSave!: (error: unknown) => void;
+  vi.mocked(axios.post).mockImplementation((url) => url.endsWith('/preview') ? Promise.resolve(response({ materials: [] }))
+    : new Promise((_resolve, reject) => { rejectSave = reject; }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save week' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('dialog');
+  expect(screen.getByRole('button', { name: 'Discard and leave' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  await act(async () => rejectSave(new Error('Synthetic unavailable server')));
+  await screen.findByRole('alert');
+  expect(selected()).toHaveValue(art.id);
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  expect(await screen.findByRole('button', { name: 'Discard and leave' })).toBeEnabled();
+});
+
+test('discarding a form clears its guard without discarding a weekly draft', async () => {
+  navigationApp(); await chooseRoom(); add();
+  fireEvent.click(screen.getByRole('button', { name: 'Add activity' }));
+  fireEvent.change(screen.getByLabelText('Activity name'), { target: { value: 'Synthetic discarded form' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard activity' }));
+  expect(selected()).toHaveValue(art.id);
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('dialog');
+});
+
+test('account changes unmount both private drafts and clear a pending navigation dialog', async () => {
+  navigationDom();
+  const router = createMemoryRouter([{ path: '*', element: <UnsavedChangesProvider><Link to="/home">Home</Link><ActivityNavigationPage /></UnsavedChangesProvider> }], { initialEntries: ['/activities'] });
+  const view = render(<SignedIn><AuthGate><RouterProvider router={router} /></AuthGate></SignedIn>);
+  await chooseRoom(); add();
+  fireEvent.click(screen.getByRole('button', { name: 'Add activity' }));
+  fireEvent.change(screen.getByLabelText('Activity name'), { target: { value: 'Previous account private draft' } });
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('dialog');
+  view.rerender(<SignedIn account={{ ...testAccount, id: 'different-account' }}><AuthGate><RouterProvider router={router} /></AuthGate></SignedIn>);
+  await chooseRoom();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Activity name')).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'Monday activity 1' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('heading', { name: 'Destination' });
 });
