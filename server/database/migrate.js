@@ -13,6 +13,7 @@ const migrations = [
   { name: '011-purchase-receipts', ...require('./migrations/011-purchase-receipts') },
   { name: '012-activity-planner', ...require('./migrations/012-activity-planner') },
   { name: '013-full-day-activities', ...require('./migrations/013-full-day-activities') },
+  { name: '014-remembered-sessions', ...require('./migrations/014-remembered-sessions') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

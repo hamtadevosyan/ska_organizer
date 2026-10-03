@@ -5,7 +5,7 @@ const config = require('./config');
 const { requireSession, requireAdmin, clearCookie, readToken } = require('./middleware');
 const router = express.Router();
 function sendSession(res, session) {
-  res.cookie(config.cookieName, session.token, { ...config.cookieOptions, maxAge: config.absoluteMs });
+  res.cookie(config.cookieName, session.token, { ...config.cookieOptions, maxAge: session.maxAge });
   res.json({ account: session.account, csrfToken: session.csrfToken });
 }
 router.post('/login', async (req, res) => {
