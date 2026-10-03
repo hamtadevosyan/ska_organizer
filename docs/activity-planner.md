@@ -160,3 +160,27 @@ Create an activity requiring 6 consumable items when stock is 10; scheduling it 
 should show Needed 12 and To get 2. Reusable amounts should add during overlaps but
 be reusable afterward. Inventory should remain 10 throughout. Also check catalog
 edits and explicit updates, archived rooms, a read-only account and a two-tab conflict.
+
+## Unsaved work when navigating (SKAO-97)
+
+Home, sidebar links, the phone dock and in-app browser Back/Forward now ask
+**Keep editing** or **Discard and leave** if a schedule or activity form has
+unsaved edits. Keep editing (also Escape or closing the dialog) leaves both drafts
+in place. Discard and leave drops unsaved work; already saved catalog activities
+stay saved. Navigation never automatically saves a catalog activity or week.
+While a save is running, leaving is blocked until its result is known. Failed and
+conflicting saves keep the draft and existing version/retry behavior.
+
+Day changes and opening/closing planner details retain drafts. Room/week changes
+and Reload week retain their existing discard confirmation. Browser reload/close
+retains the native unsaved-change warning; mobile operating systems may terminate
+an app without showing it. Drafts are memory-only, so closing/reloading after
+confirming discard loses them. Sign-out, expiry and account/role changes clear the
+signed-in view and its drafts without delaying account security actions. No
+operational data is added to persistent browser storage or the service worker.
+
+Use synthetic records on desktop and iPhone/iPad to check a changed schedule and
+an unfinished activity: Home, another module, Back/Forward, phone dock, Keep editing,
+Escape, discard, failed/conflicting saves, successful save and readonly navigation.
+Verify both drafts together, switch days, and sign out/switch accounts. Reopening
+Activities should show saved records, never the previous account's unfinished work.

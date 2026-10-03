@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { useAuth } from '../auth/context';
 import { RoomSelect } from '../components/rooms/RoomSelect';
@@ -10,6 +10,7 @@ import { ActivityPrint } from '../components/activities/ActivityPrint';
 import { dayLabel, entryProblem, suitable, weekDates, materialUnitLabel } from '../api/activities';
 import type { Activity } from '../api/activities';
 import './activities.css';
+import { useUnsavedChanges } from '../components/UnsavedChangesContext';
 
 const button = 'rounded-lg border bg-white px-4 py-2.5 font-semibold disabled:opacity-50';
 export default function Activities() {
@@ -18,7 +19,13 @@ export default function Activities() {
   const rooms = useRooms();
   const planner = useActivityPlanner();
   const [form, setForm] = useState<{ activity: Activity | null; scheduleDate?: string } | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
+  const reportUnsaved = useUnsavedChanges();
   const [activitySaving, setActivitySaving] = useState(false);
+  useLayoutEffect(() => {
+    reportUnsaved(editable && (planner.dirty || formDirty), planner.saving || activitySaving);
+    return () => reportUnsaved(false, false);
+  }, [reportUnsaved, editable, planner.dirty, formDirty, planner.saving, activitySaving]);
   const activityNameRef = useRef<HTMLInputElement>(null);
   const [dayIndex, setDayIndex] = useState(0);
   const [search, setSearch] = useState('');
@@ -59,7 +66,7 @@ export default function Activities() {
         <div><h1><span className="ska-heading-icon is-purple"><CalendarDays size={24} aria-hidden="true" /></span>Activity Planner</h1><p className="mt-1 text-slate-600">Plan the whole day, one activity at a time.</p></div>
         {editable && <button className={button} disabled={!!form || planner.saving} onClick={() => setForm({ activity: null })}>Add activity</button>}
       </header>
-      {form && <ActivityForm activity={form.activity} room={room} scheduleDate={form.scheduleDate} nameInputRef={activityNameRef} onBusyChange={setActivitySaving} onClose={() => setForm(null)} onSaved={(activity) => { planner.activitySaved(activity); if (form.scheduleDate) planner.addEntry(form.scheduleDate, activity); setForm(null); }} />}
+      {form && <ActivityForm activity={form.activity} room={room} scheduleDate={form.scheduleDate} nameInputRef={activityNameRef} onDirtyChange={setFormDirty} onBusyChange={setActivitySaving} onClose={() => { setFormDirty(false); setForm(null); }} onSaved={(activity) => { planner.activitySaved(activity); if (form.scheduleDate) planner.addEntry(form.scheduleDate, activity); setFormDirty(false); setForm(null); }} />}
       <div className="ska-phone-stack flex flex-wrap items-end gap-4 rounded-2xl bg-white p-4 shadow-sm">
         <label className="min-w-48 flex-1">Room<RoomSelect rooms={rooms.rooms} value={planner.roomId} onChange={planner.chooseRoom} allowArchived disabled={rooms.loading || planner.saving || !!form} className="mt-1 block w-full rounded-lg border p-2.5" /></label>
         <label>Week starting Monday<input type="date" value={planner.weekStart} min="1970-01-05" step="7" disabled={planner.saving || !!form} onChange={(e) => planner.chooseWeek(e.target.value)} className="mt-1 block rounded-lg border p-2.5" /></label>
