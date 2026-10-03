@@ -78,8 +78,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', networkHint); window.removeEventListener('offline', networkHint);
     };
   }, [check, connection]);
-  const signIn = async (username: string, password: string) => {
-    const { data } = await axios.post<Session>(`${url}/login`, { username, password });
+  const signIn = async (username: string, password: string, rememberMe = false) => {
+    const { data } = await axios.post<Session>(`${url}/login`, { username, password, rememberMe });
     accept(data); announce();
   };
   const signOut = async () => {

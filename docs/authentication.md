@@ -66,7 +66,11 @@ Use **Change password** in the header for your own password. It requires the cur
 
 - The browser receives a host-only, HttpOnly, SameSite=Strict cookie scoped to `/api`. The cookie is Secure in production.
 - The server stores only a SHA-256 digest of the random 256-bit session credential. Passwords use salted Node `scrypt` with N=131072, r=8, p=1 and a 64-byte derived key.
-- Sessions expire after 30 minutes without operational API activity or after eight hours in total. Background session checks do not extend the idle timeout.
+- **Keep me signed in** is optional and unchecked by default. Use it only on a trusted device; anyone using an unlocked signed-in device can use that account.
+- Without the checkbox, the existing policy remains: a cookie valid for up to eight hours, with server expiry after 30 minutes without operational API activity. Closing the browser is not a guaranteed sign-out; use **Sign out** on a shared device.
+- With the checkbox, the cookie and server session last up to 30 days, with expiry after seven days without operational API activity. Reopening a browser or installed PWA restores access only after a live server authorization check. Background checks never extend idle expiry, and operational activity never extends the absolute deadline.
+- Remembered sessions use the same hashed credentials, CSRF protection, roles, revocation and no-store responses. Sign-out, account disabling, role changes and administrator password resets revoke them. Changing your own password revokes old credentials and rotates the current credential while retaining its remembered/ordinary policy.
+- Browser and installed PWA cookie stores may be separate; select the option when signing in in each. Private browsing, clearing website data, browser storage eviction or explicit sign-out can remove remembered access. This feature does not provide remote access or offline access to protected records.
 - Sign out revokes the current session in PostgreSQL; replaying a copied cookie fails. Other devices remain signed in unless the password, role or enabled status changes.
 - Expiry clears the protected screen and unsaved component state, then asks the user to sign in again. Unsaved drafts do not survive sign-out or expiry; save the menu before leaving it.
 - Credentials are not kept in localStorage. A non-secret localStorage event refreshes other open tabs after sign-in, sign-out or password changes. A background check also detects cookie changes.
@@ -75,6 +79,19 @@ Use **Change password** in the header for your own password. It requires the cur
 
 Use HTTPS for both frontend and API in production, set `NODE_ENV=production`, and configure explicit HTTPS `APP_ORIGINS`. The frontend and API must be on the same site for SameSite=Strict cookies. The documented VM development setup uses the same hostname/IP and scheme. Express does not trust forwarded IP headers by default; behind a proxy the IP limit is shared by clients behind that proxy until a trusted-proxy deployment configuration is reviewed. TLS deployment, MFA, account recovery and the private-pilot gate are separate work.
 
+## Remembered-session configuration (SKAO-102)
+
+The defaults are 30 days total and seven days idle. Optional settings:
+
+```dotenv
+REMEMBER_SESSION_ABSOLUTE_DAYS=30
+REMEMBER_SESSION_IDLE_DAYS=7
+```
+
+Both must be whole numbers from 1 to 90 and idle cannot exceed total. Invalid settings stop startup. Reducing the total limit also caps existing remembered sessions by their original creation time; changing settings cannot revive an expired or revoked credential. Ordinary session limits remain unchanged.
+
+For a directly run development/server installation, set these in `server/.env` and restart the server. For the existing native Ubuntu deployment, an administrator can set them in the root-only `/etc/skao/native/server.env` and run `bash SKAO.sh restart`. Do not paste that file into chat: it also contains database credentials. Normal native `update` preserves this installed environment file; rerunning `setup` can regenerate it. The defaults work without any configuration edit.
+
 ## API reference
 
 All responses containing authentication state have `Cache-Control: no-store`. No password or password hash is included in account responses.
@@ -82,7 +99,7 @@ All responses containing authentication state have `Cache-Control: no-store`. No
 | Method and path | Access and behavior |
 |---|---|
 | `GET /api/health` | Public, status only |
-| `POST /api/auth/login` | Allowed Origin + JSON `{username,password}`; sets session cookie; returns `{account,csrfToken}` |
+| `POST /api/auth/login` | Allowed Origin + JSON `{username,password,rememberMe?}` (optional boolean, default false); sets session cookie; returns `{account,csrfToken}` |
 | `GET /api/auth/session` | Session cookie; returns account and CSRF token; does not extend idle time |
 | `POST /api/auth/logout` | Cookie + CSRF + allowed Origin; revokes session; 204 |
 | `POST /api/auth/password` | Cookie + CSRF + allowed Origin; `{currentPassword,password}`; rotates session |
@@ -100,6 +117,8 @@ Errors use `{error:{message,code}}` where applicable: HTTP 401 for missing/expir
 Successful account changes, sign-in/out and operational mutations record the actor's account ID, username snapshot, action, record ID where available, and timestamp. Passwords, request bodies, cookies and CSRF/session tokens are excluded. The attendance `recordedBy` field is assigned from the authenticated account, rather than a caller-supplied value.
 
 Operational route handlers use `audited(action, controller)`. This rechecks the session and write permission under the authentication lock, buffers the controller response, and commits the mutation and audit insert in one transaction. If audit insertion fails, the mutation rolls back and returns no success response. Nested catalog and saved-menu operations reuse that transaction. A concurrent disable, password reset or role change cannot pass between this permission check and the write commit. New mutating routes must use the wrapper; do not send a response before committing audit data.
+
+Migration `014-remembered-sessions` adds a non-null `remembered` boolean with default false to existing sessions. It preserves existing accounts, session expiry and operational records; it does not opt anyone in automatically. Apply it with the normal backup/migration process before running the new backend.
 
 Migration `004-accounts-and-sessions` adds `Accounts`, `Sessions`, `LoginAttempts` and `AuditEvents`. It does not modify or seed operational data. The normal application requires migrations before startup. The isolated browser-test fixture is the only executable fixture that installs a known synthetic login, and it explicitly uses an in-memory test adapter.
 
@@ -137,3 +156,17 @@ For manual verification, create a synthetic account, complete its required first
 - **No account yet:** run `npm run admin:create` in the Ubuntu terminal after migrating. The empty login screen does not create accounts automatically.
 
 Design references: [OWASP password storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), [OWASP session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), [OWASP CSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
+
+## Remembered-login acceptance on actual devices
+
+Use a synthetic account on the trusted LAN. Browser automation does not replace these actual iPhone/iPad/PWA checks:
+
+1. Sign out, sign in with the checkbox selected, close the browser or installed app fully, and reopen it. Verify that private screens appear only after the server checks the session.
+2. Reopen after more than 30 minutes of inactivity. Remembered login should still work. On a test installation, shorten the configured policy or use synthetic test records to verify idle/absolute expiry; never change production records to accelerate a test.
+3. Restart the native app services, reopen, and confirm the valid remembered session still works. For restart durability, use PostgreSQL, not the in-memory browser fixture.
+4. Sign out, close/reopen and confirm the login screen returns. Sign in as another synthetic user and verify the previous user's unsaved drafts are gone.
+5. Disable/change the user's access or reset its password from a separate administrator session; reopen and confirm another login is required. A forced temporary-password change retains the selected policy after choosing the new password.
+6. Leave the checkbox unchecked and confirm the previous eight-hour/30-minute policy still applies. Use explicit sign-out when finished.
+7. Try reopening while the Pi is unavailable: show the connection screen; do not bypass authentication. Restore the connection and verify the live session or sign-in screen, as appropriate.
+
+Automated checks: `npm test -- --silent` in server, `npm run test:postgres -- --silent` against the separate test database, and `npm run test:browser -- remembered-login.spec.ts` in client. The browser scenario uses a temporary real Chromium profile, closes/reopens it and removes it afterward. It contains only synthetic account data and must never be reused with real accounts. PostgreSQL scenarios cover additive migration, reconnect, a new Node process, and revocation across restarts.

@@ -37,12 +37,13 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
 export default function AuthGate({ children }: { children: ReactNode }) {
   const { account, ready, notice, signIn, serverUnavailable, retry } = useAuth();
   const [username, setUsername] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(''); setBusy(true);
-    try { await signIn(username, password); setPassword(''); }
+    try { await signIn(username, password, rememberMe); setPassword(''); setRememberMe(false); }
     catch (failure) { setError(authError(failure, 'Could not sign in.')); setPassword(''); }
     finally { setBusy(false); }
   }
@@ -63,6 +64,14 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         {error && <p role="alert" className="text-red-700">{error}</p>}
         <label className="block">Username<input required autoComplete="username" autoCapitalize="none" maxLength={64} value={username} onChange={(event) => setUsername(event.target.value)} className="mt-1 block w-full rounded border p-3" /></label>
         <label className="block">Password<input required type="password" autoComplete="current-password" maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded border p-3" /></label>
+        <div>
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 font-semibold">
+            <input type="checkbox" checked={rememberMe} disabled={busy} aria-describedby="remember-device-help"
+              onChange={event => setRememberMe(event.target.checked)} className="h-5 w-5 accent-indigo-600" />
+            Keep me signed in
+          </label>
+          <p id="remember-device-help" className="text-sm text-slate-500">Only use this on a device you trust. Sign out on shared devices.</p>
+        </div>
         <button disabled={busy} className="ska-button is-primary w-full">{busy ? 'Signing in…' : 'Sign in'}</button>
         <p className="text-sm text-slate-500">Need access or a password reset? Contact your administrator.</p>
       </form>}

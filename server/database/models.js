@@ -125,6 +125,7 @@ module.exports = (sequelize) => {
   const Session = sequelize.define('Session', {
     id: id(), accountId: { type: DataTypes.STRING, allowNull: false },
     createdAt: DataTypes.DATE, lastSeenAt: DataTypes.DATE, expiresAt: DataTypes.DATE,
+    remembered: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   }, { timestamps: false });
   const LoginAttempt = sequelize.define('LoginAttempt', {
     id: id(), count: DataTypes.INTEGER, expiresAt: DataTypes.DATE,

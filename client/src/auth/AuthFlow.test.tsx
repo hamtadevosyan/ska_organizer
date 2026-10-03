@@ -144,3 +144,23 @@ test('an offline internet hint does not block a working local API', async () => 
     expect(screen.queryByRole('heading', { name: 'Connection interrupted' })).not.toBeInTheDocument();
   } finally { hint.mockRestore(); }
 });
+
+test.each([false, true])('login submits the explicit remembered choice %s without storing credentials', async rememberMe => {
+  vi.mocked(axios.get).mockRejectedValueOnce(failure(401, 'Sign in to continue.'));
+  vi.mocked(axios.post).mockResolvedValueOnce({ data: session });
+  app();
+  const box = await screen.findByRole('checkbox', { name: 'Keep me signed in' });
+  expect(box).not.toBeChecked();
+  expect(box).toHaveAccessibleDescription('Only use this on a device you trust. Sign out on shared devices.');
+  fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'test-admin' } });
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Synthetic passphrase 20!' } });
+  if (rememberMe) fireEvent.click(box);
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  await screen.findByText('Private operations');
+  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/auth/login'), {
+    username: 'test-admin', password: 'Synthetic passphrase 20!', rememberMe,
+  });
+  vi.mocked(axios.post).mockResolvedValueOnce({ status: 204 });
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+  expect(await screen.findByRole('checkbox', { name: 'Keep me signed in' })).not.toBeChecked();
+});
