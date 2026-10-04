@@ -145,3 +145,44 @@ test('schedule and activity selectors use the selected room and preserve week da
   expect((await request(app).get('/api/schedule/week?roomId=' + other.id + '&start=2026-09-07')).body).toEqual([]);
   expect((await request(app).get('/api/schedule/suggestions?roomId=' + target.id + '&start=bad-date')).status).toBe(400);
 });
+
+test.each([[0, 0], [24, 24], [60, 24]])('create and edit reject invalid age range %i–%i without changing records', async (ageMinMonths, ageMaxMonths) => {
+  const ages = { ageMinMonths, ageMaxMonths };
+  const created = await request(app).post('/api/rooms').send({ ...roomValues, ...ages });
+  expect(created.status).toBe(400);
+  expect(created.body.error.fields.ageMaxMonths).toBe('Maximum age must be greater than minimum age.');
+  expect(await db.listRooms({ includeArchived: true })).toHaveLength(0);
+  const target = await room();
+  const before = await db.getRoomById(target.id);
+  const auditBefore = await db.listAudit();
+  const edited = await request(app).put('/api/rooms/' + target.id).send({ ...ages, name: 'Do not store this edit' });
+  expect(edited.status).toBe(400);
+  expect(edited.body.error.fields.ageMaxMonths).toBe('Maximum age must be greater than minimum age.');
+  expect(await db.getRoomById(target.id)).toEqual(before);
+  expect(await db.listAudit()).toEqual(auditBefore);
+});
+
+test.each([[0, 12], [24, 60]])('create and edit accept valid age range %i–%i', async (ageMinMonths, ageMaxMonths) => {
+  const target = await room({ ageMinMonths, ageMaxMonths });
+  expect(target).toMatchObject({ ageMinMonths, ageMaxMonths, needsConfiguration: false });
+  const other = await room({ name: 'Another class' });
+  const edited = await request(app).put('/api/rooms/' + other.id).send({ ageMinMonths, ageMaxMonths });
+  expect(edited.status).toBe(200);
+  expect(edited.body.data).toMatchObject({ id: other.id, ageMinMonths, ageMaxMonths, needsConfiguration: false });
+});
+
+(process.env.DB_ADAPTER === 'sequelize' ? test.skip : test)('legacy equal-age rooms are flagged and can be corrected without losing assignments or history', async () => {
+  // Direct mock adapter simulates a room stored before migration 015.
+  const target = await db.createRoom({ ...roomValues, ageMinMonths: 0, ageMaxMonths: 0 });
+  const enrolled = await child({ roomId: target.id });
+  const activity = await db.createActivity({ name: 'Legacy art', roomId: target.id });
+  const checkin = await request(app).post('/api/attendance/checkin').send({ childId: enrolled.id, roomId: target.id });
+  expect(checkin.status).toBe(201);
+  expect((await request(app).get('/api/rooms/' + target.id)).body.data).toMatchObject({ needsConfiguration: true, assignedChildCount: 1 });
+  const corrected = await request(app).put('/api/rooms/' + target.id).send({ ageMaxMonths: 12 });
+  expect(corrected.status).toBe(200);
+  expect(corrected.body.data).toMatchObject({ id: target.id, ageMinMonths: 0, ageMaxMonths: 12, capacity: 1, active: true, assignedChildCount: 1, needsConfiguration: false });
+  expect((await db.getChildById(enrolled.id)).roomId).toBe(target.id);
+  expect((await db.getActivityById(activity.id)).roomId).toBe(target.id);
+  expect((await db.getAttendanceById(checkin.body.id)).roomId).toBe(target.id);
+});

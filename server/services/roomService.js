@@ -4,7 +4,7 @@ const { validateRoom, roomId } = require('./roomValidation');
 
 const summarize = (room, count) => ({
   ...room, assignedChildCount: count,
-  needsConfiguration: room.capacity == null || room.ageMinMonths == null || room.ageMaxMonths == null,
+  needsConfiguration: room.capacity == null || room.ageMinMonths == null || room.ageMaxMonths == null || room.ageMaxMonths <= room.ageMinMonths,
   availablePlaces: room.capacity == null ? null : Math.max(0, room.capacity - count),
   overCapacity: room.capacity != null && count > room.capacity,
 });
