@@ -44,7 +44,7 @@ export default function Rooms() {
       const value = settings[key];
       if (!form[key].trim() || value === null || !Number.isInteger(value) || value < 0 || value > 216) invalid[key] = 'Enter a whole number of months from 0 to 216.';
     }
-    if (settings.ageMaxMonths! < settings.ageMinMonths!) invalid.ageMaxMonths = 'Maximum age must be at least the minimum age.';
+    if (settings.ageMaxMonths! <= settings.ageMinMonths!) invalid.ageMaxMonths = 'Maximum age must be greater than minimum age.';
     if (!form.capacity.trim() || !Number.isInteger(settings.capacity) || settings.capacity! <= 0 || settings.capacity! > 2147483647) invalid.capacity = 'Enter a positive whole-number capacity.';
     setFields(invalid);
     if (Object.keys(invalid).length) { setError('Correct the highlighted room settings.'); return; }
@@ -79,14 +79,16 @@ export default function Rooms() {
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-800">{message}</p>}
     {admin && formOpen && <form onSubmit={(event) => void submit(event)} noValidate className="rounded-2xl border bg-white p-6 shadow-sm">
       <fieldset disabled={busy} className="space-y-4"><h2 className="text-xl font-bold">{editing ? 'Edit room' : 'Create room'}</h2>
-        <label className="block">Room name<input required maxLength={100} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}
-          aria-invalid={!!fields.name} aria-describedby={fields.name ? 'room-error-name' : undefined} className={inputClass} />{fieldError('name')}</label>
+        <div><label htmlFor="room-input-name" className="block">Room name</label>
+          <input id="room-input-name" required maxLength={100} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}
+            aria-invalid={!!fields.name} aria-describedby={fields.name ? 'room-error-name' : undefined} className={inputClass} />{fieldError('name')}</div>
         <div className="grid gap-4 sm:grid-cols-3">
           {([['ageMinMonths', 'Minimum age (months)'], ['ageMaxMonths', 'Maximum age (months)'], ['capacity', 'Configured capacity']] as const).map(([key, label]) =>
-            <label key={key} className="block">{label}<input required type="number" min={key === 'capacity' ? 1 : 0} max={key === 'capacity' ? 2147483647 : 216} step="1" value={form[key]}
-              onChange={(event) => setForm({ ...form, [key]: event.target.value })} aria-invalid={!!fields[key]} aria-describedby={fields[key] ? 'room-error-' + key : undefined} className={inputClass} />{fieldError(key)}</label>)}
+            <div key={key}><label htmlFor={'room-input-' + key} className="block">{label}</label>
+              <input id={'room-input-' + key} required type="number" min={key === 'capacity' ? 1 : 0} max={key === 'capacity' ? 2147483647 : 216} step="1" value={form[key]}
+                onChange={(event) => setForm({ ...form, [key]: event.target.value })} aria-invalid={!!fields[key]} aria-describedby={fields[key] ? 'room-error-' + key : undefined} className={inputClass} />{fieldError(key)}</div>)}
         </div>
-        <p className="text-sm text-slate-600">Enter ages in months. For example, 2–5 years is 24–60 months.</p>
+        <p className="text-sm text-slate-600">Enter ages in months. Maximum age must be greater than minimum age. For example, 2–5 years is 24–60 months.</p>
         <label className="flex items-center gap-2"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />Active — available for new assignments</label>
         {editing && !form.active && editing.active && <p className="rounded bg-amber-50 p-3">Saving archives this room. Existing assignments and history stay available.</p>}
         {editing && form.capacity && Number(form.capacity) < editing.assignedChildCount && <p role="alert" className="rounded bg-amber-50 p-3">{editing.assignedChildCount} children are assigned. The proposed capacity is lower than this count.</p>}
@@ -106,7 +108,7 @@ export default function Rooms() {
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {visible.map((room) => <article key={room.id} aria-label={room.name} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3"><h2 className="text-xl font-bold">{room.name}</h2><span className={'rounded-full px-3 py-1 text-xs font-semibold ' + (room.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600')}>{room.active ? 'Active' : 'Archived'}</span></div>
-        {room.needsConfiguration ? <p className="mt-4 text-amber-800">Needs setup: enter the age range and capacity before activating.</p> :
+        {room.needsConfiguration ? <p className="mt-4 text-amber-800">Needs setup: enter a valid age range and capacity. Maximum age must be greater than minimum age.</p> :
           <p className="mt-4 text-slate-600">{room.ageMinMonths}–{room.ageMaxMonths} months</p>}
         <p className="mt-3 text-2xl font-bold">{room.assignedChildCount}<span className="text-base font-normal text-slate-500"> / {room.capacity ?? '—'} children assigned</span></p>
         {room.overCapacity && <p role="alert" className="mt-2 rounded bg-amber-50 p-2 text-amber-900">Assigned count exceeds configured capacity.</p>}

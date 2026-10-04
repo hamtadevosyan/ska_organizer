@@ -15,8 +15,8 @@ function validateRoom(payload, previous) {
       fields[key] = 'Enter a whole number of months from 0 to 216.';
     }
   }
-  if (Number.isInteger(result.ageMinMonths) && Number.isInteger(result.ageMaxMonths) && result.ageMaxMonths < result.ageMinMonths) {
-    fields.ageMaxMonths = 'Maximum age must be at least the minimum age.';
+  if (Number.isInteger(result.ageMinMonths) && Number.isInteger(result.ageMaxMonths) && result.ageMaxMonths <= result.ageMinMonths) {
+    fields.ageMaxMonths = 'Maximum age must be greater than minimum age.';
   }
   if (!Number.isInteger(result.capacity) || result.capacity <= 0 || result.capacity > 2147483647) {
     fields.capacity = 'Enter a positive whole-number capacity.';

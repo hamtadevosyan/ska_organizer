@@ -71,10 +71,45 @@ Schedule writes validate the selected Monday, supported time blocks, dates withi
 
 ## Manual verification
 
-Use the shared [backup, migration and automated checks procedure](update-checks.md), then verify the workflow with synthetic records in Windows Chrome:
+Use the shared [backup, migration and automated checks procedure](update-checks.md), then verify the workflow with synthetic records in a desktop browser and on iPhone/iPad:
 
 1. Create and edit a room with ages 24–60 months and capacity 1. Verify blank names, reversed ages and zero/fractional capacity are rejected.
 2. Assign two active children, acknowledging the capacity warning for the second. Transfer or unassign one and check both room counts.
 3. Select the room in Activity Planner and the schedule. Archive it and confirm existing references remain, while new assignments are rejected. Reactivate it.
 4. Refresh Chrome and restart the backend; room details and assignments should persist.
 5. Verify administrators can manage rooms, editors can assign children, and read-only accounts see no write controls.
+
+## Strict age ranges and correcting older rooms (SKAO-43)
+
+Maximum age must be greater than minimum age. Creating and editing reject equal
+or reversed ages, including 0–0 and 24–24; 0–12 and 24–60 remain valid. The API
+returns HTTP 400 with `error.fields.ageMaxMonths`; rejected edits do not change
+stored settings or assignments.
+
+Migration 015 adds a strict PostgreSQL check without changing published migration
+005. It uses `NOT VALID`: existing rows remain unchanged, while new inserts and
+updates must satisfy the strict rule. No ages are guessed, rooms deleted or
+archived, IDs replaced, or assignments/history rewritten. Imported inactive rooms
+whose age range and capacity are all unknown retain their existing representation.
+
+To correct an existing equal-age room, sign in as an administrator, open
+**Rooms & Classes**, and choose **Edit room**. Enter the actual intended minimum
+and maximum ages and save. Use **Show archived rooms** if needed. The room keeps
+its ID, capacity, active/archived status, assigned children and historical records.
+Rooms with equal ages are marked **Needs setup**; the Activity Planner's existing
+setup restriction applies until they are corrected. Other existing assignment and
+attendance rules are unchanged. Even a name-only edit or Archive requires fixing
+an invalid age range first; this prevents keeping invalid settings through a write.
+
+The database constraint remains unvalidated against historical rows until all
+invalid ranges are corrected. After reviewing/correcting them, a database operator
+may validate it (replace `public` if you use another schema):
+
+```sql
+ALTER TABLE public."Rooms" VALIDATE CONSTRAINT "room_age_range_strict";
+```
+
+Validation is optional for using the app; new/updated rows are already checked.
+Use the normal backup/migration/update checks before deploying. Test equal and
+reversed create/edit attempts, both valid examples, and correction of a synthetic
+legacy room with existing assignments/history on desktop and phone.

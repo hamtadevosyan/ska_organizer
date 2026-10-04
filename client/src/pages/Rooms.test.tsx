@@ -106,3 +106,82 @@ test('activity plans wait for a persisted room selection and send its ID', async
   expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/api/schedule/plan'),
     expect.objectContaining({ params: expect.objectContaining({ roomId: sunflower.id }) }));
 });
+
+test.each([[0, 0], [24, 24], [60, 24]])('create and edit prevent invalid room ages %i–%i before calling the API', async (minimum, maximum) => {
+  render(<SignedIn><Rooms /></SignedIn>);
+  await screen.findByRole('article', { name: 'Sunflower' });
+  fireEvent.click(screen.getByRole('button', { name: 'Add room' }));
+  fireEvent.change(screen.getByLabelText('Room name'), { target: { value: 'Synthetic invalid room' } });
+  fireEvent.change(screen.getByLabelText('Minimum age (months)'), { target: { value: String(minimum) } });
+  fireEvent.change(screen.getByLabelText('Maximum age (months)'), { target: { value: String(maximum) } });
+  fireEvent.change(screen.getByLabelText('Configured capacity'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  expect(axios.post).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Maximum age (months)', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByLabelText('Maximum age (months)', { exact: true })).toHaveAccessibleName('Maximum age (months)');
+  expect(screen.getByLabelText('Maximum age (months)', { exact: true })).toHaveAccessibleDescription('Maximum age must be greater than minimum age.');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Sunflower' }));
+  fireEvent.change(screen.getByLabelText('Minimum age (months)'), { target: { value: String(minimum) } });
+  fireEvent.change(screen.getByLabelText('Maximum age (months)'), { target: { value: String(maximum) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  expect(axios.put).not.toHaveBeenCalled();
+  expect(screen.getByRole('article', { name: 'Sunflower' })).toHaveTextContent('24–60 months');
+});
+
+test('valid zero minimum creates a room and corrects a legacy equal-age room under its existing ID', async () => {
+  catalog = [{ ...sunflower, ageMinMonths: 24, ageMaxMonths: 24, needsConfiguration: true }];
+  render(<SignedIn><Rooms /></SignedIn>);
+  const card = await screen.findByRole('article', { name: 'Sunflower' });
+  expect(card).toHaveTextContent('Needs setup');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Sunflower' }));
+  fireEvent.change(screen.getByLabelText('Maximum age (months)'), { target: { value: '60' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  await screen.findByText('Room updated.');
+  expect(axios.put).toHaveBeenCalledWith(expect.stringContaining('/api/rooms/database-room'), expect.objectContaining({ ageMinMonths: 24, ageMaxMonths: 60 }));
+  expect(card).toHaveTextContent('1 / 1 children assigned');
+  fireEvent.click(screen.getByRole('button', { name: 'Add room' }));
+  fireEvent.change(screen.getByLabelText('Room name'), { target: { value: 'Synthetic infant room' } });
+  fireEvent.change(screen.getByLabelText('Minimum age (months)'), { target: { value: '0' } });
+  fireEvent.change(screen.getByLabelText('Maximum age (months)'), { target: { value: '12' } });
+  fireEvent.change(screen.getByLabelText('Configured capacity'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  await screen.findByText('Room created.');
+  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/api/rooms'), expect.objectContaining({ ageMinMonths: 0, ageMaxMonths: 12 }));
+});
+
+test('all room field names stay stable when errors appear and correcting the same form succeeds', async () => {
+  render(<SignedIn><Rooms /></SignedIn>);
+  await screen.findByRole('article', { name: 'Sunflower' });
+  fireEvent.click(screen.getByRole('button', { name: 'Add room' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  for (const label of ['Room name', 'Minimum age (months)', 'Maximum age (months)', 'Configured capacity']) {
+    const input = screen.getByLabelText(label, { exact: true });
+    expect(input).toHaveAccessibleName(label);
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription();
+  }
+  fireEvent.change(screen.getByLabelText('Room name', { exact: true }), { target: { value: 'Corrected synthetic room' } });
+  fireEvent.change(screen.getByLabelText('Minimum age (months)', { exact: true }), { target: { value: '0' } });
+  fireEvent.change(screen.getByLabelText('Maximum age (months)', { exact: true }), { target: { value: '12' } });
+  fireEvent.change(screen.getByLabelText('Configured capacity', { exact: true }), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  await screen.findByText('Room created.');
+  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/api/rooms'), expect.objectContaining({ ageMinMonths: 0, ageMaxMonths: 12 }));
+});
+
+test('editing can correct an age validation error through its unchanged exact label', async () => {
+  render(<SignedIn><Rooms /></SignedIn>);
+  await screen.findByRole('article', { name: 'Sunflower' });
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Sunflower' }));
+  fireEvent.change(screen.getByLabelText('Maximum age (months)', { exact: true }), { target: { value: '24' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  const maximum = screen.getByLabelText('Maximum age (months)', { exact: true });
+  expect(maximum).toHaveAccessibleName('Maximum age (months)');
+  expect(maximum).toHaveAccessibleDescription('Maximum age must be greater than minimum age.');
+  expect(axios.put).not.toHaveBeenCalled();
+  fireEvent.change(maximum, { target: { value: '60' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
+  await screen.findByText('Room updated.');
+  expect(axios.put).toHaveBeenCalledWith(expect.stringContaining('/api/rooms/database-room'), expect.objectContaining({ ageMinMonths: 24, ageMaxMonths: 60 }));
+});
