@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 import { api, authenticatedApi } from '../browser/auth-helpers';
 
 async function workerReady(page: Page) {
@@ -59,24 +59,42 @@ test('a cached shell reloads offline without records, reconnects, and keeps API 
   publicFilesOnly(await cacheKeys(page));
 });
 
-test('an API outage warns without losing a draft, and a LAN response overrides the offline hint', async ({ page }) => {
+test('an API outage warns without losing a draft, and a LAN response overrides the offline hint', async ({ page, context }) => {
   test.setTimeout(60000);
   await authenticatedApi(page, { freshSession: true });
   await page.addInitScript(() => { Object.defineProperty(navigator, 'onLine', { get: () => false }); });
-  await page.goto('/children');
-  await page.getByRole('button', { name: 'Add child', exact: true }).click();
-  const input = page.getByRole('form', { name: 'Add child', exact: true }).getByLabel('First name', { exact: true });
-  await input.fill('Unsaved synthetic draft');
-  await workerReady(page);
-  await page.route('**/api/auth/session', route => route.fulfill({ status: 503,
-    contentType: 'application/json', body: JSON.stringify({ error: { message: 'Synthetic outage' } }) }));
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByRole('heading', { name: 'Connection interrupted', exact: true })).toBeVisible();
-  await expect(input).toHaveValue('Unsaved synthetic draft');
-  await page.unroute('**/api/auth/session');
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Connection interrupted', exact: true })).toHaveCount(0);
-  await expect(page.getByText(/Connection restored\./)).toBeVisible();
-  await expect(input).toHaveValue('Unsaved synthetic draft');
-  publicFilesOnly(await cacheKeys(page));
+  let outage = false;
+  const sessionRoute = async (route: Route) => {
+    if (!outage) { await route.continue(); return; }
+    await route.fulfill({ status: 503, headers: { 'Cache-Control': 'no-store' },
+      contentType: 'application/json', body: JSON.stringify({ error: { message: 'Synthetic outage' } }) });
+  };
+  // Register at context level before navigation/worker activation, so the fixture
+  // also covers requests associated with a service-worker-controlled page.
+  await context.route('**/api/auth/session', sessionRoute);
+  try {
+    await page.goto('/children');
+    await page.getByRole('button', { name: 'Add child', exact: true }).click();
+    const input = page.getByRole('form', { name: 'Add child', exact: true }).getByLabel('First name', { exact: true });
+    await input.fill('Unsaved synthetic draft');
+    await workerReady(page);
+    outage = true;
+    // Prove the focused session check received the outage. A missing mock must
+    // fail here rather than masquerade as a missing connection banner.
+    await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/session' && response.status() === 503),
+      page.evaluate(() => window.dispatchEvent(new Event('focus'))),
+    ]);
+    await expect(page.getByRole('heading', { name: 'Connection interrupted', exact: true })).toBeVisible();
+    await expect(input).toHaveValue('Unsaved synthetic draft');
+    outage = false;
+    await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/session' && response.status() === 200),
+      page.getByRole('button', { name: 'Try again', exact: true }).click(),
+    ]);
+    await expect(page.getByRole('heading', { name: 'Connection interrupted', exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Connection restored\./)).toBeVisible();
+    await expect(input).toHaveValue('Unsaved synthetic draft');
+    publicFilesOnly(await cacheKeys(page));
+  } finally { await context.unroute('**/api/auth/session', sessionRoute); }
 });
