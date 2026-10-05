@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
 import { Building2, Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
 import { saveRoom } from '../api/rooms';
@@ -112,6 +113,7 @@ export default function Rooms() {
           <p className="mt-4 text-slate-600">{room.ageMinMonths}–{room.ageMaxMonths} months</p>}
         <p className="mt-3 text-2xl font-bold">{room.assignedChildCount}<span className="text-base font-normal text-slate-500"> / {room.capacity ?? '—'} children assigned</span></p>
         {room.overCapacity && <p role="alert" className="mt-2 rounded bg-amber-50 p-2 text-amber-900">Assigned count exceeds configured capacity.</p>}
+        <Link to={'/rooms/' + encodeURIComponent(room.id)} aria-label={'View children in ' + room.name} className="ska-button mt-4">View children</Link>
         {admin && <div className="mt-5 flex gap-4 text-sm"><button disabled={busy || loading} onClick={() => open(room)} aria-label={'Edit ' + room.name} className="font-semibold text-emerald-800">Edit room</button>
           {room.active && <button disabled={busy || loading} onClick={() => void archive(room)} aria-label={'Archive ' + room.name} className="text-slate-600">Archive</button>}</div>}
       </article>)}
