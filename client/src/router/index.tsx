@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 
 import Accounts from "../pages/Accounts";
 import Rooms from "../pages/Rooms";
+import RoomRoster from "../pages/RoomRoster";
 import Children from "../pages/Children";
 import Attendance from "../pages/Attendance";
 import Dashboard from "../pages/Dashboard";
@@ -16,6 +17,7 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/accounts" element={<Accounts />} />
       <Route path="/rooms" element={<Rooms />} />
+      <Route path="/rooms/:roomId" element={<RoomRoster />} />
       <Route path="/children" element={<Children />} />
       <Route path="/attendance" element={<Attendance />} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

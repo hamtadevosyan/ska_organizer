@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import axios from 'axios';
+import { MemoryRouter } from 'react-router-dom';
 import Rooms from './Rooms';
 import Activities from './Activities';
 import { RoomSelect } from '../components/rooms/RoomSelect';
@@ -35,7 +36,7 @@ beforeEach(() => {
 });
 
 test('room form validates fields before saving numeric settings and refreshes the list', async () => {
-  render(<SignedIn><Rooms /></SignedIn>);
+  render(<SignedIn><MemoryRouter><Rooms /></MemoryRouter></SignedIn>);
   await screen.findByRole('article', { name: 'Sunflower' });
   fireEvent.click(screen.getByRole('button', { name: 'Add room' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
@@ -52,7 +53,7 @@ test('room form validates fields before saving numeric settings and refreshes th
 });
 
 test('archiving keeps the room in the archive view and preserves its assigned count', async () => {
-  render(<SignedIn><Rooms /></SignedIn>);
+  render(<SignedIn><MemoryRouter><Rooms /></MemoryRouter></SignedIn>);
   const archive = await screen.findByRole('button', { name: 'Archive Sunflower' });
   await waitFor(() => expect(archive).toBeEnabled());
   fireEvent.click(archive);
@@ -65,8 +66,9 @@ test('archiving keeps the room in the archive view and preserves its assigned co
 });
 
 test('read-only users can see room counts without management or assignment controls', async () => {
-  render(<SignedIn account={{ ...testAccount, role: 'viewer' }}><Rooms /></SignedIn>);
+  render(<SignedIn account={{ ...testAccount, role: 'viewer' }}><MemoryRouter><Rooms /></MemoryRouter></SignedIn>);
   await screen.findByRole('article', { name: 'Sunflower' });
+  expect(screen.getByRole('link', { name: 'View children in Sunflower' })).toHaveAttribute('href', '/rooms/database-room');
   expect(screen.queryByRole('button', { name: 'Add room' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Edit Sunflower' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Assign child' })).not.toBeInTheDocument();
@@ -108,7 +110,7 @@ test('activity plans wait for a persisted room selection and send its ID', async
 });
 
 test.each([[0, 0], [24, 24], [60, 24]])('create and edit prevent invalid room ages %i–%i before calling the API', async (minimum, maximum) => {
-  render(<SignedIn><Rooms /></SignedIn>);
+  render(<SignedIn><MemoryRouter><Rooms /></MemoryRouter></SignedIn>);
   await screen.findByRole('article', { name: 'Sunflower' });
   fireEvent.click(screen.getByRole('button', { name: 'Add room' }));
   fireEvent.change(screen.getByLabelText('Room name'), { target: { value: 'Synthetic invalid room' } });
@@ -131,7 +133,7 @@ test.each([[0, 0], [24, 24], [60, 24]])('create and edit prevent invalid room ag
 
 test('valid zero minimum creates a room and corrects a legacy equal-age room under its existing ID', async () => {
   catalog = [{ ...sunflower, ageMinMonths: 24, ageMaxMonths: 24, needsConfiguration: true }];
-  render(<SignedIn><Rooms /></SignedIn>);
+  render(<SignedIn><MemoryRouter><Rooms /></MemoryRouter></SignedIn>);
   const card = await screen.findByRole('article', { name: 'Sunflower' });
   expect(card).toHaveTextContent('Needs setup');
   fireEvent.click(screen.getByRole('button', { name: 'Edit Sunflower' }));
@@ -151,7 +153,7 @@ test('valid zero minimum creates a room and corrects a legacy equal-age room und
 });
 
 test('all room field names stay stable when errors appear and correcting the same form succeeds', async () => {
-  render(<SignedIn><Rooms /></SignedIn>);
+  render(<SignedIn><MemoryRouter><Rooms /></MemoryRouter></SignedIn>);
   await screen.findByRole('article', { name: 'Sunflower' });
   fireEvent.click(screen.getByRole('button', { name: 'Add room' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save room' }));
@@ -171,7 +173,7 @@ test('all room field names stay stable when errors appear and correcting the sam
 });
 
 test('editing can correct an age validation error through its unchanged exact label', async () => {
-  render(<SignedIn><Rooms /></SignedIn>);
+  render(<SignedIn><MemoryRouter><Rooms /></MemoryRouter></SignedIn>);
   await screen.findByRole('article', { name: 'Sunflower' });
   fireEvent.click(screen.getByRole('button', { name: 'Edit Sunflower' }));
   fireEvent.change(screen.getByLabelText('Maximum age (months)', { exact: true }), { target: { value: '24' } });

@@ -63,4 +63,4 @@ For manual verification with synthetic children:
 4. Reactivate the child; verify capacity is checked again and an archived room requires an active replacement or Unassigned.
 5. Verify read-only accounts can view profiles but cannot change enrollment or details. For legacy profiles, missing birth dates must remain unknown until entered explicitly.
 
-The separate room age-range defect remains tracked in SKAO-43. Daily attendance entry is described in [Daily attendance](daily-attendance.md). Parent onboarding, billing and document collection remain later work.
+Room age validation and correction of older rooms are described in [Rooms and classes](rooms-and-classes.md). Direct navigation from a room to its assigned children is described in [Room rosters](room-roster.md). Daily attendance entry is described in [Daily attendance](daily-attendance.md). Parent onboarding, billing and document collection remain later work.

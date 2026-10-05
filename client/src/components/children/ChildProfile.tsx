@@ -6,7 +6,7 @@ import type { Room } from '../../api/rooms';
 import { authError } from '../../auth/transport';
 import { attendanceTime } from '../../api/attendance';
 
-export function ChildProfile({ id, rooms, onClose }: { id: string; rooms: Pick<Room, 'id' | 'name'>[]; onClose: () => void }) {
+export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile' }: { id: string; rooms: Pick<Room, 'id' | 'name'>[]; onClose: () => void; closeLabel?: string }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -18,7 +18,7 @@ export function ChildProfile({ id, rooms, onClose }: { id: string; rooms: Pick<R
   }, [id]);
   return <section className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm" aria-label="Child profile">
     <div className="flex flex-wrap items-start justify-between gap-4"><h2 className="text-xl font-bold">{profile ? childName(profile.child) : 'Child profile'}</h2>
-      <button onClick={onClose} className="rounded-lg border px-3 py-1">Close profile</button></div>
+      <button onClick={onClose} className="ska-button">{closeLabel}</button></div>
     {error && <p role="alert" className="text-red-800">{error}</p>}
     {!profile && !error && <p role="status">Loading profile…</p>}
     {profile && <>

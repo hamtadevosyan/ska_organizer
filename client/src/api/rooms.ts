@@ -12,6 +12,9 @@ export type AssignmentPreview = {
 };
 export type RoomSettings = Pick<Room, 'name' | 'ageMinMonths' | 'ageMaxMonths' | 'capacity' | 'active'>;
 export const roomsUrl = API_BASE_URL + '/api/rooms';
+export async function getRoom(id: string, signal: AbortSignal) {
+  return (await axios.get<{ data: Room }>(roomsUrl + '/' + encodeURIComponent(id), { signal })).data.data;
+}
 export async function saveRoom(id: string | null, settings: Partial<RoomSettings>) {
   const response = id
     ? await axios.put<{ data: Room }>(roomsUrl + '/' + encodeURIComponent(id), settings)
