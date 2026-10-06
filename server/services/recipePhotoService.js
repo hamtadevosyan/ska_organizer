@@ -4,6 +4,17 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_TEXT_BYTES = 24000;
 const problem = (message, status, code) => Object.assign(new Error(message), { status, code });
 let processing = false;
+const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const crcTable = Array.from({ length: 256 }, (_, byte) => {
+  let value = byte;
+  for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  return value >>> 0;
+});
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
 
 function imageBuffer(body) {
   if (!body || Object.keys(body).some(key => key !== 'image') || typeof body.image !== 'string' ||
@@ -12,28 +23,57 @@ function imageBuffer(body) {
   }
   const image = Buffer.from(body.image, 'base64');
   if (image.length > MAX_IMAGE_BYTES || image.length < 45 || image.toString('base64') !== body.image ||
-      !image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+      !image.subarray(0, 8).equals(pngSignature)) {
     throw problem('Choose a readable recipe photo using the image picker.', 400, 'INVALID_RECIPE_IMAGE');
   }
-  // Only bounded, non-interlaced, 8-bit RGB/RGBA PNGs produced by the browser's
-  // canvas are accepted. No filenames, URLs, archives or OCR options are input.
-  let offset = 8, data = false, ended = false;
-  const allowed = new Set(['IHDR', 'IDAT', 'IEND', 'sRGB', 'gAMA', 'cHRM', 'pHYs']);
+  // Browser PNG encoders differ: Safari may include an ICC profile, and valid
+  // PNGs can be grayscale, palette-based or interlaced. Validate the bounded
+  // container, retain only rendering data and drop all other ancillary chunks
+  // without decompressing metadata. No paths, URLs or OCR options are input.
+  let offset = 8, data = false, dataEnded = false, ended = false;
+  let color, depth, palette = 0, transparency = false;
+  const depths = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
+  const retained = [pngSignature];
   while (offset + 12 <= image.length) {
-    const length = image.readUInt32BE(offset), type = image.toString('ascii', offset + 4, offset + 8);
-    if (!allowed.has(type) || offset + length + 12 > image.length || (offset === 8 && type !== 'IHDR')) break;
+    const length = image.readUInt32BE(offset), type = image.toString('latin1', offset + 4, offset + 8);
+    const end = offset + length + 12;
+    if (!/^[A-Za-z]{2}[A-Z][A-Za-z]$/.test(type) || end > image.length ||
+        image.readUInt32BE(end - 4) !== crc32(image.subarray(offset + 4, end - 4)) ||
+        (offset === 8 && type !== 'IHDR')) break;
     if (type === 'IHDR') {
       if (offset !== 8 || length !== 13) break;
       const width = image.readUInt32BE(offset + 8), height = image.readUInt32BE(offset + 12);
-      if (!width || !height || width > 2200 || height > 2200 || image[offset + 16] !== 8 ||
-          ![2, 6].includes(image[offset + 17]) || image[offset + 18] || image[offset + 19] || image[offset + 20]) break;
+      depth = image[offset + 16]; color = image[offset + 17];
+      if (!width || !height || width > 2200 || height > 2200 || !depths[color]?.includes(depth) ||
+          image[offset + 18] || image[offset + 19] || image[offset + 20] > 1) break;
+    } else if (type === 'PLTE') {
+      if (data || palette || transparency || [0, 4].includes(color) || !length || length % 3 || length > 768 ||
+          (color === 3 && length / 3 > 2 ** depth)) break;
+      palette = length / 3;
+    } else if (type === 'tRNS') {
+      if (data || transparency || !((color === 0 && length === 2) || (color === 2 && length === 6) ||
+          (color === 3 && palette && length > 0 && length <= palette))) break;
+      if (color !== 3 && Array.from({ length: length / 2 }, (_, index) =>
+        image.readUInt16BE(offset + 8 + index * 2)).some(value => value >= 2 ** depth)) break;
+      transparency = true;
+    } else if (type === 'IDAT') {
+      if (dataEnded || (color === 3 && !palette)) break;
+      data = true;
+    } else if (type === 'IEND') {
+      ended = length === 0 && data && end === image.length;
+      if (!ended) break;
+    } else {
+      // Unknown critical chunks and animations are rejected, not handed to the
+      // decoder. Profiles, EXIF and text are ancillary and can be omitted.
+      if (!/^[a-z]/.test(type) || ['acTL', 'fcTL', 'fdAT'].includes(type)) break;
     }
-    if (type === 'IDAT') data = true;
-    offset += length + 12;
-    if (type === 'IEND') { ended = length === 0 && offset === image.length; break; }
+    if (data && type !== 'IDAT') dataEnded = true;
+    if (['IHDR', 'PLTE', 'tRNS', 'IDAT', 'IEND'].includes(type)) retained.push(image.subarray(offset, end));
+    offset = end;
+    if (ended) break;
   }
   if (!ended || !data) throw problem('This image could not be read. Choose it again or use a JPEG or PNG photo.', 400, 'INVALID_RECIPE_IMAGE');
-  return image;
+  return Buffer.concat(retained);
 }
 
 async function readRecipePhoto(body, { signal } = {}) {

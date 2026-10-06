@@ -41,7 +41,7 @@ test.each([{ image: 'https://external.example/recipe.png' }, { image: '/etc/pass
   expect([400, 413]).toContain(response.status); expect(spawn).not.toHaveBeenCalled();
 });
 
-test('rejects huge dimensions, truncation, unsupported PNG chunks and palette format', () => {
+test('rejects huge dimensions, truncation and invalid PNG header changes', () => {
   for (const change of [b => b.writeUInt32BE(100000, 16), b => { b[25] = 3; }, b => b.write('tEXt', 12)]) {
     const invalid = Buffer.from(image); change(invalid);
     expect(() => service.imageBuffer({ image: invalid.toString('base64') })).toThrow();

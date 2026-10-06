@@ -7,8 +7,10 @@ name or an ingredient, search saved meals by name, and narrow the list by meal t
 **Import recipe photo** adds two more choices: **Take recipe photo** opens the
 device camera when supported, and **Upload recipe image** selects a file.
 Use a clear, upright photo of printed English recipe text. The browser resizes
-it and removes image metadata before sending it to the facility server's local
-Tesseract reader. No external OCR/AI service is called. Photos and recognized
+it before sending it to the facility server's local Tesseract reader. The server
+checks PNG integrity and removes embedded profiles, EXIF and text metadata before
+OCR, including metadata added by iPhone/Safari encoders. No external OCR/AI
+service is called. Photos and recognized
 text stay in memory, are never written to the catalog or server files, and are
 discarded when the import is cancelled or the page closes.
 
@@ -41,7 +43,7 @@ systems need a local Tesseract executable and English data on PATH.
 The read-only `POST /api/meals/recipe-photo` endpoint accepts one bounded PNG
 encoded in JSON, behind the existing session, CSRF, origin and write-role checks.
 It allows one read at a time per server process, limits text and image size,
-checks dimensions/format, and kills the local reader on cancellation or after
+checks dimensions, format and chunk checksums, and kills the local reader on cancellation or after
 30 seconds. Responses are `no-store`. It creates no meal, ingredient or audit
 content. Ordinary API request size limits stay at 100 KB. Missing OCR, unreadable
 images and timeouts are recoverable; the user can try another image or use the
