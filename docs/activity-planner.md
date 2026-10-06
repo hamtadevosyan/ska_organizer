@@ -2,19 +2,31 @@
 
 ## Everyday use
 
-1. Open **Activity Planner** and choose a room and the Monday of the week.
-2. Choose a day, then **+ Add to day**. Pick an activity and its **Start** and **End** times.
-3. Add as many activities as the day needs. Click **Save week**, or **Print** for a paper copy.
+1. Open **Activity Planner**, choose a room and the Monday of the week, then open a day.
+2. Choose **Add activity**, search or choose a suitable saved activity, then check its **Start time** and **End time** and choose **Add to day**.
+3. Repeat as needed. **Save week** keeps the schedule; **Print** includes all seven days.
 
-If no saved activities match the room yet, **+ Add to day** opens a short form.
-Enter the activity name and minutes, then **Add to day**. The new activity is saved
-and placed directly on the selected day; save the week to keep the schedule.
+Adding an existing activity takes three button activations from an open day:
+**Add activity → Choose [name] → Add to day**. Search and time entry are extra
+input. Day view opens by default; **Week view** shows every day. Both retain the
+same draft. Day navigation also keeps an unfinished add form and its entered
+choices; the new entry is added to the day named by that form. An existing entry
+being edited stays on its original day when the view or selected day changes.
 
-You can switch days while filling in that form. Its heading changes to the new
-day, and your entered details stay in place. **Continue activity** returns focus
-to the open form. Day changes pause only while the activity is being saved.
-**Cancel** shows **Keep editing** and **Discard activity** when you have typed
-details. Discarding that form leaves the rest of the weekly schedule intact.
+The same **Add activity** entry point works with an empty or populated library.
+Only activities suitable for the room's complete age range and assignment are
+available. Search explains when there is no match. **Create an activity** is a
+secondary option: enter its name and usual minutes, then **Save activity & choose
+time**. This saves the library activity first. Check the time and choose **Add to
+day** to change the weekly draft, then **Save week** to keep that schedule. Closing
+the composer does not delete an already saved library activity.
+
+Scheduled activities are readable cards. **Edit** opens a focused form;
+**Apply changes** updates the weekly draft, while **Cancel** leaves the entry
+unchanged. If the form has changes, choose **Keep editing** or **Discard changes**.
+New library forms have their own **Keep editing / Discard activity** choice.
+Inline validation keeps entered values and associates the message with its field.
+The page shows **Unsaved changes**, **Saved week** or **No schedule saved yet**.
 
 When adding is temporarily unavailable, a message beside the button explains why
 and what to do next (finish a catalog edit, refresh activities, finish room setup,
@@ -28,11 +40,14 @@ The first new entry suggests 08:00; later entries suggest the previous end time.
 These are editable suggestions, not opening hours. Choosing an activity fills in
 its end time from its usual duration; changing the start preserves the current
 length. You can change the end separately. For midnight at the end of a day,
-choose 00:00 in **End** (the API stores 24:00). Overnight activities can be entered
+choose 00:00 in **End time** (the API stores 24:00). Overnight activities can be entered
 on each of the two dates. Times are the room's local wall-clock times.
 
 Activities appear in time order. **Remove** removes only that scheduled entry;
-other entries and the activity catalog are kept. Repeating an activity or running
+other entries and the activity catalog are kept. **Undo removal** restores the
+last removed entry, including its ID, times and saved activity copy. Undo remains
+available across day/week views and failed saves, until the next successful week
+save or confirmed room/week reload. Repeating an activity or running
 activities at the same time is allowed. An overlap is shown beside the entry.
 Switching days keeps the current draft. Switching rooms or weeks asks before
 losing unsaved changes. The old `/schedule` address opens this same planner.
@@ -43,7 +58,9 @@ ready; untimed legacy entries may remain in an otherwise timed saved week.
 
 ## Add or change an activity
 
-Choose **Add activity**, enter its name and usual duration in minutes, then save.
+Open **Saved activities → Create library activity** to manage the library separately.
+Enter its name and usual duration in minutes, then **Save activity**. This does not
+add a scheduled entry or save a week.
 Open **More details** when you need instructions, suitable ages or materials.
 
 Ages are in months, like Rooms & Classes. Both can be empty for all ages;
@@ -80,7 +97,7 @@ Amounts are not multiplied by room capacity, attendance or scheduled duration.
 - If an item has both uses, required stock is total consumable quantity plus
   the peak reusable quantity.
 
-The materials table shows **Needed**, **Available** and **To get** for this room
+Expand **Materials check** to see **Needed**, **Available** and **To get** for this room
 and week. Stock comes from the chosen inventory item and location; separate
 items or locations are not assumed interchangeable. A changed unit or missing
 item is flagged for review instead of silently converting it.
@@ -88,7 +105,8 @@ item is flagged for review instead of silently converting it.
 Planning, saving, reloading and printing never consume or reserve Inventory.
 The estimate does not promise future stock or availability across simultaneous
 activities in other rooms. Use Inventory to record real purchases and usage.
-**Check materials again** refreshes current availability.
+**Check materials again** refreshes current availability. While checking or after
+a failed check, earlier availability is hidden rather than presented as current.
 
 ## Access and printing
 
@@ -113,6 +131,7 @@ Migration `013-full-day-activities` adds nullable clock times to scheduled entri
 retains earlier untimed blocks without changing their IDs or snapshots, and permits
 usual activity durations up to a full day (1,440 minutes). Apply this new migration
 even if 012 was already applied; never undo or edit an applied migration.
+SKAO-98 changes the client workflow only; it adds no migration or dependency.
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -154,7 +173,9 @@ It backs up the database before migrating and runs the mock API, PostgreSQL,
 component and browser suites, plus build and lint checks.
 
 For manual verification, schedule at least five activities in one day. Change times,
-remove an entry, add another, save and reload. Check another room/week, weekends,
+remove an entry, undo it, add another, save and reload. Switch Day/Week views
+with an unfinished add/edit form and check that its values remain. Validate an
+end time before the start, cancel an edit, and check that the saved entry is intact. Check another room/week, weekends,
 midnight, the complete printed schedule and any preserved untimed legacy entries.
 Create an activity requiring 6 consumable items when stock is 10; scheduling it twice
 should show Needed 12 and To get 2. Reusable amounts should add during overlaps but
