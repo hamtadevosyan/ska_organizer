@@ -373,7 +373,7 @@ def packages():
         run(['apt-get', '-o', f'DPkg::Lock::Timeout={APT_LOCK_TIMEOUT}', 'install', '-y',
              'caddy', 'certbot', 'python3-certbot-dns-cloudflare', 'dnsmasq-base', 'dnsutils',
              'nftables', 'postgresql-client', 'build-essential', 'python3', 'ca-certificates',
-             'curl', 'openssl', 'iproute2'])
+             'curl', 'openssl', 'iproute2', 'tesseract-ocr', 'tesseract-ocr-eng'])
     except Failure as error:
         raise Failure(f'{error} Prerequisite installation did not complete. '
                       'If APT still reports a lock, let the other package operation finish and rerun setup. '

@@ -15,10 +15,10 @@ export default function UnsavedChangesProvider({ children }: { children: ReactNo
   const blocker = useBlocker(useCallback(() => current.current.dirty || current.current.busy, []));
   return <UnsavedChangesContext.Provider value={report}>
     {children}
-    {blocker.state === 'blocked' && <AppModal id="unsaved-planner" title="Leave your unsaved work?" onDismiss={() => blocker.reset()}>
-      <p className="mt-3 text-slate-700">{work.busy ? 'A save is in progress. Keep editing and wait for its result before leaving.' : 'Your unsaved schedule and activity details will be discarded. Saved activities stay in the catalog.'}</p>
+    {blocker.state === 'blocked' && <AppModal id="unsaved-planner" title="Leave your unsaved work?" initialFocusId="unsaved-keep-editing" onDismiss={() => blocker.reset()}>
+      <p className="mt-3 text-slate-700">{work.busy ? 'A save is in progress. Keep editing and wait for its result before leaving.' : 'Your unsaved changes will be discarded. Saved records stay intact.'}</p>
       <div className="mt-5 flex flex-wrap gap-3">
-        <button type="button" autoFocus className="ska-button is-primary" onClick={() => blocker.reset()}>Keep editing</button>
+        <button id="unsaved-keep-editing" type="button" className="ska-button is-primary" onClick={() => blocker.reset()}>Keep editing</button>
         <button type="button" disabled={work.busy} className="ska-button" onClick={() => blocker.proceed()}>Discard and leave</button>
       </div>
     </AppModal>}

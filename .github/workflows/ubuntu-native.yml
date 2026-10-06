@@ -3,9 +3,9 @@ name: Native Ubuntu deployment checks
 on:
   push:
     branches: [main, development, 'feature/**']
-    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/tests/*ubuntu*', 'deploy/ubuntu/**', 'server/index.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
+    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/setup-recipe-ocr.sh', 'scripts/tests/*ubuntu*', 'deploy/ubuntu/**', 'server/index.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
   pull_request:
-    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/tests/*ubuntu*', 'deploy/ubuntu/**', 'server/index.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
+    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/setup-recipe-ocr.sh', 'scripts/tests/*ubuntu*', 'deploy/ubuntu/**', 'server/index.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
   workflow_dispatch:
 
 permissions:
@@ -24,6 +24,7 @@ jobs:
       - name: Isolated automation tests
         run: |
           bash -n SKAO.sh
+          bash -n scripts/setup-recipe-ocr.sh
           python3 -m py_compile scripts/ubuntu.py
           python3 -m unittest discover -s scripts/tests -p 'test_ubuntu.py' -v
       - uses: actions/setup-node@v7
