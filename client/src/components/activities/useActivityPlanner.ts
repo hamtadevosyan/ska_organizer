@@ -16,6 +16,8 @@ export function useActivityPlanner() {
   const [reload, setReload] = useState(0);
   const [plan, setPlan] = useState<ActivityPlan | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const removedEntries = useRef<Entry[]>([]);
+  const [removedCount, setRemovedCount] = useState(0);
   const [materials, setMaterials] = useState<MaterialCheck[]>([]);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,6 +42,7 @@ export function useActivityPlanner() {
   useEffect(() => {
     const controller = new AbortController(); const turn = generation.current + 1; generation.current = turn;
     setPlan(null); setEntries([]); setMaterials([]); setDirty(false); setError(''); setNotice(''); setBusy(false);
+    removedEntries.current = []; setRemovedCount(0);
     if (!roomId || !weekStart) return () => controller.abort();
     setBusy(true);
     void axios.get<{ data: ActivityPlan }>(activityPlanUrl, { params: { roomId, weekStart }, signal: controller.signal }).then((response) => {
@@ -75,19 +78,43 @@ export function useActivityPlanner() {
   function chooseWeek(date: string) { if (date !== weekStart && !savePending.current && canLeave()) { setPlan(null); setWeekStart(date); } }
   function reloadWeek() { if (!savePending.current && canLeave()) setReload((value) => value + 1); }
   function changed() { setDirty(true); setNotice(''); setError(''); requestId.current = inventoryRequestId(); }
-  function addEntry(date: string, activity: Activity | null = null) {
-    if (!plan || savePending.current) return;
+  function suggestedTimes(date: string, duration = 20) {
     const ends = entries.filter((entry) => entry.date === date && entry.endTime).map((entry) => timeMinutes(entry.endTime!));
     const lastEnd = ends.length ? Math.max(...ends) : 480;
     // Convenient suggestions, always editable; no opening-hours or entry-count limit.
     const start = lastEnd < 1440 ? lastEnd : 480;
-    setEntries((previous) => [...previous, { id: inventoryRequestId(), date, startTime: clockTime(start), endTime: clockTime(Math.min(start + (activity?.durationMinutes || 20), 1440)),
-      timeBlock: null, activityId: activity?.id || '', activity, useLatest: !!activity }]);
+    return { startTime: clockTime(start), endTime: clockTime(Math.min(start + duration, 1440)) };
+  }
+  function addEntry(date: string, activity: Activity | null = null, times?: { startTime: string | null; endTime: string | null; timeBlock?: string | null }) {
+    if (!plan || savePending.current) return;
+    const selectedTimes = times || suggestedTimes(date, activity?.durationMinutes || 20);
+    setEntries((previous) => [...previous, { id: inventoryRequestId(), date, startTime: selectedTimes.startTime, endTime: selectedTimes.endTime,
+      timeBlock: times?.timeBlock ?? null, activityId: activity?.id || '', activity, useLatest: !!activity }]);
+    changed();
+  }
+  function updateEntry(id: string, values: { activity: Activity; startTime: string | null; endTime: string | null; timeBlock: string | null }) {
+    if (!plan || savePending.current) return;
+    setEntries((previous) => previous.map((entry) => entry.id !== id ? entry : {
+      ...entry, startTime: values.startTime, endTime: values.endTime, timeBlock: values.timeBlock,
+      // A time edit keeps the scheduled snapshot, even when the library has a newer version.
+      ...(entry.activityId !== values.activity.id ? { activityId: values.activity.id, activity: values.activity, useLatest: true } : {}),
+    }));
     changed();
   }
   function removeEntry(id: string) {
     if (!plan || savePending.current) return;
+    const removed = entries.find((entry) => entry.id === id);
+    if (!removed || removedEntries.current.some((entry) => entry.id === id)) return;
+    removedEntries.current.push(removed); setRemovedCount(removedEntries.current.length);
     setEntries((previous) => previous.filter((entry) => entry.id !== id)); changed();
+  }
+  function undoRemoval() {
+    if (!plan || savePending.current) return;
+    const removed = removedEntries.current.pop();
+    if (!removed) return;
+    setRemovedCount(removedEntries.current.length);
+    setEntries((previous) => previous.some((entry) => entry.id === removed.id) ? previous : [...previous, removed]);
+    changed();
   }
   function chooseActivity(id: string, activityId: string, updateOnly = false) {
     if (!plan || savePending.current) return;
@@ -109,7 +136,7 @@ export function useActivityPlanner() {
   }
   const activitySaved = useCallback((activity: Activity) => {
     setCatalog((previous) => [...previous.filter((item) => item.id !== activity.id), activity].sort((a, b) => a.name.localeCompare(b.name)));
-    setNotice('Activity saved. Choose it in the week below.');
+    setNotice('Activity saved to the library. Save week separately to keep schedule changes.');
     // Saved entries retain their snapshots; newly selected drafts use the edited activity.
     setEntries((previous) => previous.map((entry) => entry.activityId === activity.id && entry.useLatest ? { ...entry, activity } : entry));
     requestId.current = inventoryRequestId();
@@ -125,11 +152,13 @@ export function useActivityPlanner() {
       });
       if (turn !== generation.current) return;
       setPlan(response.data.data); setEntries(response.data.data.entries); setMaterials(response.data.data.materials);
+      removedEntries.current = []; setRemovedCount(0);
       setDirty(false); setNotice('Week saved.'); requestId.current = inventoryRequestId();
     } catch (failure) { if (turn === generation.current) setError(authError(failure, 'Could not save the week. Your choices are still here; try Save week again.')); }
     finally { savePending.current = false; if (turn === generation.current) setSaving(false); }
   }
   return { roomId, weekStart, catalog, catalogBusy, catalogError, refreshCatalog: () => setCatalogTick((v) => v + 1),
     plan, entries: orderedEntries(entries), materials, dirty, busy, saving, error, notice, previewError, previewBusy,
-    checkMaterials: () => setPreviewTick((v) => v + 1), chooseRoom, chooseWeek, reloadWeek, addEntry, removeEntry, chooseActivity, changeTime, activitySaved, save };
+    checkMaterials: () => setPreviewTick((v) => v + 1), chooseRoom, chooseWeek, reloadWeek, suggestedTimes, addEntry, updateEntry, removeEntry, removedCount, undoRemoval,
+    chooseActivity, changeTime, activitySaved, save };
 }

@@ -1,3 +1,83 @@
+.activity-screen { display: grid; gap: 20px; }
+.activity-planner :where(button, input, select, textarea, summary):focus-visible { outline: 3px solid var(--ska-blue); outline-offset: 3px; }
+.activity-planner :where(input:not([type='checkbox']), select, textarea) { min-width: 0; min-height: 46px; font-size: 16px; }
+.activity-planner :where(button, summary) { min-height: 44px; }
+.planner-page-head { margin-bottom: 0; }
+.planner-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 18px; padding: 21px; border: 1px solid #dbddf5; border-radius: 22px; background: linear-gradient(120deg, #f5efff, #eff6ff 70%, #fffcf0); }
+.planner-save-actions, .planner-browse, .planner-status-row, .planner-entry-top, .planner-entry-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.planner-status-row, .planner-browse, .planner-entry-top { justify-content: space-between; }
+.planner-save-state { display: inline-flex; align-items: center; gap: 8px; padding: 9px 13px; border-radius: 99px; font-size: 13px; font-weight: 700; }
+.planner-save-state.is-draft { background: var(--ska-yellow-soft); color: #72551b; }
+.planner-save-state.is-saved { background: var(--ska-blue-soft); color: #24538d; }
+.planner-help, .planner-notice, .planner-undo, .planner-welcome { padding: 16px 19px; border: 1px solid #d8e5fa; border-radius: 16px; background: var(--ska-blue-soft); line-height: 1.7; }
+.planner-help.is-warning, .planner-undo { background: #fff7dc; border-color: #efdfa6; }
+.planner-notice { color: #2d5a4f; background: #eef9f4; }
+.planner-undo { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.planner-view-switch { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: #edf0f7; }
+.planner-view-switch button { min-height: 44px; padding: 9px 16px; border-radius: 11px; color: #475770; font-weight: 700; }
+.planner-view-switch button[aria-pressed='true'] { background: #fff; color: var(--ska-blue); box-shadow: 0 2px 6px #344f7610; }
+.planner-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.planner-days button { display: grid; justify-items: center; gap: 4px; padding: 12px 4px; border: 1px solid var(--ska-line); border-radius: 15px; background: #fff; color: #415671; }
+.planner-days button > span:first-child { font-size: 12px; font-weight: 700; }
+.planner-days strong { font-size: 22px; line-height: 1.25; }
+.planner-day-count { color: var(--ska-muted); font-size: 11px; }
+.planner-days button[aria-pressed='true'] { border-color: #ba98ed; background: var(--ska-purple-soft); color: #6735a5; }
+.planner-calendar { display: grid; gap: 18px; }
+.planner-calendar.is-week { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.planner-calendar-day { min-width: 0; }
+.planner-open-day { padding: 0 14px 6px; }
+.planner-day { min-width: 0; padding: 22px; border: 1px solid var(--ska-line); border-radius: 23px; background: white; }
+.planner-day-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+.planner-day-heading h2 { color: var(--ska-ink); font-size: 21px; font-weight: 750; }
+.planner-day-heading h2 > span { margin-left: 12px; color: var(--ska-muted); font-size: 13px; font-weight: 500; }
+.planner-count { padding: 6px 10px; border-radius: 99px; background: #f4f1fd; color: #694b91; font-size: 12px; font-weight: 650; }
+.planner-empty { display: grid; justify-items: center; gap: 9px; padding: 35px 12px; border: 1px dashed #ddcfee; border-radius: 18px; color: #63748c; background: #fdfbff; text-align: center; }
+.planner-empty svg { color: #8b63be; }
+.planner-empty p { font-weight: 700; color: #415671; }
+.planner-empty span { font-size: 13px; }
+.planner-timeline { display: grid; gap: 14px; }
+.planner-entry { min-width: 0; padding: 17px 19px; border: 1px solid #e4e7ef; border-left: 5px solid #a383d5; border-radius: 16px; background: #fcfbff; }
+.planner-entry.tone-1 { background: #fffaf5; border-left-color: #e59b67; }
+.planner-entry.tone-2 { background: #f5faff; border-left-color: #6b9ee1; }
+.planner-entry.tone-3 { background: #fffdf2; border-left-color: #d7ba4f; }
+.planner-entry h3 { margin: 8px 0; font-size: 17px; font-weight: 750; overflow-wrap: anywhere; }
+.planner-time { display: inline-flex; align-items: center; gap: 7px; color: #4d5f79; font-size: 13px; font-weight: 650; }
+.planner-entry-actions .ska-button { padding: 8px 11px; font-size: 12px; }
+.planner-entry-note { margin-top: 8px; font-size: 12px; line-height: 1.6; color: #596d87; }
+.planner-entry-note.is-warning { color: #8b5b20; }
+.planner-instructions { margin-top: 8px; color: #53657d; font-size: 13px; }
+.planner-instructions summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 650; }
+.planner-instructions p { margin: 7px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.planner-instructions li { margin: 5px 0; overflow-wrap: anywhere; }
+.planner-version { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e4e2ee; font-size: 12px; line-height: 1.7; }
+.planner-materials, .planner-library { min-width: 0; padding: 20px; border: 1px solid var(--ska-line); border-radius: 21px; background: white; }
+.planner-materials > summary, .planner-library > summary { display: flex; align-items: center; gap: 9px; cursor: pointer; font-weight: 750; color: #44587c; }
+.planner-library > summary > span { margin-left: auto; color: var(--ska-muted); font-size: 12px; font-weight: 500; }
+.planner-materials > p, .planner-library > p { margin: 12px 0; color: var(--ska-muted); font-size: 13px; line-height: 1.8; }
+.planner-library-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 16px 0; }
+.planner-library-tools > label { flex: 1 1 220px; }
+.planner-library-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 0; border-bottom: 1px solid var(--ska-line); overflow-wrap: anywhere; }
+.planner-library-list li > div { min-width: 0; }
+.planner-library-list strong { font-size: 14px; }
+.planner-library-list p { color: var(--ska-muted); font-size: 12px; margin-top: 6px; }
+.ska-activity-composer { min-width: 0; padding: 21px; border: 2px solid #ccbbe9; border-radius: 22px; background: #fdfbff; box-shadow: 0 7px 24px #5f43910b; }
+.ska-activity-composer h2 { font-size: 20px; font-weight: 750; }
+.ska-activity-composer :where(form, fieldset), .ska-activity-library-form, .ska-activity-library-form fieldset { min-width: 0; }
+.ska-activity-library-form :where(p, li, span) { overflow-wrap: anywhere; }
+.ska-activity-composer input:not([type='checkbox']) { width: 100%; }
+.activity-planner input[type='checkbox'] { flex: 0 0 18px; width: 18px; height: 18px; min-height: 0; accent-color: #6d28d9; }
+.ska-activity-composer :where(button, input, select, textarea) { overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .planner-settings { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .planner-save-actions { grid-column: 1 / -1; } .planner-calendar.is-week { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+  .planner-settings { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 17px; }
+  .planner-save-actions { grid-column: auto; } .planner-save-actions .ska-button { flex: 1 1 auto; }
+  .planner-days { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; } .planner-days button { padding: 10px 1px; border-radius: 10px; }
+  .planner-days strong { font-size: 19px; } .planner-days button > span:first-child { font-size: 11px; } .planner-day-count { display: none; }
+  .planner-day, .planner-materials, .planner-library, .ska-activity-composer { padding: 16px; border-radius: 18px; }
+  .planner-entry { padding: 13px 14px; } .planner-entry-top { align-items: start; }
+  .planner-entry-actions { width: 100%; } .planner-entry-actions .ska-button { flex: 1 1 auto; }
+  .planner-library > summary { flex-wrap: wrap; } .planner-library > summary > span { margin-left: 0; }
+}
 @media print {
   body:has(.activity-planner) { background: white; }
   body:has(.activity-planner) #root, body:has(.activity-planner) #root > div,

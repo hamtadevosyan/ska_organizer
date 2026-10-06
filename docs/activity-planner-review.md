@@ -158,3 +158,19 @@ of the real routine is more useful than approving the look alone.
 During that walkthrough, also confirm whether staff should see any saved plan
 immediately or only a separately approved/published version. The prototype's
 read-only view shows saved example data; it does not settle that policy.
+
+
+## Implementation follow-up (SKAO-97 and SKAO-98)
+
+The prototype and evidence above describe the September review baseline.
+SKAO-97 subsequently added the in-app unsaved-work guard. The SKAO-98 candidate
+uses day view by default and keeps a week overview, one scheduling entry point,
+searchable suitable choices, focused editing and undo before saving. Library
+creation saves first, then asks for time confirmation; **Save week** remains a
+separate action. It preserves snapshots, materials, role rights and full-week
+printing. Day/view changes keep forms in memory; editing does not move an entry.
+
+Copying days/weeks and moving entries remain SKAO-99 scope. No approval or
+publishing stage was added. The earlier routine and publication questions remain
+open for the owner's later review. See `docs/activity-planner.md` for the candidate
+behavior and device checks. No prototype result above proves production behavior.

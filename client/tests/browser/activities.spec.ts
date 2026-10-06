@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { api, authenticatedApi } from './auth-helpers';
+
+async function openLibrary(page: Page) {
+  const library = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: /^Saved activities/ }) });
+  if (await library.getAttribute('open') === null) await library.locator('summary').click();
+}
 
 test('teachers fill an entire day, save timed room weeks, check materials and print without consuming stock', async ({ page }) => {
   test.setTimeout(60000);
@@ -15,7 +21,8 @@ test('teachers fill an entire day, save timed room weeks, check materials and pr
   await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
   await page.getByLabel('Week starting Monday', { exact: true }).fill('2026-09-14');
   await expect(page.getByRole('region', { name: 'Monday', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Add activity', exact: true }).click();
+  await openLibrary(page);
+  await page.getByRole('button', { name: 'Create library activity', exact: true }).click();
   const form = page.getByRole('form', { name: 'New activity', exact: true });
   await form.getByLabel('Activity name', { exact: true }).fill(activityName);
   await form.getByLabel('Minutes', { exact: true }).fill('25');
@@ -28,16 +35,23 @@ test('teachers fill an entire day, save timed room weeks, check materials and pr
   await form.getByLabel('Amount', { exact: true }).fill('6');
   await form.getByRole('button', { name: 'Add material', exact: true }).click();
   await form.getByRole('button', { name: 'Save activity', exact: true }).click();
-  await expect(page.getByText('Activity saved. Choose it in the week below.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Activity saved to the library. Save week separately to keep schedule changes.', { exact: true })).toBeVisible();
+  const composer = page.getByRole('form', { name: 'Schedule activity', exact: true });
   for (let index = 1; index <= 5; index++) {
-    await page.getByRole('button', { name: 'Add to Monday', exact: true }).click();
-    await page.getByRole('combobox', { name: 'Monday activity ' + index, exact: true }).selectOption({ label: activityName });
+    await page.getByRole('button', { name: 'Add activity', exact: true }).click();
+    await composer.getByRole('button', { name: 'Choose ' + activityName, exact: true }).click();
+    await composer.getByRole('button', { name: 'Add to day', exact: true }).click();
+    await expect(page.getByRole('group', { name: 'Monday activity ' + index, exact: true })).toContainText(activityName);
   }
-  await page.getByLabel('Monday activity 1 start', { exact: true }).fill('07:30');
-  await expect(page.getByLabel('Monday activity 1 end', { exact: true })).toHaveValue('07:55');
+  await page.getByRole('button', { name: 'Edit activity 1 on Monday', exact: true }).click();
+  const editSchedule = page.getByRole('form', { name: 'Edit scheduled activity', exact: true });
+  await editSchedule.getByLabel('Start time', { exact: true }).fill('07:30');
+  await expect(editSchedule.getByLabel('End time', { exact: true })).toHaveValue('07:55');
+  await editSchedule.getByRole('button', { name: 'Apply changes', exact: true }).click();
   await page.getByRole('button', { name: 'Tuesday', exact: true }).click();
-  await page.getByRole('button', { name: 'Add to Tuesday', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Tuesday activity 1', exact: true }).selectOption({ label: activityName });
+  await page.getByRole('button', { name: 'Add activity', exact: true }).click();
+  await composer.getByRole('button', { name: 'Choose ' + activityName, exact: true }).click();
+  await composer.getByRole('button', { name: 'Add to day', exact: true }).click();
   const materialRow = page.getByRole('table', { name: 'Activity material availability', exact: true }).getByRole('row').filter({ hasText: itemName });
   await expect(materialRow).toContainText('36'); await expect(materialRow).toContainText('10');
   await page.getByRole('button', { name: 'Save week', exact: true }).click();
@@ -50,16 +64,18 @@ test('teachers fill an entire day, save timed room weeks, check materials and pr
   expect(saved.entries.filter((entry: { date: string }) => entry.date === '2026-09-14')).toHaveLength(5);
   await page.reload(); await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
   await page.getByLabel('Week starting Monday', { exact: true }).fill('2026-09-14');
-  await expect(page.getByRole('combobox', { name: 'Monday activity 1', exact: true })).toHaveValue(saved.entries[0].activityId);
+  await expect(page.getByRole('group', { name: 'Monday activity 1', exact: true })).toContainText(activityName);
+  await expect(page.getByRole('group', { name: 'Monday activity 1', exact: true })).toContainText('07:30–07:55');
   await page.getByLabel('Week starting Monday', { exact: true }).fill('2026-09-21');
   await expect(page.getByText('Nothing scheduled for this day.', { exact: true })).toBeVisible();
   await page.getByLabel('Week starting Monday', { exact: true }).fill('2026-09-14');
-  await expect(page.getByRole('combobox', { name: 'Monday activity 1', exact: true })).toHaveValue(saved.entries[0].activityId);
-  await page.locator('summary').filter({ hasText: /^Saved activities/ }).click();
+  await expect(page.getByRole('group', { name: 'Monday activity 1', exact: true })).toContainText(activityName);
+  await openLibrary(page);
   await page.getByRole('button', { name: 'Edit ' + activityName, exact: true }).click();
   await page.getByLabel('Activity name', { exact: true }).fill(activityName + ' updated');
   await page.getByRole('button', { name: 'Save activity', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Monday activity 1', exact: true }).locator('option:checked')).toHaveText(activityName);
+  await expect(page.getByRole('group', { name: 'Monday activity 1', exact: true })).toContainText(activityName);
+  await expect(page.getByRole('group', { name: 'Monday activity 1', exact: true })).not.toContainText(activityName + ' updated');
   await page.getByRole('group', { name: 'Monday activity 1', exact: true }).getByRole('button', { name: 'Use updated activity', exact: true }).click();
   await page.getByRole('button', { name: 'Save week', exact: true }).click();
   await expect(page.getByText('Week saved.', { exact: true })).toBeVisible();
@@ -75,19 +91,26 @@ test('teachers fill an entire day, save timed room weeks, check materials and pr
   expect(errors).toEqual([]);
 });
 
-test('Add to day starts with an empty catalog and creates and saves the activity on the selected day', async ({ page }) => {
+test('an empty catalog creates a library activity before confirming its time on the selected day', async ({ page }) => {
   test.setTimeout(60000);
   const client = await authenticatedApi(page); const suffix = Date.now();
   const roomResponse = await client.post(api + '/rooms', { data: { name: 'New planner room ' + suffix, ageMinMonths: 24, ageMaxMonths: 60, capacity: 12 } });
   expect(roomResponse.status()).toBe(201); const room = (await roomResponse.json()).data;
   // Isolate the empty-catalog screen from activities made by other browser cases.
   // Creation, preview, saving and reloading still use the real API and database.
-  await page.route('**/api/activity', (route) => route.fulfill({ json: { data: [] } }), { times: 1 });
+  await page.route('**/api/activity', async route => {
+    if (route.request().method() === 'GET') await route.fulfill({ json: { data: [] } });
+    else await route.continue();
+  });
   await page.goto('/activities');
   await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
   await page.getByLabel('Week starting Monday', { exact: true }).fill('2026-09-14');
-  await expect(page.getByRole('button', { name: 'Add to Monday', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Add to Monday', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Add activity', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Tuesday', exact: true }).click();
+  await page.getByRole('button', { name: 'Add activity', exact: true }).click();
+  const composer = page.getByRole('form', { name: 'Schedule activity', exact: true });
+  await expect(composer.getByRole('button', { name: /^Choose / })).toHaveCount(0);
+  await composer.getByRole('button', { name: 'Create an activity', exact: true }).click();
   const form = page.getByRole('form', { name: 'New activity', exact: true });
   const name = 'Circle time ' + suffix;
   await form.getByLabel('Activity name', { exact: true }).fill(name);
@@ -98,23 +121,27 @@ test('Add to day starts with an empty catalog and creates and saves the activity
   await form.getByLabel('Maximum age (months)', { exact: true }).fill('0');
   await form.getByText('More details', { exact: true }).click();
   await expect(form.getByLabel('Maximum age (months)', { exact: true })).toBeHidden();
-  await form.getByRole('button', { name: 'Add to day', exact: true }).click();
+  await form.getByRole('button', { name: 'Save activity & choose time', exact: true }).click();
   await expect(form.getByRole('alert')).toHaveText('Enter both ages in months, with maximum greater than minimum, or leave both empty for all ages.');
   await expect(form.getByLabel('Maximum age (months)', { exact: true })).toBeVisible();
   await form.getByLabel('Maximum age (months)', { exact: true }).fill('60');
-  await page.getByRole('button', { name: 'Wednesday', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Add activity to Wednesday', exact: true })).toBeVisible();
   await expect(form.getByLabel('Activity name', { exact: true })).toHaveValue(name);
-  await page.getByRole('button', { name: 'Continue activity for Wednesday', exact: true }).click();
-  await expect(form.getByLabel('Activity name', { exact: true })).toBeFocused();
   await form.getByRole('button', { name: 'Cancel', exact: true }).click();
   await form.getByRole('button', { name: 'Keep editing', exact: true }).click();
   await expect(form.getByLabel('Activity name', { exact: true })).toHaveValue(name);
-  await page.getByRole('button', { name: 'Tuesday', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Add activity to Tuesday', exact: true })).toBeVisible();
-  await form.getByRole('button', { name: 'Add to day', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Tuesday activity 1', exact: true }).locator('option:checked')).toHaveText(name);
-  await expect(page.getByLabel('Tuesday activity 1 end', { exact: true })).toHaveValue('08:15');
+  await form.getByRole('button', { name: 'Save activity & choose time', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  await page.unroute('**/api/activity');
+  await expect(composer.getByLabel('Start time', { exact: true })).toHaveValue('08:00');
+  await expect(composer.getByLabel('End time', { exact: true })).toHaveValue('08:15');
+  await expect(page.getByRole('group', { name: 'Tuesday activity 1', exact: true })).toHaveCount(0);
+  const library = await client.get(api + '/activity');
+  expect((await library.json()).data).toEqual(expect.arrayContaining([expect.objectContaining({ name })]));
+  const beforeConfirmation = await client.get(api + '/schedule/plan?roomId=' + room.id + '&weekStart=2026-09-14');
+  expect((await beforeConfirmation.json()).data.entries).toHaveLength(0);
+  await composer.getByRole('button', { name: 'Add to day', exact: true }).click();
+  await expect(page.getByRole('group', { name: 'Tuesday activity 1', exact: true })).toContainText(name);
+  await expect(page.getByRole('group', { name: 'Tuesday activity 1', exact: true })).toContainText('08:00–08:15');
   await page.getByRole('button', { name: 'Save week', exact: true }).click();
   await expect(page.getByText('Week saved.', { exact: true })).toBeVisible();
   const response = await client.get(api + '/schedule/plan?roomId=' + room.id + '&weekStart=2026-09-14');
@@ -123,13 +150,14 @@ test('Add to day starts with an empty catalog and creates and saves the activity
   await page.reload(); await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
   await page.getByLabel('Week starting Monday', { exact: true }).fill('2026-09-14');
   await page.getByRole('button', { name: 'Tuesday', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Tuesday activity 1', exact: true }).locator('option:checked')).toHaveText(name);
-  await page.getByRole('button', { name: 'Add activity', exact: true }).click();
+  await expect(page.getByRole('group', { name: 'Tuesday activity 1', exact: true })).toContainText(name);
+  await openLibrary(page);
+  await page.getByRole('button', { name: 'Create library activity', exact: true }).click();
   await form.getByLabel('Activity name', { exact: true }).fill('Cancelled activity ' + suffix);
   await form.getByRole('button', { name: 'Cancel', exact: true }).click();
   await form.getByRole('button', { name: 'Discard activity', exact: true }).click();
   await expect(form).toBeHidden();
-  await expect(page.getByRole('combobox', { name: 'Tuesday activity 1', exact: true }).locator('option:checked')).toHaveText(name);
+  await expect(page.getByRole('group', { name: 'Tuesday activity 1', exact: true })).toContainText(name);
   const catalog = await client.get(api + '/activity');
   expect((await catalog.json()).data.some((activity: { name: string }) => activity.name === 'Cancelled activity ' + suffix)).toBe(false);
 });

@@ -104,7 +104,7 @@ test('activity plans wait for a persisted room selection and send its ID', async
   await screen.findByRole('option', { name: 'Sunflower' });
   expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.endsWith('/schedule/plan'))).toBe(false);
   fireEvent.change(screen.getByRole('combobox', { name: 'Room' }), { target: { value: sunflower.id } });
-  await screen.findByText('No schedule saved yet. Choose activities below.');
+  await screen.findByText('No schedule saved yet');
   expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/api/schedule/plan'),
     expect.objectContaining({ params: expect.objectContaining({ roomId: sunflower.id }) }));
 });
