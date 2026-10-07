@@ -14,6 +14,9 @@ app.use('/api', (req, res, next) => { req.requestId = randomUUID(); res.set('X-R
 app.use('/api', originGuard);
 app.use(cors({ origin: (origin, done) => done(null, !!origin && authConfig.origins.has(origin)), credentials: true,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
+const recipePhoto = require('./controllers/recipePhotoController');
+app.post('/api/meals/recipe-photo', requireSession, requireOperationalAccess, recipePhoto.reserve,
+  express.json({ limit: '7mb' }), recipePhoto.read);
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);

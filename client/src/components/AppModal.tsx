@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 
-type Props = { id: string; title: string; sheet?: boolean; onDismiss: () => void; children: ReactNode };
+type Props = { id: string; title: string; sheet?: boolean; initialFocusId?: string; onDismiss: () => void; children: ReactNode };
 
-export default function AppModal({ id, title, sheet = false, onDismiss, children }: Props) {
+export default function AppModal({ id, title, sheet = false, initialFocusId, onDismiss, children }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -13,13 +13,17 @@ export default function AppModal({ id, title, sheet = false, onDismiss, children
     const previousOverflow = document.body.style.overflow;
     // A native modal keeps background controls inert and contains keyboard focus.
     dialog.showModal();
+    // React autofocus runs before the native dialog opens. Focus the requested
+    // action after showModal makes its controls available.
+    const initialFocus = initialFocusId ? document.getElementById(initialFocusId) : null;
+    if (initialFocus instanceof HTMLElement && dialog.contains(initialFocus)) initialFocus.focus({ preventScroll: true });
     document.body.style.overflow = 'hidden';
     return () => {
       dialog.close();
       document.body.style.overflow = previousOverflow;
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
     };
-  }, []);
+  }, [initialFocusId]);
 
   return <dialog ref={ref} id={id} aria-labelledby={`${id}-title`}
     className={`app-modal${sheet ? ' app-modal-sheet' : ''}`}

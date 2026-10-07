@@ -112,3 +112,57 @@ it('waits for a catalog write before allowing a return to Planner', async () => 
   fireEvent.click(screen.getByRole('button', { name: 'Planner' }));
   expect(screen.getByText('Planner view')).toBeVisible();
 });
+
+it('keeps the selected idea draft intact and opens the saved meal in the normal editor after one save', async () => {
+  const savedMeal = { id: 'banana-meal', name: 'Our banana breakfast', type: 'breakfast' as const, description: 'Oats with banana and milk.' };
+  const oats = { id: 'oats', name: 'Oats', unit: 'g' };
+  const banana = { id: 'banana', name: 'Banana', unit: 'g' };
+  const recipe = [{ id: 'oats-link', mealId: savedMeal.id, ingredientId: oats.id, quantity: 35 },
+    { id: 'banana-link', mealId: savedMeal.id, ingredientId: banana.id, quantity: 60 },
+    { id: 'milk-link', mealId: savedMeal.id, ingredientId: milk.id, quantity: 120 }];
+  vi.mocked(axios.get).mockImplementation(async (path) => response(path.includes('meals?') ? [meal]
+    : path.includes('ingredients?') ? [eggs, milk, old] : path.includes('/banana-meal/') ? recipe : [link]));
+  vi.mocked(axios.post).mockResolvedValueOnce(response({ meal: savedMeal, ingredients: [oats, banana, milk], recipe }));
+  render(<SignedIn><Meals /></SignedIn>);
+  fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Browse meal ideas' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Browse meal ideas' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Oatmeal with banana' }));
+  change('Meal name', savedMeal.name);
+  change('Ingredient 1 quantity per person (g)', '35');
+  expect(screen.getByRole('button', { name: 'Planner' })).toBeDisabled();
+  expect(screen.queryByLabelText('Choose meal')).not.toBeInTheDocument();
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save meal & recipe' }));
+  await screen.findByText('Meal and recipe saved. Choose it in Planner whenever you need it.');
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('Choose meal')).toHaveValue(savedMeal.id);
+  await screen.findByLabelText('Oats quantity per person (g)');
+  expect(screen.getByLabelText('Oats quantity per person (g)')).toHaveValue(35);
+  expect(screen.getByRole('button', { name: 'Planner' })).toBeEnabled();
+  expect(screen.getByLabelText('Choose ingredient')).toContainHTML('Banana');
+  fireEvent.click(screen.getByRole('button', { name: 'Browse meal ideas' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Oatmeal with banana' }));
+  expect(screen.queryByText('Meal and recipe saved. Choose it in Planner whenever you need it.')).not.toBeInTheDocument();
+  expect(screen.getByText('Unsaved meal draft')).toBeInTheDocument();
+  expect(axios.post).toHaveBeenCalledTimes(1);
+});
+
+it('discarding an idea writes nothing and restores the original editor and meal tabs', async () => {
+  render(<SignedIn><Meals /></SignedIn>);
+  fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Browse meal ideas' })).toBeEnabled());
+  change('Choose meal', 'meal');
+  await screen.findByLabelText('Eggs quantity per person (count)');
+  fireEvent.click(screen.getByRole('button', { name: 'Browse meal ideas' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Oatmeal with banana' }));
+  change('Meal name', 'Unsaved meal idea');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard meal' }));
+  expect(screen.getByLabelText('Choose meal')).toHaveValue('meal');
+  expect(screen.getByLabelText('Meal name')).toHaveValue(meal.name);
+  expect(screen.getByRole('button', { name: 'Planner' })).toBeEnabled();
+  expect(axios.post).not.toHaveBeenCalled();
+  expect(axios.put).not.toHaveBeenCalled();
+  expect(axios.delete).not.toHaveBeenCalled();
+});

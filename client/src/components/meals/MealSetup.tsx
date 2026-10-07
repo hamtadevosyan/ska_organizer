@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import axios from 'axios';
 import { API_BASE_URL } from '../../lib/api';
 import { MEAL_TYPES } from './weeklyPlan';
 import type { Meal, MealType } from './weeklyPlan';
+import MealIdeaPicker from './MealIdeaPicker';
+import type { MealIdeaSaveResult } from './MealIdeaPicker';
+import './meal-ideas.css';
 
 type Ingredient = { id: string; name: string; unit: string; archived?: boolean };
 type RecipeLink = { id: string; ingredientId: string; quantity: number };
@@ -36,9 +39,15 @@ export default function MealSetup({ initialMealId, onBusyChange }: { initialMeal
   const [retry, setRetry] = useState(0);
   const [recipeRetry, setRecipeRetry] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [ideaEditing, setIdeaEditing] = useState(false);
   const busyRef = useRef(false);
   const [feedback, setFeedback] = useState<Feedback>();
+  const editIdea = useCallback((editing: boolean) => {
+    setIdeaEditing(editing);
+    if (editing) setFeedback(undefined);
+  }, []);
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
+  useLayoutEffect(() => { onBusyChange?.(busy || ideaEditing); }, [busy, ideaEditing, onBusyChange]);
   const meal = meals.find((value) => value.id === mealId);
   const ingredient = ingredients.find((value) => value.id === ingredientId);
   const availableIngredients = ingredients.filter((value) => !value.archived && !links.some((link) => link.ingredientId === value.id));
@@ -85,10 +94,17 @@ export default function MealSetup({ initialMealId, onBusyChange }: { initialMeal
 
   const run = async (scope: string, success: string, operation: () => Promise<void>) => {
     if (busyRef.current) return;
-    busyRef.current = true; setBusy(true); onBusyChange?.(true); setFeedback(undefined);
+    busyRef.current = true; setBusy(true); setFeedback(undefined);
     try { await operation(); setFeedback({ scope, message: success }); }
     catch (error) { report(scope, error); }
-    finally { busyRef.current = false; setBusy(false); onBusyChange?.(false); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+  const savedIdea = (result: MealIdeaSaveResult) => {
+    setMeals((old) => [...old.filter((value) => value.id !== result.meal.id), result.meal]);
+    setIngredients((old) => [...old.filter((value) => !result.ingredients.some((item) => item.id === value.id)), ...result.ingredients]);
+    setMealId(result.meal.id);
+    setMealForm({ name: result.meal.name, type: result.meal.type, description: result.meal.description || '' });
+    setFeedback({ scope: 'meal', message: 'Meal and recipe saved. Choose it in Planner whenever you need it.' });
   };
   const chooseMeal = (id: string) => {
     const value = meals.find((item) => item.id === id);
@@ -149,7 +165,9 @@ export default function MealSetup({ initialMealId, onBusyChange }: { initialMeal
       {feedback.scope === 'load' && <button className={`${button} ml-3`} onClick={() => setRetry((old) => old + 1)}>Retry loading catalog</button>}
     </div>}
     {loading && <p>Loading catalog…</p>}
-    <fieldset disabled={busy || loading} className="space-y-6">
+    <MealIdeaPicker meals={meals} ingredients={ingredients} disabled={busy || loading} onSaved={savedIdea} onEditingChange={editIdea} />
+    {ideaEditing && <p className="text-sm text-slate-600">Save or discard this meal to return to the other meal tools.</p>}
+    {!ideaEditing && <fieldset disabled={busy || loading} className="space-y-6">
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />Show archived meals and ingredients</label>
       <div className="grid gap-6 lg:grid-cols-2">
         <form noValidate onSubmit={(event) => { event.preventDefault(); void saveMeal(); }} className="space-y-4 rounded-2xl border bg-white p-5">
@@ -206,6 +224,6 @@ export default function MealSetup({ initialMealId, onBusyChange }: { initialMeal
           </fieldset>
         </>}
       </section>
-    </fieldset>
+    </fieldset>}
   </div>;
 }

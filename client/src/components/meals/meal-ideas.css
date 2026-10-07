@@ -1,0 +1,19 @@
+.ska-meal-ideas { min-width: 0; max-width: 100%; border: 1px solid #f1d596; border-radius: 22px; padding: clamp(12px, 3vw, 24px); background: linear-gradient(140deg, #fff9df, #fff 68%); }
+.ska-meal-ideas :is(input, select, textarea, button) { min-height: 44px; max-width: 100%; }
+.ska-meal-ideas :is(input, select, textarea) { min-width: 0; }
+.ska-meal-ideas button { white-space: normal; overflow-wrap: anywhere; }
+.ska-meal-ideas :is(h3, h4, p, label, legend) { overflow-wrap: anywhere; }
+.ska-meal-ideas :is(fieldset, form, article, section) { min-width: 0; }
+.ska-meal-ideas button:focus-visible, .ska-meal-ideas :is(input, select, textarea):focus-visible { outline: 3px solid #6854d6; outline-offset: 3px; }
+.ska-meal-ideas .meal-idea-primary { border-color: #e9bc49; background: #ffe07b; color: #4b370f; }
+@media (max-width: 480px) {
+  .ska-meal-ideas { border-radius: 18px; }
+  .ska-meal-ideas :is(input, select, textarea) { font-size: 16px; }
+}
+
+.ska-photo-line-image { display: block; width: 100%; height: auto; min-height: 44px; max-height: 100px; background: #fff; border-radius: 8px; }
+.ska-recipe-import :is(button, input, textarea, summary) { scroll-margin-block: 24px 150px; }
+@media (max-width: 767px) {
+  html:has(.ska-recipe-import) { scroll-padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+  .ska-recipe-import { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+}

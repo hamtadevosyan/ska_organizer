@@ -150,6 +150,12 @@ else
       exit 1
     fi
   done
+  if ! "$inventory_only"; then
+    if ! command -v tesseract >/dev/null 2>&1 || ! tesseract --list-langs 2>/dev/null | grep -qx 'eng'; then
+      printf '%s\n' 'Local recipe OCR is required by the photo-import checks. Run: bash scripts/setup-recipe-ocr.sh' >&2
+      exit 1
+    fi
+  fi
   printf 'Checking update prerequisites. Run with the normal client/server stopped.\n'
   database_step check
   current_step='Database backup'

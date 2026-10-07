@@ -5,6 +5,7 @@ COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 
 FROM node:24-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app/server
 COPY --from=dependencies /app/server/node_modules ./node_modules
