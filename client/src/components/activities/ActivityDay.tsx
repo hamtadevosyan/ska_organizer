@@ -1,12 +1,12 @@
-import { BookOpen, Clock3, Pencil, Trash2 } from 'lucide-react';
+import { ArrowRightLeft, BookOpen, Clock3, Pencil, Trash2 } from 'lucide-react';
 import { dayLabel, entryProblem, legacyLabel, materialUnitLabel, suitable, timeRange } from '../../api/activities';
 import type { Activity, Entry } from '../../api/activities';
 import type { Room } from '../../api/rooms';
 
 type Props = { date: string; entries: Entry[]; catalog: Activity[]; room?: Room; disabledReason: string; editable: boolean;
-  editEntry: (entry: Entry, trigger: HTMLButtonElement) => void; removeEntry: (id: string) => void; chooseActivity: (id: string, activityId: string, updateOnly?: boolean) => void };
+  editEntry: (entry: Entry, trigger: HTMLButtonElement) => void; moveEntry: (entry: Entry) => void; moveDisabled?: boolean; removeEntry: (id: string) => void; chooseActivity: (id: string, activityId: string, updateOnly?: boolean) => void };
 
-export function ActivityDay({ date, entries, catalog, room, disabledReason, editable, editEntry, removeEntry, chooseActivity }: Props) {
+export function ActivityDay({ date, entries, catalog, room, disabledReason, editable, editEntry, moveEntry, moveDisabled, removeEntry, chooseActivity }: Props) {
   const day = dayLabel(date);
   const locked = !!disabledReason;
   return <section aria-label={day} className="planner-day">
@@ -19,6 +19,7 @@ export function ActivityDay({ date, entries, catalog, room, disabledReason, edit
       return <fieldset key={entry.id} aria-label={day + ' activity ' + (index + 1)} className={'planner-entry tone-' + (index % 4)}>
         <div className="planner-entry-top"><p className="planner-time"><Clock3 size={16} aria-hidden="true" />{timeRange(entry)}</p>
           {editable && <div className="planner-entry-actions"><button type="button" aria-label={'Edit activity ' + (index + 1) + ' on ' + day} disabled={locked} onClick={event => editEntry(entry, event.currentTarget)} className="ska-button"><Pencil size={16} aria-hidden="true" />Edit</button>
+            <button type="button" aria-label={'Move activity ' + (index + 1) + ' on ' + day} disabled={locked || moveDisabled} onClick={() => moveEntry(entry)} className="ska-button"><ArrowRightLeft size={16} aria-hidden="true" />Move</button>
             <button type="button" aria-label={'Remove activity ' + (index + 1) + ' on ' + day} disabled={locked} onClick={() => removeEntry(entry.id)} className="ska-button"><Trash2 size={16} aria-hidden="true" />Remove</button></div>}
         </div>
         <h3>{entry.activity?.name || 'Activity not chosen'}</h3>
