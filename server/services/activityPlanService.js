@@ -13,6 +13,7 @@ const minutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
 const sortKey = (entry) => entry.date + ':' + (entry.startTime || '25:' + ({ morning: '01', midday: '02', afternoon: '03' }[entry.timeBlock] || '04')) + ':' + (entry.id || '');
 const fallback = (id) => ({ id, name: 'Unavailable activity', description: '', durationMinutes: null,
   ageMinMonths: null, ageMaxMonths: null, roomId: null, materials: [], version: 0 });
+const copyProblem = (message, code) => Object.assign(problem(message, 409), { code });
 async function stored(roomId, weekStart) {
   const [header, rows] = await Promise.all([db.getScheduleWeek(roomId, weekStart), db.listScheduleEntries(roomId, weekStart)]);
   const entries = await Promise.all(rows.map(async (row) => ({ id: row.id, date: row.date,
@@ -26,7 +27,7 @@ function entryValues(entries, weekStart) {
   const end = new Date(weekStart + 'T00:00:00Z'); end.setUTCDate(end.getUTCDate() + 7);
   const seen = new Set();
   return entries.map((entry) => {
-    v.object(entry, ['id', 'date', 'startTime', 'endTime', 'timeBlock', 'activityId', 'useLatest', 'activityVersion']);
+    v.object(entry, ['id', 'date', 'startTime', 'endTime', 'timeBlock', 'activityId', 'useLatest', 'activityVersion', 'copyFrom']);
     dateOnly(entry.date);
     if (entry.date < weekStart || entry.date >= end.toISOString().slice(0, 10)) throw problem('Choose a date within the selected week.');
     if (entry.id != null) v.identifier(entry.id, 'id');
@@ -45,21 +46,52 @@ function entryValues(entries, weekStart) {
     v.identifier(entry.activityId);
     if (entry.useLatest !== undefined && typeof entry.useLatest !== 'boolean') throw problem('Invalid activity update choice.');
     if (entry.activityVersion != null && (!Number.isInteger(entry.activityVersion) || entry.activityVersion < 1)) throw problem('Invalid activity version.');
+    let copyFrom;
+    if (entry.copyFrom !== undefined) {
+      v.object(entry.copyFrom, ['roomId', 'weekStart', 'version', 'entryId']);
+      v.identifier(entry.copyFrom.roomId, 'copyFrom'); validateWeekStart(entry.copyFrom.weekStart);
+      v.identifier(entry.copyFrom.entryId, 'copyFrom');
+      if (!Number.isInteger(entry.copyFrom.version) || entry.copyFrom.version < 1 || entry.copyFrom.version >= 2147483647) throw problem('Reload the saved source week before copying activities.');
+      if (!entry.id || entry.id === entry.copyFrom.entryId) throw problem('A copied activity needs a new scheduled identifier.');
+      if (entry.useLatest === true) throw problem('Choose either the saved activity copy or the latest catalog activity.');
+      copyFrom = { roomId: entry.copyFrom.roomId, weekStart: entry.copyFrom.weekStart, version: entry.copyFrom.version, entryId: entry.copyFrom.entryId };
+    }
     const identity = entry.id ? 'id:' + entry.id : 'legacy:' + legacyKey(entry);
     if (seen.has(identity)) throw problem('A scheduled activity identifier cannot be repeated.');
     seen.add(identity);
     return { id: entry.id || null, date: entry.date, startTime: untimed ? null : entry.startTime, endTime: untimed ? null : entry.endTime,
-      timeBlock: untimed ? entry.timeBlock : null, activityId: entry.activityId, useLatest: entry.useLatest === true, activityVersion: entry.activityVersion ?? null };
+      timeBlock: untimed ? entry.timeBlock : null, activityId: entry.activityId, useLatest: entry.useLatest === true, activityVersion: entry.activityVersion ?? null,
+      ...(copyFrom ? { copyFrom } : {}) };
   }).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 }
 async function resolve(room, previous, entries) {
   const saved = new Map(previous.entries.map((entry) => [entry.id, entry]));
   const legacy = new Map(previous.entries.filter((entry) => !entry.startTime).map((entry) => [legacyKey(entry), entry]));
+  const sources = new Map();
+  const sourceWeek = (source) => {
+    const key = source.roomId + ':' + source.weekStart;
+    if (!sources.has(key)) sources.set(key, stored(source.roomId, source.weekStart));
+    return sources.get(key);
+  };
   const resolved = await Promise.all(entries.map(async (entry) => {
     const retained = entry.id ? saved.get(entry.id) : legacy.get(legacyKey(entry));
+    if (entry.copyFrom && retained) throw problem('A copied activity needs a new scheduled identifier.');
     if (entry.id && !retained && await db.getScheduleEntryById(entry.id)) throw problem('This scheduled activity belongs to a different room or week. Add it as a new entry here.', 409);
     const values = { id: retained?.id || entry.id || randomUUID(), date: entry.date, startTime: entry.startTime, endTime: entry.endTime,
       timeBlock: entry.timeBlock, activityId: entry.activityId };
+    if (entry.copyFrom) {
+      // Provenance identifies server-owned saved details. The client supplies no
+      // activity snapshot, and the source is never rewritten by a copy.
+      const source = await sourceWeek(entry.copyFrom);
+      const original = source.entries.find((value) => value.id === entry.copyFrom.entryId);
+      if (source.version !== entry.copyFrom.version || !original) throw copyProblem('The source week changed. Reload it and choose the activities to copy again.', 'ACTIVITY_COPY_SOURCE_CONFLICT');
+      if (original.activityId !== entry.activityId) throw problem('The copied activity does not match its saved source. Reload the source week.');
+      const activity = await db.getActivityById(entry.activityId);
+      if (!activity) throw copyProblem('A copied activity is no longer available. Skip it or replace it with an available activity.', 'ACTIVITY_COPY_UNAVAILABLE');
+      if (!v.suitable(original.activity, room) || !v.suitable(activity, room)) throw copyProblem('A copied activity is not suitable for this room and its age range. Skip it or choose a suitable replacement.', 'ACTIVITY_COPY_UNSUITABLE');
+      if (entry.activityVersion != null && activity.version !== entry.activityVersion) throw problem('An activity changed elsewhere. Refresh activities and choose its updated version.', 409);
+      return { ...values, activity: original.activity };
+    }
     // Moving or resizing an existing entry preserves its saved details.
     if (retained?.activityId === entry.activityId && !entry.useLatest) return { ...values, activity: retained.activity };
     const activity = await db.getActivityById(entry.activityId);

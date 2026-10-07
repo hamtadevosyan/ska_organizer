@@ -6,6 +6,22 @@
 .planner-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 18px; padding: 21px; border: 1px solid #dbddf5; border-radius: 22px; background: linear-gradient(120deg, #f5efff, #eff6ff 70%, #fffcf0); }
 .planner-save-actions, .planner-browse, .planner-status-row, .planner-entry-top, .planner-entry-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .planner-status-row, .planner-browse, .planner-entry-top { justify-content: space-between; }
+.planner-reuse-actions, .planner-action-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.planner-reuse { display: grid; min-width: 0; gap: 16px; margin-top: 16px; color: #415671; line-height: 1.6; }
+.planner-reuse :where(p, li, strong, label) { overflow-wrap: anywhere; }
+.planner-reuse :where(input:not([type='checkbox'], [type='radio']), select) { width: 100%; min-width: 0; }
+.planner-reuse-settings, .planner-reuse-list { display: grid; min-width: 0; gap: 14px; }
+.planner-reuse-entry, .planner-copy-mode, .planner-copy-review, .planner-action-preview { min-width: 0; display: grid; gap: 12px; padding: 14px; border: 1px solid #ded6ef; border-radius: 15px; background: #fcfaff; }
+.planner-reuse-entry legend, .planner-copy-mode legend, .planner-reuse h3 { font-weight: 750; color: #53427c; }
+.planner-reuse-check { display: flex; align-items: start; gap: 10px; min-height: 44px; padding: 9px 0; cursor: pointer; }
+.planner-reuse-check input { flex: 0 0 18px; width: 18px; height: 18px; min-height: 0; margin-top: 4px; accent-color: #6d28d9; }
+.planner-reuse details summary { cursor: pointer; font-weight: 650; padding: 8px 0; }
+.planner-reuse details p { white-space: pre-wrap; }
+.planner-copy-summary { padding: 14px; background: #eff6ff; border-radius: 15px; }
+.planner-action-preview { background: #f3f8ff; border-color: #d6e5fa; }
+.planner-action-materials { display: grid; gap: 12px; }
+.planner-action-materials li { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid #dae4f2; }
+.planner-action-buttons .ska-button { flex: 1 1 160px; }
 .planner-save-state { display: inline-flex; align-items: center; gap: 8px; padding: 9px 13px; border-radius: 99px; font-size: 13px; font-weight: 700; }
 .planner-save-state.is-draft { background: var(--ska-yellow-soft); color: #72551b; }
 .planner-save-state.is-saved { background: var(--ska-blue-soft); color: #24538d; }

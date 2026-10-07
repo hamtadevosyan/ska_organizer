@@ -3,7 +3,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import axios from 'axios';
 import { useActivityPlanner } from './useActivityPlanner';
 import { orderedEntries } from '../../api/activities';
-import type { Activity, ActivityPlan, Entry } from '../../api/activities';
+import type { Activity, ActivityPlan, CopySource, Entry } from '../../api/activities';
 
 vi.mock('axios');
 const week = '2030-01-07';
@@ -14,11 +14,15 @@ const entry = (values: Partial<Entry> = {}): Entry => ({ id: 'saved-entry', date
   timeBlock: null, activityId: art.id, activity: art, useLatest: false, ...values });
 let original: Entry[];
 let catalog: Activity[];
+let copiedSnapshots: Map<string, Activity>;
+const sourceKey = (source: CopySource) => [source.roomId, source.weekStart, source.version, source.entryId].join(':');
+const copyFrom: CopySource = { roomId: 'source-room', weekStart: '2029-12-31', version: 7, entryId: 'source-entry' };
+const copiedEntry = (values: Partial<Entry> = {}) => entry({ id: 'copied-entry', date: '2030-01-08', copyFrom, ...values });
 const response = (data: unknown) => ({ data: { data } });
 
 beforeEach(() => {
   vi.resetAllMocks();
-  original = []; catalog = [latest];
+  original = []; catalog = [latest]; copiedSnapshots = new Map([[sourceKey(copyFrom), art]]);
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   vi.mocked(axios.get).mockImplementation(async (url, config) => {
     if (url.endsWith('/activity')) return response(catalog);
@@ -31,7 +35,8 @@ beforeEach(() => {
     const values = payload as ActivityPlan;
     return response({ ...values, version: values.version + 1, savedAt: '2030-01-01T12:00:00Z', materials: [],
       entries: values.entries.map(row => ({ ...row, useLatest: false,
-        activity: (!row.useLatest && original.find(saved => saved.id === row.id && saved.activityId === row.activityId)?.activity)
+        activity: (row.copyFrom && copiedSnapshots.get(sourceKey(row.copyFrom)))
+          || (!row.useLatest && original.find(saved => saved.id === row.id && saved.activityId === row.activityId)?.activity)
           || catalog.find(activity => activity.id === row.activityId) })) });
   });
 });
@@ -132,4 +137,159 @@ test.each(['room', 'week', 'reload'])('loading another %s clears removal undo in
   act(() => result.current.undoRemoval());
   expect(result.current.entries.map(row => row.id)).toEqual(loadedIds);
   expect(result.current.dirty).toBe(false);
+});
+
+test('applying several copied rows creates one undo step and preserves source provenance in material previews', async () => {
+  const saved = entry(); const copied = copiedEntry();
+  const another = copiedEntry({ id: 'another-copy', date: '2030-01-09' });
+  const { result } = await load([saved]);
+  act(() => result.current.applyDraftChange([saved, copied, another], 'Undo copy'));
+  expect(result.current.dirty).toBe(true);
+  expect(result.current.undoCount).toBe(1); expect(result.current.undoLabel).toBe('Undo copy');
+  expect(result.current.entries.map(row => row.id)).toEqual([saved.id, copied.id, another.id]);
+  expect(result.current.entries[1].activity).toBe(art);
+  await waitFor(() => expect(vi.mocked(axios.post).mock.calls.filter(([url]) => url.endsWith('/preview'))).toHaveLength(1));
+  const preview = vi.mocked(axios.post).mock.calls.find(([url]) => url.endsWith('/preview'))![1] as Pick<ActivityPlan, 'entries'>;
+  expect(preview.entries[1]).toEqual(expect.objectContaining({ copyFrom, useLatest: false }));
+  expect(vi.mocked(axios.post).mock.calls.filter(([url]) => url.endsWith('/plan'))).toHaveLength(0);
+  act(() => result.current.undoChange());
+  expect(result.current.entries).toEqual([saved]);
+  expect(result.current.entries[0].activity).toBe(art);
+  expect(result.current.undoCount).toBe(0); expect(result.current.dirty).toBe(true);
+});
+
+test('copy undo retains a later added activity and time edits on existing rows', async () => {
+  const saved = entry(); const copied = copiedEntry();
+  const { result } = await load([saved]);
+  act(() => result.current.applyDraftChange([saved, copied], 'Undo copy'));
+  act(() => {
+    result.current.addEntry('2030-01-09', latest, { startTime: '11:00', endTime: '11:20' });
+    result.current.changeTime(saved.id, 'startTime', '10:00');
+  });
+  const added = result.current.entries.find(row => row.date === '2030-01-09')!;
+  act(() => result.current.undoChange());
+  expect(result.current.entries).toEqual([expect.objectContaining({ id: saved.id, startTime: '10:00', endTime: '10:20' }), added]);
+  expect(result.current.entries[0].activity).toBe(art);
+  expect(result.current.entries.some(row => row.id === copied.id)).toBe(false);
+});
+
+test('move undo reverts the day while retaining later times and an explicit activity replacement', async () => {
+  const saved = entry(); const other = { ...latest, id: 'new-activity' };
+  const { result } = await load([saved]);
+  act(() => result.current.applyDraftChange([{ ...saved, date: '2030-01-08' }], 'Undo move'));
+  act(() => result.current.updateEntry(saved.id, { activity: other, startTime: '13:00', endTime: '13:30', timeBlock: null }));
+  expect(result.current.undoCount).toBe(1); expect(result.current.undoLabel).toBe('Undo move');
+  act(() => result.current.undoChange());
+  expect(result.current.entries).toEqual([{ ...saved, activityId: other.id, activity: other, useLatest: true,
+    startTime: '13:00', endTime: '13:30' }]);
+});
+
+test('replacement copy and removals undo in order without reviving an obsolete draft', async () => {
+  const first = entry(); const second = entry({ id: 'second-entry' }); const copied = copiedEntry();
+  const { result } = await load([first, second]);
+  act(() => {
+    result.current.removeEntry(first.id);
+    result.current.applyDraftChange([copied], 'Undo copy');
+    result.current.removeEntry(copied.id);
+  });
+  expect(result.current.entries).toEqual([]);
+  expect(result.current.undoCount).toBe(3); expect(result.current.removedCount).toBe(2);
+  act(() => result.current.undoChange());
+  expect(result.current.entries).toEqual([copied]); expect(result.current.undoLabel).toBe('Undo copy');
+  act(() => result.current.undoChange());
+  expect(result.current.entries).toEqual([second]); expect(result.current.undoLabel).toBe('Undo removal');
+  act(() => result.current.undoRemoval());
+  expect(result.current.entries).toEqual(orderedEntries([first, second]));
+  expect(result.current.entries.find(row => row.id === first.id)?.activity).toBe(art);
+  expect(result.current.undoCount).toBe(0); expect(result.current.removedCount).toBe(0);
+});
+
+test('copied snapshots survive time edits and library saves until an explicit latest selection', async () => {
+  const copied = copiedEntry(); const edited = { ...latest, name: 'Edited in the library', version: 3 };
+  const { result } = await load([copied]);
+  act(() => result.current.updateEntry(copied.id, { activity: latest, startTime: '10:00', endTime: '10:20', timeBlock: null }));
+  act(() => result.current.activitySaved(edited));
+  expect(result.current.entries[0].activity).toBe(art);
+  expect(result.current.entries[0].copyFrom).toEqual(copyFrom);
+  expect(result.current.entries[0].useLatest).toBe(false);
+  act(() => result.current.chooseActivity(copied.id, art.id, true));
+  expect(result.current.entries[0].activity).toBe(edited);
+  expect(result.current.entries[0].copyFrom).toBeUndefined();
+  expect(result.current.entries[0].useLatest).toBe(true);
+});
+
+test('selecting another activity clears copy provenance, while simple time edits preserve it', async () => {
+  const copied = copiedEntry(); const other = { ...latest, id: 'other-activity' };
+  const { result } = await load([copied]);
+  act(() => result.current.changeTime(copied.id, 'endTime', '09:00'));
+  expect(result.current.entries[0].copyFrom).toBe(copyFrom);
+  act(() => result.current.updateEntry(copied.id, { activity: other, startTime: '09:00', endTime: '09:20', timeBlock: null }));
+  expect(result.current.entries[0].copyFrom).toBeUndefined();
+  expect(result.current.entries[0].activity).toBe(other);
+});
+
+test('failed copy saves retain undo and exactly the same retry payload, then success clears the history', async () => {
+  const saved = entry(); const copied = copiedEntry();
+  const { result } = await load([saved]);
+  const normal = vi.mocked(axios.post).getMockImplementation()!;
+  let fail = true;
+  vi.mocked(axios.post).mockImplementation(async (url, payload, config) => {
+    if (url.endsWith('/plan') && fail) throw new Error('Synthetic response lost');
+    return normal(url, payload, config);
+  });
+  act(() => result.current.applyDraftChange([saved, copied], 'Undo copy'));
+  await act(async () => result.current.save());
+  await act(async () => result.current.save());
+  expect(result.current.undoCount).toBe(1); expect(result.current.undoLabel).toBe('Undo copy');
+  expect(result.current.dirty).toBe(true);
+  const attempts = vi.mocked(axios.post).mock.calls.filter(([url]) => url.endsWith('/plan'));
+  expect(attempts[0][1]).toEqual(attempts[1][1]);
+  expect((attempts[0][1] as Pick<ActivityPlan, 'entries'>).entries[1]).toEqual(expect.objectContaining({ id: copied.id, copyFrom, useLatest: false }));
+  fail = false;
+  await act(async () => result.current.save());
+  expect(result.current.entries[1].activity).toBe(art);
+  expect(result.current.dirty).toBe(false); expect(result.current.undoCount).toBe(0);
+  const savedRows = result.current.entries;
+  act(() => result.current.undoChange());
+  expect(result.current.entries).toEqual(savedRows);
+});
+
+test.each(['room', 'week', 'reload'])('changing %s clears copy undo with the old room and week', async (change) => {
+  const saved = entry(); const { result } = await load([saved]);
+  act(() => result.current.applyDraftChange([saved, copiedEntry()], 'Undo copy'));
+  act(() => {
+    if (change === 'room') result.current.chooseRoom('other-room');
+    else if (change === 'week') result.current.chooseWeek('2030-01-14');
+    else result.current.reloadWeek();
+  });
+  await waitFor(() => expect(result.current.plan?.roomId).toBe(change === 'room' ? 'other-room' : 'selected-room'));
+  expect(result.current.undoCount).toBe(0); expect(result.current.undoLabel).toBe('');
+  const loaded = result.current.entries;
+  act(() => result.current.undoChange());
+  expect(result.current.entries).toEqual(loaded); expect(result.current.dirty).toBe(false);
+});
+
+test('a pending save prevents applying or undoing operations and editing the draft', async () => {
+  const saved = entry(); const copied = copiedEntry(); const { result } = await load([saved]);
+  const normal = vi.mocked(axios.post).getMockImplementation()!;
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => { release = resolve; });
+  vi.mocked(axios.post).mockImplementation(async (url, payload, config) => {
+    if (url.endsWith('/plan')) await hold;
+    return normal(url, payload, config);
+  });
+  act(() => result.current.applyDraftChange([saved, copied], 'Undo copy'));
+  let saving!: Promise<void>;
+  act(() => { saving = result.current.save(); });
+  expect(result.current.saving).toBe(true);
+  act(() => {
+    result.current.applyDraftChange([], 'Undo move');
+    result.current.undoChange(); result.current.removeEntry(saved.id);
+    result.current.addEntry(week, latest); result.current.changeTime(saved.id, 'startTime', '12:00');
+    result.current.chooseRoom('other-room'); result.current.chooseWeek('2030-01-14'); result.current.reloadWeek();
+  });
+  expect(result.current.entries).toEqual([saved, copied]); expect(result.current.undoCount).toBe(1);
+  expect(result.current.roomId).toBe('selected-room'); expect(result.current.weekStart).toBe(week);
+  await act(async () => { release(); await saving; });
+  expect(result.current.saving).toBe(false); expect(result.current.undoCount).toBe(0);
 });
