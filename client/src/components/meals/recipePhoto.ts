@@ -1,28 +1,64 @@
 export type PhotoIngredient = { name: string; unit: string; quantity: string; original: string };
+export type PhotoTextLine = { text: string; confidence: number; box: { x: number; y: number; width: number; height: number } };
 export type PhotoRecipe = { name: string; servings: string; ingredients: string };
 const fraction: Record<string, string> = { '½': ' 1/2', '¼': ' 1/4', '¾': ' 3/4', '⅓': ' 1/3', '⅔': ' 2/3', '⅛': ' 1/8', '⅜': ' 3/8', '⅝': ' 5/8', '⅞': ' 7/8' };
 const amountPattern = '(?:\\d+\\s+\\d+/\\d+|\\d+/\\d+|\\d+(?:\\.\\d+)?|\\.\\d+)';
 const amountStart = new RegExp(`^(${amountPattern})\\s*(.*)$`);
 const stop = /^(?:instructions?|directions?|method|preparation|steps?|notes?|nutrition|allergens?)\b/i;
 const heading = /^(?:ingredients?|you will need)\s*:?$/i;
-const yieldLine = /^(?:serves|servings?\s*:|makes)\s*(\d+)\s*(?:servings?|portions?|people)?\s*$/i;
-const clean = (line: string) => line.trim().replace(/^(?:[•*]\s*|[-–]\s+)/, '').trim();
+const yieldLine = /(?:\b(?:serves|servings?\s*:|makes|yields?)\s*(\d+)\s*(?:servings?|portions?|people)?\b|\b(\d+)\s+(?:servings?|portions?)\b)/i;
+export const cleanRecipeLine = (line: string) => line.trim().replace(/^(?:[•*»●·|]\s*|[-–]\s+)+/, '').replace(/\s+[|]$/, '').trim();
+const clean = cleanRecipeLine;
+const yieldOf = (line: string) => { const match = line.match(yieldLine); return match?.[1] || match?.[2] || ''; };
+const scaleControl = /^(?:(?:[✓✔v]\s*)?(?:\d+\/)?\d+\s*[xX]\s*)+$/;
+const amountLead = /^[\d½¼¾⅓⅔⅛⅜⅝⅞%¥]/;
 
-export function reviewRecipeText(text: string): PhotoRecipe {
-  const lines = text.split(/\r?\n/).map(clean).filter(Boolean);
+export function reviewRecipeText(text: string, located: PhotoTextLine[] = []): PhotoRecipe {
+  const lines = text.split(/\r?\n/).map(clean).filter(line => line && /[a-zA-Z]/.test(line) && !scaleControl.test(line));
   const start = lines.findIndex(line => heading.test(line));
-  const name = (lines.slice(0, start >= 0 ? start : 1).find(line => !yieldLine.test(line) && !heading.test(line) && !/^(?:recipe\s*:?$|[\d½¼¾⅓⅔⅛⅜⅝⅞])/.test(line)) || '').slice(0, 255);
-  const servings = lines.map(line => line.match(yieldLine)?.[1]).find(Boolean) || '';
-  let candidates = lines.slice(start >= 0 ? start + 1 : (name ? 1 : 0));
+  const yieldIndex = lines.findIndex(line => !!yieldOf(line));
+  const confidence = (line: string) => located.find(value => clean(value.text) === line)?.confidence ?? 100;
+  // An ingredient-only photo has no meal title. Do not use clipped headings,
+  // serving controls or a low-confidence fragment as a made-up meal name.
+  const before = lines.slice(0, start >= 0 ? start : yieldIndex >= 0 ? yieldIndex : 1);
+  const name = (before.find(line => !yieldOf(line) && !heading.test(line) && !amountLead.test(line) &&
+    !/^(?:recipe\s*:?$)/i.test(line) && confidence(line) >= 80 && /^[a-zA-Z][a-zA-Z\s,'’&()-]*$/.test(line)) || '').slice(0, 255);
+  const yields = [...new Set(lines.map(yieldOf).filter(Boolean))];
+  const servings = yields.length === 1 ? yields[0] : '';
+  const firstIngredient = lines.findIndex(line => amountLead.test(line) && !yieldOf(line));
+  const yieldBeforeIngredients = yieldIndex >= 0 && (firstIngredient < 0 || yieldIndex < firstIngredient);
+  let candidates = lines.slice(start >= 0 ? start + 1 : yieldBeforeIngredients ? yieldIndex + 1 : (name ? 1 : 0));
   const end = candidates.findIndex(line => stop.test(line));
   if (end >= 0) candidates = candidates.slice(0, end);
-  candidates = candidates.filter(line => !yieldLine.test(line) && !heading.test(line));
+  candidates = candidates.filter(line => !yieldOf(line) && !heading.test(line) && !scaleControl.test(line));
   return { name, servings, ingredients: candidates.join('\n') };
+}
+
+const recipeMeasure = /(?<![a-zA-Z])(?:cups?|teaspoons?|tablespoons?|tsp|tbsp|grams?|g|millilit(?:er|re)s?|ml|ounces?|oz|pounds?|lbs?|gallons?|gal|count|pieces?)\b/i;
+function measureParts(line: string) {
+  const value = clean(line), match = recipeMeasure.exec(value);
+  return match ? { prefix: value.slice(0, match.index).trim(), rest: value.slice(match.index) } : undefined;
+}
+const normalizeFractions = (value: string) => value.replace(/[½¼¾⅓⅔⅛⅜⅝⅞]/g, char => fraction[char]).replace(/\s+/g, ' ').trim();
+export function uncertainRecipeAmount(line: string): boolean {
+  const parts = measureParts(line);
+  if (!parts) return /[%¥?]/.test(clean(line).split(/\s+/).slice(0, 2).join(' '));
+  const prefix = normalizeFractions(parts.prefix);
+  return !new RegExp(`^${amountPattern}$`).test(prefix) || prefix.split(/[ /]+/).some(value => Number(value) === 0);
+}
+export function fractionChoices(line: string): { label: string; value: string }[] {
+  const parts = measureParts(line);
+  if (!parts || !uncertainRecipeAmount(line) || !(/[%¥?]|[YyVv][2348sS¼,%]/.test(parts.prefix) || /^\d+\s+\d+$/.test(parts.prefix))) return [];
+  const whole = parts.prefix.match(/^(\d+)(?:\s*[^\d\s./]|\s+\d+$)/)?.[1];
+  return ['1/4', '1/2', '3/4'].map(value => {
+    const amount = whole ? `${whole} ${value}` : value;
+    return { label: amount, value: `${amount} ${parts.rest}` };
+  });
 }
 
 export function ingredientLines(text: string, servings: number): PhotoIngredient[] {
   return text.split(/\r?\n/).map(clean).filter(Boolean).map(original => {
-    const normalized = original.replace(/[½¼¾⅓⅔⅛⅜⅝⅞]/g, value => fraction[value]).trim();
+    const normalized = normalizeFractions(original);
     const match = normalized.match(amountStart);
     const result: PhotoIngredient = { name: normalized, unit: '', quantity: '', original };
     if (!match) return result;
@@ -36,7 +72,7 @@ export function ingredientLines(text: string, servings: number): PhotoIngredient
       const label = unit[1].toLowerCase();
       result.unit = /^(g|grams?)$/.test(label) ? 'g' : /^(ml|milli)/.test(label) ? 'ml' : /^(oz|ounce)/.test(label) ? 'oz' : /^(lb|pound)/.test(label) ? 'lb' : /^(gal)/.test(label) ? 'gal' : 'count';
       result.name = unit[2];
-    } else if (/^(?:eggs?|bananas?|apples?|pears?|oranges?|carrots?|potatoes|tomatoes|onions?)\b/i.test(tail)) {
+    } else if (/^(?:(?:small|medium|large)\s+)?(?:eggs?|bananas?|apples?|pears?|oranges?|carrots?|potatoes|tomatoes|onions?)\b/i.test(tail)) {
       result.unit = 'count'; result.name = tail;
     } else {
       // Keep unfamiliar measures, ranges and package sizes visible. Never guess

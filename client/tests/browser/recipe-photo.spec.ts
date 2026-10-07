@@ -28,6 +28,7 @@ for (const width of [320, 1280]) {
 
     const name = 'Photo oat bowls ' + crypto.randomUUID().slice(0, 8);
     await page.getByLabel('Recipe meal name', { exact: true }).fill(name);
+    await page.getByText('Edit all ingredient text', { exact: true }).click();
     await page.getByLabel('Recipe ingredient lines').fill('120 g Oats\n400 ml Milk\n2 Bananas\n1 cup Berries');
     await page.getByRole('button', { name: 'Use recipe in meal draft' }).click();
     await expect(page.getByRole('checkbox')).toHaveAttribute('aria-invalid', 'true');
@@ -86,4 +87,66 @@ test('unreadable photo can retry and navigation/cancel preserves or discards rev
   await page.getByRole('button', { name: 'Discard photo' }).click();
   await expect(page.getByRole('button', { name: 'Browse meal ideas' })).toBeFocused();
   expect((await (await http.get(api + '/meals')).json()).data).toEqual(before);
+});
+
+test('photo review preserves seven ingredients and offers fraction corrections when amounts are ambiguous', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticatedApi(page);
+  await page.goto('/meals');
+  await page.getByRole('button', { name: 'Meal Setup', exact: true }).click();
+  await page.getByRole('button', { name: 'Import recipe photo', exact: true }).click();
+  // This test covers the correction UI. Supply known OCR ambiguities rather
+  // than requiring the installed reader to make these exact mistakes.
+  const source = ['Ingredients', 'Original recipe (1X) yields 8 servings',
+    '1 % cups all-purpose flour', '3 Y2 teaspoons baking powder',
+    '1 tablespoon white sugar', 'Ys, teaspoon salt', '1 Y% cups milk',
+    '3 tablespoons butter, melted', '1 large egg'];
+  await page.route('**/api/meals/recipe-photo', route => route.fulfill({
+    status: 200, contentType: 'application/json', headers: { 'cache-control': 'no-store' },
+    body: JSON.stringify({ data: { text: source.join('\n'), width: 1000, height: 1500,
+      lines: source.map((text, index) => ({ text, confidence: 90,
+        box: { x: 65, y: 40 + index * 155, width: 870, height: 55 } })) } }),
+  }));
+  await page.getByLabel('Recipe image file').setInputFiles(fileURLToPath(new URL('../../../server/tests/fixtures/recipe-photo-shadow.png', import.meta.url)));
+  await expect(page.getByLabel('Recipe makes how many servings?')).toHaveValue('8');
+  await expect(page.getByRole('group', { name: /^Review ingredient/ })).toHaveCount(7);
+  await expect(page.getByRole('img', { name: /^Photo of ingredient/ })).toHaveCount(7);
+  await expect(page.getByLabel('Ingredient line 6', { exact: true })).toHaveValue('3 tablespoons butter, melted');
+  await expect(page.getByLabel('Ingredient line 7', { exact: true })).toHaveValue('1 large egg');
+  await page.getByLabel('Recipe meal name', { exact: true }).fill('Shadow photo pancakes');
+  for (const [index, amount] of [[1, '1 1/2'], [2, '3 1/2'], [4, '1/4'], [5, '1 1/4']]) {
+    await page.getByRole('button', { name: `Use ${amount} for ingredient ${index}`, exact: true }).click();
+  }
+  for (const target of [page.getByRole('checkbox'), page.getByRole('button', { name: 'Use recipe in meal draft' })]) {
+    await target.scrollIntoViewIfNeeded();
+    expect(await target.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return element === top || element.contains(top);
+    })).toBe(true);
+  }
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Use recipe in meal draft' }).click();
+  const form = page.getByRole('form', { name: 'Create meal from idea' });
+  await expect(form.getByRole('region', { name: /^Ingredient \d+ details/ })).toHaveCount(7);
+  await expect(form.getByLabel('Ingredient 7 quantity per person (count)')).toHaveValue('0.125');
+});
+
+test('real shadowed photo supplies all seven review rows including butter and egg', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticatedApi(page);
+  await page.goto('/meals');
+  await page.getByRole('button', { name: 'Meal Setup', exact: true }).click();
+  await page.getByRole('button', { name: 'Import recipe photo', exact: true }).click();
+  await page.getByLabel('Recipe image file').setInputFiles(fileURLToPath(new URL('../../../server/tests/fixtures/recipe-photo-shadow.png', import.meta.url)));
+  await expect(page.getByLabel('Recipe makes how many servings?')).toHaveValue('8');
+  await expect(page.getByLabel('Recipe meal name', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('group', { name: /^Review ingredient/ })).toHaveCount(7);
+  await expect(page.getByRole('img', { name: /^Photo of ingredient/ })).toHaveCount(7);
+  const ingredients = ['flour', 'baking powder', 'white sugar', 'salt', 'milk', 'butter', 'egg'];
+  for (const [index, ingredient] of ingredients.entries()) {
+    await expect(page.getByLabel(`Ingredient line ${index + 1}`, { exact: true })).toHaveValue(new RegExp(ingredient.replace(/ /g, '\\s+'), 'i'));
+  }
 });

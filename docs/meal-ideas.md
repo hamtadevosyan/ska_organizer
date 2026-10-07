@@ -14,9 +14,22 @@ service is called. Photos and recognized
 text stay in memory, are never written to the catalog or server files, and are
 discarded when the import is cancelled or the page closes.
 
-Check the recognized name and ingredient lines against **View recipe photo**.
-Enter or correct the number of servings made by the entire recipe, keep one
-ingredient per line, and confirm that you checked them. **Use recipe in meal
+Before reading, the server lightly smooths light recipe pages to reduce patterns
+from photographing a screen, then corrects uneven lighting so dark sections can
+be read alongside brighter sections. It preserves mostly
+dark pages for the reader's normal handling. Sparse text recognition supports
+spaced ingredient lists. Each recognized ingredient appears beside its original
+photo line; preparation does not resize or move those lines. Check the list
+against **View recipe photo** to catch any missed lines. The reader can still
+misread small printed fractions.
+Highlighted amounts must be corrected; fraction buttons insert the value you
+choose, without guessing. **Add ingredient line**, **Remove line** and
+**Edit all ingredient text** are available for corrections.
+
+Serving phrases such as ‘Original recipe (1X) yields 8 servings’ fill the serving
+count. Conflicting counts stay blank. Ingredient-only photos and uncertain
+titles leave the meal name blank. Enter or correct the name and servings, then
+confirm that you checked the ingredients. **Use recipe in meal
 draft** divides supported amounts by the confirmed serving count and opens the
 normal editable meal draft. This does not save anything. Original ingredient
 lines remain visible beside the draft rows. Unrecognized measures (such as cups,
@@ -38,14 +51,27 @@ when needed. Fresh `SKAO.sh setup` and the pilot server image include those
 packages. Existing native deployments use the script once before their normal
 `SKAO.sh update --local`. No OCR daemon, account, API key or separate service is
 needed; no Windows, router or phone settings change. Other server operating
-systems need a local Tesseract executable and English data on PATH.
+systems need a local Tesseract 5 executable and English data on PATH.
+
+After applying the photo reading update in a development checkout, run
+`npm ci` in `server` before starting or testing it. The lockfile adds `pngjs`
+7.0.0, a pure JavaScript PNG decoder; this update needs no additional APT package
+or hardware-specific configuration. The normal native update installs the
+locked server dependencies on the deployment machine.
 
 The read-only `POST /api/meals/recipe-photo` endpoint accepts one bounded PNG
 encoded in JSON, behind the existing session, CSRF, origin and write-role checks.
 It allows one read at a time per server process, limits text and image size,
-checks dimensions, format and chunk checksums, and kills the local reader on cancellation or after
-30 seconds. Responses are `no-store`. It creates no meal, ingredient or audit
-content. Ordinary API request size limits stay at 100 KB. Missing OCR, unreadable
+and checks dimensions, format, chunk checksums and the decompressed pixel budget.
+A cancellable worker decodes the PNG, applies a small 3×3 mean filter before
+flattening local lighting on light pages, and prepares grayscale PGM pixels in
+memory. Those pixels pass through standard input to
+Tesseract's default global thresholding; no adaptive-threshold setting is
+required. The original preview and source coordinates remain unchanged. The
+30-second limit covers preparation and OCR together; cancellation or timeout
+stops the active worker or reader. Neither step creates temporary image files
+or calls a network service. Responses are `no-store`. It creates no meal,
+ingredient or audit content. Ordinary API request size limits stay at 100 KB. Missing OCR, unreadable
 images and timeouts are recoverable; the user can try another image or use the
 existing manual tools. Neither photos nor import drafts are cached offline.
 

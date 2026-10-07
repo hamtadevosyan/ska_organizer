@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { ingredientLines, prepareRecipeImage, reviewRecipeText } from './recipePhoto';
+import { fractionChoices, ingredientLines, prepareRecipeImage, reviewRecipeText, uncertainRecipeAmount } from './recipePhoto';
 
 test('extracts a reviewable title, serving count and ingredient section without cooking instructions', () => {
   expect(reviewRecipeText('Banana bowls\nServes 4\n\nIngredients:\n• 120 g Oats\n400 ml Milk\n2 Bananas\nDirections\nMix and serve.')).toEqual({
@@ -42,4 +42,33 @@ test('rejects nonphotos, SVG and oversized uploads before browser decoding or ne
   const large = new File(['x'], 'recipe.png', { type: 'image/png' });
   Object.defineProperty(large, 'size', { value: 21 * 1024 * 1024 });
   await expect(prepareRecipeImage(large)).rejects.toThrow('under 20 MB');
+});
+
+test('extracts all seven ingredients after website yield controls and leaves a clipped title blank', () => {
+  const text = 'Mow.|\nBE ESSE CUCL\nCarx v 1X 2x )\n@ Original recipe (1X) yields 8 servings\n1 ¥2 cups all-purpose flour\n3 ¥2 teaspoons baking powder\n1 tablespoon white sugar\n¥, teaspoon salt, or more to taste\n1 Y% cups milk\n3 tablespoons butter, melted\n1 large egg,';
+  const located = text.split('\n').map((line, index) => ({ text: line, confidence: index < 3 ? 20 : 95, box: { x: 10, y: index * 40, width: 200, height: 30 } }));
+  const recipe = reviewRecipeText(text, located);
+  expect(recipe.name).toBe(''); expect(recipe.servings).toBe('8');
+  expect(recipe.ingredients.split('\n')).toHaveLength(7);
+  expect(recipe.ingredients.split('\n').slice(-2)).toEqual(['3 tablespoons butter, melted', '1 large egg,']);
+  expect(recipe.ingredients.split('\n').filter(uncertainRecipeAmount)).toHaveLength(4);
+  expect(fractionChoices('1 ¥2 cups all-purpose flour')).toContainEqual({ label: '1 1/2', value: '1 1/2 cups all-purpose flour' });
+  expect(fractionChoices('¥, teaspoon salt')).toContainEqual({ label: '1/4', value: '1/4 teaspoon salt' });
+  expect(uncertainRecipeAmount('3 2 teaspoons baking powder')).toBe(true);
+  expect(fractionChoices('3 2 teaspoons baking powder')).toContainEqual({ label: '3 1/2', value: '3 1/2 teaspoons baking powder' });
+  expect(uncertainRecipeAmount('3 ½ teaspoons baking powder')).toBe(false);
+  expect(uncertainRecipeAmount('1 large egg')).toBe(false);
+  expect(ingredientLines('1 large egg', 8)[0]).toMatchObject({ name: 'large egg', unit: 'count', quantity: '0.125' });
+});
+
+test.each(['Servings: 8', '8 servings', 'Makes 8 portions', 'Original recipe (1X) yields 8 servings'])('recognizes yield wording: %s', yieldText => {
+  expect(reviewRecipeText(`Oat bowls\n${yieldText}\nIngredients\n120 g oats`)).toMatchObject({ name: 'Oat bowls', servings: '8', ingredients: '120 g oats' });
+});
+
+test('conflicting yields require confirmation rather than choosing one silently', () => {
+  expect(reviewRecipeText('Oat bowls\nServes 4\nMakes 8 portions\nIngredients\n120 g oats').servings).toBe('');
+});
+
+test('a serving count printed below the ingredients does not discard the ingredients above it', () => {
+  expect(reviewRecipeText('Oat bowls\n120 g oats\n400 ml milk\nServes 4')).toEqual({ name: 'Oat bowls', servings: '4', ingredients: '120 g oats\n400 ml milk' });
 });

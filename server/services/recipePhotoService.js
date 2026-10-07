@@ -1,7 +1,9 @@
 const { spawn } = require('node:child_process');
+const { prepareRecipeImage } = require('./recipeImage');
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_TEXT_BYTES = 24000;
+const MAX_OCR_BYTES = 512 * 1024;
 const problem = (message, status, code) => Object.assign(new Error(message), { status, code });
 let processing = false;
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -76,26 +78,56 @@ function imageBuffer(body) {
   return Buffer.concat(retained);
 }
 
+// TSV keeps each line's location so people can check small quantities against
+// the actual photo. Confidence is a review hint, never proof an amount is right.
+function recognizedLines(output, width, height) {
+  const groups = new Map();
+  for (const row of output.split('\n')) {
+    const columns = row.replace(/\r$/, '').split('\t');
+    if (columns.length !== 12 || columns[0] !== '5') continue;
+    const [x, y, w, h, confidence] = columns.slice(6, 11).map(Number);
+    const text = columns[11].replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    if (!text || ![x, y, w, h, confidence].every(Number.isFinite) ||
+        x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > width || y + h > height) continue;
+    const key = columns.slice(1, 5).join(':');
+    const words = groups.get(key) || [];
+    words.push({ text, x, y, width: w, height: h, confidence });
+    groups.set(key, words);
+  }
+  return [...groups.values()].map(words => {
+    const x = Math.min(...words.map(word => word.x)), y = Math.min(...words.map(word => word.y));
+    return { text: words.map(word => word.text).join(' '),
+      confidence: Math.round(words.reduce((sum, word) => sum + word.confidence, 0) / words.length),
+      box: { x, y, width: Math.max(...words.map(word => word.x + word.width)) - x,
+        height: Math.max(...words.map(word => word.y + word.height)) - y } };
+  });
+}
+
 async function readRecipePhoto(body, { signal } = {}) {
   const image = imageBuffer(body);
   if (processing) throw problem('Another recipe photo is being read. Try again in a moment.', 429, 'RECIPE_PHOTO_BUSY');
   if (signal?.aborted) throw problem('Photo reading was cancelled.', 400, 'RECIPE_PHOTO_CANCELLED');
   processing = true;
+  const started = Date.now();
   try {
+    const prepared = await prepareRecipeImage(image, { signal });
+    if (signal?.aborted) throw problem('Photo reading was cancelled.', 400, 'RECIPE_PHOTO_CANCELLED');
+    const remaining = 30000 - (Date.now() - started);
+    if (remaining <= 0) throw problem('Reading took too long. Try a closer, clearer photo of one recipe.', 422, 'RECIPE_PHOTO_TIMEOUT');
     return await new Promise((resolve, reject) => {
-      const child = spawn('tesseract', ['stdin', 'stdout', '-l', 'eng', '--psm', '3'], {
+      const child = spawn('tesseract', ['stdin', 'stdout', '-l', 'eng', '--psm', '11', '--dpi', '300', 'tsv'], {
         stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true,
         env: { ...process.env, OMP_THREAD_LIMIT: '1' },
       });
       let output = '', bytes = 0, failure;
       const stop = error => { failure ||= error; child.kill('SIGKILL'); };
       const abort = () => stop(problem('Photo reading was cancelled.', 400, 'RECIPE_PHOTO_CANCELLED'));
-      const timer = setTimeout(() => stop(problem('Reading took too long. Try a closer, clearer photo of one recipe.', 422, 'RECIPE_PHOTO_TIMEOUT')), 30000);
+      const timer = setTimeout(() => stop(problem('Reading took too long. Try a closer, clearer photo of one recipe.', 422, 'RECIPE_PHOTO_TIMEOUT')), remaining);
       signal?.addEventListener('abort', abort, { once: true });
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', chunk => {
         bytes += Buffer.byteLength(chunk);
-        if (bytes > MAX_TEXT_BYTES) stop(problem('The image contains too much text. Photograph one recipe at a time.', 422, 'RECIPE_PHOTO_TOO_MUCH_TEXT'));
+        if (bytes > MAX_OCR_BYTES) stop(problem('The image contains too much text. Photograph one recipe at a time.', 422, 'RECIPE_PHOTO_TOO_MUCH_TEXT'));
         else output += chunk.toString('utf8');
       });
       child.stdin.on('error', () => {}); // A failed/aborted child can close stdin early.
@@ -108,13 +140,16 @@ async function readRecipePhoto(body, { signal } = {}) {
         clearTimeout(timer); signal?.removeEventListener('abort', abort);
         if (failure) return reject(failure);
         if (code !== 0) return reject(problem('Could not read this photo. Try a clear, upright JPEG or PNG of printed English text.', 422, 'RECIPE_PHOTO_UNREADABLE'));
-        const text = output.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim();
+        const width = image.readUInt32BE(16), height = image.readUInt32BE(20);
+        const lines = recognizedLines(output, width, height);
+        const text = lines.map(line => line.text).join('\n');
+        if (Buffer.byteLength(text) > MAX_TEXT_BYTES) return reject(problem('The image contains too much text. Photograph one recipe at a time.', 422, 'RECIPE_PHOTO_TOO_MUCH_TEXT'));
         if (!/[a-zA-Z]{2}/.test(text)) return reject(problem('No readable recipe text was found. Try better lighting and photograph the written recipe close up.', 422, 'RECIPE_PHOTO_EMPTY'));
-        resolve({ text });
+        resolve({ text, lines, width, height });
       });
-      child.stdin.end(image);
+      child.stdin.end(prepared);
     });
   } finally { processing = false; }
 }
 
-module.exports = { readRecipePhoto, imageBuffer };
+module.exports = { readRecipePhoto, imageBuffer, recognizedLines };
