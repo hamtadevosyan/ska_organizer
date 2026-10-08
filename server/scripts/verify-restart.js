@@ -47,7 +47,7 @@ const phase = process.argv[2];
       }
       await connection.dropSchema(state.schema, { cascade: true });
       await fs.unlink(stateFile);
-      console.log('PASS: meal IDs, ingredients, recipes, saved menu, shelf quantities and shopping results survived restart. Test records removed.');
+      console.log('PASS: meal IDs, ingredients, recipes, saved menu, shelf quantities, shopping results and child document bytes/history survived restart. Test records removed.');
     } else {
       throw new Error('Use npm run test:restart:prepare or npm run test:restart:verify.');
     }

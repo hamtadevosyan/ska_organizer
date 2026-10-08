@@ -8,13 +8,14 @@ import type { Room } from '../../api/rooms';
 import { RoomSelect } from '../rooms/RoomSelect';
 
 const inputClass = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2.5';
-export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
+export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel, canAddDocuments = false }: {
   child: ChildRecord | null; rooms: Room[]; loadingRooms: boolean;
-  onSaved: (child: ChildRecord) => void; onCancel: () => void;
+  onSaved: (child: ChildRecord, addDocuments?: boolean) => void; onCancel: () => void; canAddDocuments?: boolean;
 }) {
   const [form, setForm] = useState({ firstName: child?.firstName || '', lastName: child?.lastName || '',
     preferredName: child?.preferredName || '', dateOfBirth: child?.dateOfBirth || '', notes: child?.notes || '',
     roomId: child?.roomId || '', active: child?.active ?? true });
+  const [addDocuments, setAddDocuments] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -53,7 +54,10 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
     setBusy(true); setError('');
     const values: ChildSettings = { ...form, firstName: form.firstName.trim(), lastName: form.lastName.trim(),
       preferredName: form.preferredName.trim(), notes: form.notes.trim(), roomId: form.roomId || null };
-    try { onSaved(await saveChild(child?.id || null, { ...values, confirmDuplicate, confirmOverCapacity: confirmCapacity })); }
+    try {
+      const saved = await saveChild(child?.id || null, { ...values, confirmDuplicate, confirmOverCapacity: confirmCapacity });
+      if (addDocuments && !child && canAddDocuments) onSaved(saved, true); else onSaved(saved);
+    }
     catch (failure) {
       if (!axios.isCancel(failure)) {
         setError(authError(failure, 'Could not save this child.'));
@@ -96,6 +100,7 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
         {selectedRoom && <p>Current displayed count: {selectedRoom.assignedChildCount}. Proposed count: {proposedCount}. Capacity: {selectedRoom.capacity}.</p>}
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmCapacity} onChange={(event) => setConfirmCapacity(event.target.checked)} className="mt-1" />I acknowledge the capacity warning and want to continue.</label>
       </div>}
+      {!child && canAddDocuments && <div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><label className="flex items-start gap-3"><input type="checkbox" checked={addDocuments} onChange={event => setAddDocuments(event.target.checked)} className="mt-1 h-4 w-4" />Add documents after saving</label><p className="mt-2 text-sm text-slate-600">Save this child first, then attach forms or scan a document.</p></div>}
       <div className="flex flex-wrap gap-3"><button disabled={loadingRooms || !!duplicates.length && !confirmDuplicate || capacityWarning && !confirmCapacity} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save child'}</button>
         <button type="button" onClick={onCancel} className="rounded-lg border px-4 py-2">Cancel</button></div>
     </fieldset>

@@ -5,12 +5,53 @@ const request = require('supertest');
 const app = require('../../index');
 const db = require('../../services/dbAdapter');
 const auth = require('../../auth/service');
+const { PNG } = require('pngjs');
+const { createHash, randomUUID } = require('node:crypto');
 let credentials;
 
 async function api(method, url, body, status = 200) {
   const response = await request(app)[method](url).set('Origin', 'http://localhost:5173').set('Cookie', credentials.cookie).set('X-CSRF-Token', credentials.csrf).set('Content-Type', 'application/json').send(body);
   if (response.status !== status) throw new Error(`${method} ${url}: expected ${status}, got ${response.status}`);
-  return response.body.data;
+  return Object.hasOwn(response.body, 'data') ? response.body.data : response.body;
+}
+
+function syntheticPage(shade) {
+  const page = new PNG({ width: 2, height: 2 });
+  for (let offset = 0; offset < page.data.length; offset += 4) page.data.set([shade, 90, 160, 255], offset);
+  return PNG.sync.write(page);
+}
+const pageFile = (shade, name) => ({ name, contentType: 'image/png', dataBase64: syntheticPage(shade).toString('base64') });
+
+async function saveDocuments() {
+  const child = await api('post', '/api/children', { firstName: 'Synthetic', lastName: 'Document restart', dateOfBirth: '2022-06-15' }, 201);
+  const root = '/api/children/' + child.id + '/documents';
+  const saved = await api('post', root, { requestId: randomUUID(), title: 'Synthetic restart consent', category: 'consent',
+    documentDate: '2026-10-01', notes: 'Automated fictional paperwork.', file: pageFile(40, 'synthetic-original.png') }, 201);
+  const revised = await api('post', root + '/' + saved.document.id + '/revisions', { requestId: randomUUID(),
+    version: saved.document.version, changeNote: 'Synthetic revised page', file: pageFile(180, 'synthetic-revised.png') }, 201);
+  await api('put', root + '/' + saved.document.id, { version: revised.document.version, title: 'Updated synthetic restart consent',
+    category: 'consent', documentDate: '2026-10-02', notes: 'Updated automated fictional paperwork.' });
+  await api('put', '/api/children/' + child.id + '/enrollment', { active: false });
+}
+
+async function documentSnapshot() {
+  const roster = await api('get', '/api/children?active=all&q=Document%20restart');
+  const child = roster.items[0];
+  if (!child || child.active) throw new Error('Synthetic ended child enrollment was not preserved.');
+  const list = await api('get', '/api/children/' + child.id + '/documents');
+  const document = list.items[0];
+  if (!document) throw new Error('Synthetic document metadata was not preserved.');
+  const detail = await api('get', '/api/children/' + child.id + '/documents/' + document.id);
+  if (detail.revisions.length !== 2) throw new Error('Synthetic document history was not preserved.');
+  const files = [];
+  for (const revision of detail.revisions) {
+    const stored = await db.getChildDocumentContent(document.id, revision.id);
+    const bytes = Buffer.from(stored.content);
+    if (createHash('sha256').update(bytes).digest('hex') !== stored.sha256) throw new Error('Synthetic document checksum changed.');
+    files.push({ revisionId: revision.id, revision: revision.revision, sha256: stored.sha256, bytes: bytes.toString('base64'),
+      actorId: stored.actorId, uploadedBy: stored.uploadedBy, changeNote: stored.changeNote });
+  }
+  return { childId: child.id, active: child.active, detail, files };
 }
 
 (async () => {
@@ -45,6 +86,7 @@ async function api(method, url, body, status = 200) {
         });
         await api('put', `/api/menu/plans/${weekStart}`, { previewToken: calculated.previewToken });
       }
+      await saveDocuments();
     }
     const meals = await api('get', '/api/meals');
     const breakfast = meals.find((meal) => meal.type === 'breakfast');
@@ -56,6 +98,7 @@ async function api(method, url, body, status = 200) {
       shopping: (await api('get', '/api/shelf/final')).items,
       datedPlans: [await api('get', '/api/menu/plans/2026-09-07'), await api('get', '/api/menu/plans/2026-09-14')],
       datedShopping: await api('get', '/api/shelf/final?weekStart=2026-09-07'),
+      childDocuments: await documentSnapshot(),
     };
     await db.close();
     process.send({ snapshot }, () => process.disconnect());

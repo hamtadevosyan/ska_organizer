@@ -48,6 +48,17 @@ async function requireAdmin(req, res, next) {
   try { req.account = await auth.administrator(req.sessionToken); next(); }
   catch (error) { next(error); }
 }
+function requireDocumentAccess(write = false) {
+  return async (req, res, next) => {
+    try {
+      // Never grant document access using an account captured before a concurrent
+      // administrator changed its permissions or revoked the current session.
+      req.account = await auth.sessionAccount(req.sessionToken);
+      auth.documentPermission(req.account, write);
+      next();
+    } catch (error) { if (error.status === 401) clearCookie(res); next(error); }
+  };
+}
 // Existing controllers use status/json/send. Buffer the response until both the
 // mutation and audit insert commit; never acknowledge a change before its audit.
 function audited(action, controller, { adminOnly = false } = {}) {
@@ -74,4 +85,4 @@ function audited(action, controller, { adminOnly = false } = {}) {
     res.status(response.statusCode)[response.kind](response.body);
   };
 }
-module.exports = { originGuard, requireSession, requireOperationalAccess, requireAdmin, audited, readToken, clearCookie };
+module.exports = { originGuard, requireSession, requireOperationalAccess, requireDocumentAccess, requireAdmin, audited, readToken, clearCookie };

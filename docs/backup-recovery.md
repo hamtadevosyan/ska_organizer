@@ -1,5 +1,13 @@
 # Backup, update and recovery
 
+For the native Ubuntu deployment, use `bash SKAO.sh backup`; see
+[Ubuntu operations](ubuntu-native.md). Document files and their revision history
+are stored in PostgreSQL and are included in the existing complete database
+archives on both Ubuntu and the Docker pilot. See
+[child document verification](child-documents.md#verification-using-fictional-paperwork)
+for an isolated restore rehearsal using synthetic paperwork. The commands below
+describe the existing Windows/Docker pilot.
+
 Run these commands in Windows PowerShell from the pilot repository. They use the
 settings created by [private pilot installation](private-pilot.md). Keep the
 repository checkout and its release images; a database archive alone is not an
@@ -75,6 +83,14 @@ current database. Do not mark a failed restore successful by editing the manifes
 All required tables can compare correctly while `children: false`, for example,
 means no child record was present. Before pilot acceptance, use synthetic data
 covering all domains and verify again; every coverage flag must be `true`.
+
+Format 2 manifests also require `ChildDocuments` and `ChildDocumentRevisions`.
+Their fingerprints include stored file bytes, current-file references, metadata
+and revision provenance. `documents: true` means both document tables contained
+records. Older format 1 backups remain verifiable with their original table
+requirements and fingerprint order, before migration into the newer schema.
+Such backups correctly report `documents: false` if they predate document
+support; this is not a failed restore or evidence that files were lost.
 
 ## Apply a tested update
 

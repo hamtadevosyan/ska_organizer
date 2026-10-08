@@ -7,7 +7,7 @@ const { amount } = require('./inventoryValidation');
 const mock = {
   rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
-  children: [],
+  children: [], childDocuments: [], childDocumentRevisions: [],
   attendance: [], attendanceCorrections: [],
   activities: [],
   meals: [
@@ -180,7 +180,7 @@ module.exports = {
     mock.scheduleWeeks = [];
     mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
-    mock.children = [];
+    mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
     mock.attendance = [];
     mock.attendanceCorrections = [];
     mock.activities = [];
@@ -530,4 +530,32 @@ Object.assign(module.exports, {
   appendAudit: async (values) => insert('auditEvents', values),
   listAudit: async ({ limit = 50, offset = 0, actions } = {}) => copy(mock.auditEvents).filter((row) => !actions || actions.includes(row.action)).sort((a, b) =>
     new Date(b.occurredAt) - new Date(a.occurredAt) || b.id.localeCompare(a.id)).slice(offset, offset + limit),
+});
+
+const documentRevisionMetadata = (row) => row ? Object.fromEntries(Object.entries(row)
+  .filter(([key]) => !['content', 'requestId', 'requestScope', 'requestHash'].includes(key))) : null;
+Object.assign(module.exports, {
+  createChildDocument: async (values) => insert('childDocuments', { createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
+  updateChildDocument: async (id, values) => edit('childDocuments', id, { ...values, updatedAt: mock.nowIso() }),
+  getChildDocument: async (id, childId) => copy(mock.childDocuments.find((row) => row.id === id && row.childId === childId) || null),
+  listChildDocuments: async (childId, { page = 1, pageSize = 20 } = {}) => copy(mock.childDocuments
+    .filter((row) => row.childId === childId).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt) || a.id.localeCompare(b.id))
+    .slice((page - 1) * pageSize, page * pageSize)),
+  countChildDocuments: async (childId) => mock.childDocuments.filter((row) => row.childId === childId).length,
+  createChildDocumentRevision: async (values) => {
+    mock.childDocumentRevisions.push(copy(values)); return copy(documentRevisionMetadata(values));
+  },
+  getChildDocumentRevision: async (documentId, revisionId) => copy(documentRevisionMetadata(mock.childDocumentRevisions
+    .find((row) => row.documentId === documentId && row.id === revisionId))),
+  getChildDocumentContent: async (documentId, revisionId) => copy(mock.childDocumentRevisions
+    .find((row) => row.documentId === documentId && row.id === revisionId) || null),
+  getChildDocumentRevisionByRequest: async (requestScope, requestId) => {
+    const row = mock.childDocumentRevisions.find((item) => item.requestScope === requestScope && item.requestId === requestId);
+    if (!row) return null;
+    const { content: _content, ...metadata } = row; return copy(metadata);
+  },
+  listChildDocumentRevisions: async (documentId, { page = 1, pageSize = 20 } = {}) => copy(mock.childDocumentRevisions
+    .filter((row) => row.documentId === documentId).sort((a, b) => b.revision - a.revision)
+    .slice((page - 1) * pageSize, page * pageSize).map(documentRevisionMetadata)),
+  countChildDocumentRevisions: async (documentId) => mock.childDocumentRevisions.filter((row) => row.documentId === documentId).length,
 });

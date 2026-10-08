@@ -9,15 +9,16 @@ import type { Room } from '../api/rooms';
 import { authError } from '../auth/transport';
 import { ChildProfile } from '../components/children/ChildProfile';
 import { useRooms } from '../components/rooms/useRooms';
+import type { DocumentWork } from '../api/childDocuments';
 
 const pageSize = 25;
 type Snapshot = { room: Room; children: ChildRecord[]; total: number };
 type Result = { key: string; status: 'loading' | 'loaded' | 'error'; data?: Snapshot; error?: string };
 
-function RoomChildProfile({ id, room, onClose }: { id: string; room: Room; onClose: () => void }) {
+function RoomChildProfile({ id, room, onClose, onWorkChange }: { id: string; room: Room; onClose: () => void; onWorkChange: (work: DocumentWork) => void }) {
   const { rooms, error } = useRooms();
   return <>
-    <ChildProfile id={id} rooms={rooms.length ? rooms : [room]} closeLabel="Back to room roster" onClose={onClose} />
+    <ChildProfile id={id} rooms={rooms.length ? rooms : [room]} closeLabel="Back to room roster" onClose={onClose} onWorkChange={onWorkChange} />
     {error && <p role="status" className="text-sm text-slate-600">Historical room names could not be loaded. Reopen the profile to try again.</p>}
   </>;
 }
@@ -34,6 +35,7 @@ function SelectedRoomRoster({ roomId }: { roomId: string }) {
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [profileId, setProfileId] = useState('');
+  const [documentWork, setDocumentWork] = useState<DocumentWork>({ dirty: false, busy: false });
   const [result, setResult] = useState<Result>({ key: '', status: 'loading' });
   const requestKey = JSON.stringify([q, includeInactive, page, revision]);
   const loaded = result.key === requestKey && result.status === 'loaded';
@@ -56,7 +58,7 @@ function SelectedRoomRoster({ roomId }: { roomId: string }) {
         setResult({ key: requestKey, status: 'loaded', data: { room, children: roster.items, total: roster.total } });
       }).catch(failure => {
         if (!controller.signal.aborted && !axios.isCancel(failure)) {
-          setResult({ key: requestKey, status: 'error', error: authError(failure, 'Could not load this room roster.') });
+          setResult(previous => ({ key: requestKey, status: 'error', data: previous.data, error: authError(failure, 'Could not load this room roster.') }));
         }
       });
     }, 200);
@@ -75,7 +77,7 @@ function SelectedRoomRoster({ roomId }: { roomId: string }) {
     <header className="ska-page-head">
       <div className="min-w-0"><h1 className="break-words"><span className="ska-heading-icon is-coral"><Building2 size={24} aria-hidden="true" /></span>{result.data?.room.name || 'Room roster'}</h1>
         <p>See who is assigned to this room and open a child’s profile.</p></div>
-      <button disabled={loading} onClick={() => { setProfileId(''); setRevision(value => value + 1); }} className="ska-button">Refresh roster</button>
+      <button disabled={loading || documentWork.busy} onClick={() => { setRevision(value => value + 1); }} className="ska-button">Refresh roster</button>
     </header>
     {loading && <p role="status" className="rounded-2xl border bg-white p-6">Loading room roster…</p>}
     {error && <div className="rounded-2xl border bg-white p-6"><p role="alert" className="text-red-800">{error}</p>
@@ -88,8 +90,8 @@ function SelectedRoomRoster({ roomId }: { roomId: string }) {
         <p className="w-full text-sm text-slate-500">Inactive enrollment is excluded from this count. Search does not change room occupancy.</p>
         {data.room.overCapacity && <p role="status" className="w-full text-amber-800">Active enrollment exceeds the configured capacity.</p>}
       </section>
-      {profileId ? <RoomChildProfile key={profileId} id={profileId} room={data.room} onClose={() => { setProfileId(''); setRevision(value => value + 1); }} /> : null}
     </>}
+    {profileId && result.data && <RoomChildProfile key={profileId} id={profileId} room={result.data.room} onWorkChange={setDocumentWork} onClose={() => { setProfileId(''); setDocumentWork({ dirty: false, busy: false }); setRevision(value => value + 1); }} />}
     {!profileId && <section aria-label="Room roster" className="rounded-2xl border bg-white p-5 shadow-sm">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">Search children<input type="search" value={q} maxLength={100} placeholder="Name or preferred name"

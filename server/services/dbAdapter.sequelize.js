@@ -186,6 +186,33 @@ exports.listInventoryMovements = (itemId, { page = 1, pageSize = 50 } = {}) => l
 });
 exports.countInventoryMovements = (itemId) => model('InventoryMovement').count({ where: { itemId }, transaction: transactionContext.getStore() });
 
+const revisionMetadataColumns = ['id', 'documentId', 'revision', 'filename', 'contentType', 'byteLength', 'sha256',
+  'uploadedAt', 'actorId', 'uploadedBy', 'changeNote'];
+exports.createChildDocument = (values) => create('ChildDocument', values);
+exports.updateChildDocument = (id, values) => update('ChildDocument', id, values);
+exports.getChildDocument = async (id, childId) => (await list('ChildDocument', { where: { id, childId }, limit: 1 }))[0] || null;
+exports.listChildDocuments = (childId, { page = 1, pageSize = 20 } = {}) => list('ChildDocument', {
+  where: { childId }, order: [['updatedAt', 'DESC'], ['id', 'ASC']], limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countChildDocuments = (childId) => model('ChildDocument').count({ where: { childId }, transaction: transactionContext.getStore() });
+exports.createChildDocumentRevision = (values) => transact(async (transaction) => {
+  await model('ChildDocumentRevision').create(values, { transaction });
+  return exports.getChildDocumentRevision(values.documentId, values.id);
+});
+exports.getChildDocumentRevision = async (documentId, id) => (await list('ChildDocumentRevision', {
+  where: { documentId, id }, attributes: revisionMetadataColumns, limit: 1,
+}))[0] || null;
+exports.getChildDocumentContent = async (documentId, id) => (await list('ChildDocumentRevision', {
+  where: { documentId, id }, attributes: [...revisionMetadataColumns, 'content'], limit: 1,
+}))[0] || null;
+exports.getChildDocumentRevisionByRequest = async (requestScope, requestId) => (await list('ChildDocumentRevision', {
+  where: { requestScope, requestId }, attributes: [...revisionMetadataColumns, 'requestId', 'requestScope', 'requestHash'], limit: 1,
+}))[0] || null;
+exports.listChildDocumentRevisions = (documentId, { page = 1, pageSize = 20 } = {}) => list('ChildDocumentRevision', {
+  where: { documentId }, attributes: revisionMetadataColumns, order: [['revision', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countChildDocumentRevisions = (documentId) => model('ChildDocumentRevision').count({ where: { documentId }, transaction: transactionContext.getStore() });
+
 exports.listInventoryForIngredients = (ids) => list('InventoryItem', { where: { ingredientId: { [Op.in]: ids } }, order: [['id', 'ASC']] });
 exports.createPurchaseReceipt = (values) => create('PurchaseReceipt', values);
 exports.getPurchaseByMovementId = async (movementId) => (await list('PurchaseReceipt', { where: { movementId }, limit: 1 }))[0] || null;

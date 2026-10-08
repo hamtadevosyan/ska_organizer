@@ -11,7 +11,7 @@ async function collect(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) await collect(path);
-    else if (entry.isFile() && /\.(?:js|css|woff2?|ttf|otf|png|jpe?g|webp|avif|gif|svg|ico)$/.test(entry.name)) {
+    else if (entry.isFile() && /\.(?:m?js|css|woff2?|ttf|otf|pfb|png|jpe?g|webp|avif|gif|svg|ico)$/.test(entry.name)) {
       paths.push('/' + relative(dist, path).split('\\').join('/'));
     }
   }

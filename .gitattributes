@@ -10,3 +10,6 @@
 *.target text eol=lf
 *.nft text eol=lf
 *Dockerfile text eol=lf
+
+# Preserve fixed-width PDF cross-reference records.
+server/tests/fixtures/child-documents/*.pdf binary
