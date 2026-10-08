@@ -10,12 +10,7 @@ type Audit = { id: string; actorUsername: string; action: string; entityId: stri
 const base = `${API_BASE_URL}/api/admin`;
 const inputClass = 'mt-1 block w-full rounded border p-2';
 const empty = { username: '', displayName: '', role: 'editor' as Role, documentAccess: 'none' as DocumentAccess, password: '' };
-const accessForRole = (access: DocumentAccess | undefined, role: Role): DocumentAccess => role === 'admin' ? 'edit' :
-  role === 'viewer' && access === 'edit' ? 'view' : access || 'none';
-function DocumentAccessOptions({ role }: { role: Role }) {
-  return <><option value="none">No access</option><option value="view">View documents</option>
-    <option value="edit" disabled={role === 'viewer'}>Upload and update documents</option></>;
-}
+const accessForRole = (role: Role): DocumentAccess => role === 'admin' ? 'edit' : 'none';
 export default function Accounts() {
   const { account: current } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -52,12 +47,12 @@ export default function Accounts() {
   }
   function create(event: FormEvent) {
     event.preventDefault();
-    void change(async () => { await axios.post(`${base}/accounts`, form); setForm(empty); }, 'Account created. Give the temporary password directly to the authorized user. They must change it when signing in.');
+    void change(async () => { await axios.post(`${base}/accounts`, { ...form, documentAccess: 'none' }); setForm(empty); }, 'Account created. Give the temporary password directly to the authorized user. They must change it when signing in.');
   }
   function update(event: FormEvent) {
     event.preventDefault(); if (!selected) return;
-    if (!window.confirm(`Save access changes for ${selected.username}? Changes to role, document access or status sign out their existing sessions.`)) return;
-    void change(async () => { const response = await axios.put<{ data: Account }>(`${base}/accounts/${selected.id}`, selected); setSelected(response.data.data); }, 'Account access updated.');
+    if (!window.confirm(`Save access changes for ${selected.username}? Changes to role or status sign out their existing sessions.`)) return;
+    void change(async () => { const response = await axios.put<{ data: Account }>(`${base}/accounts/${selected.id}`, { ...selected, documentAccess: 'none' }); setSelected(response.data.data); }, 'Account access updated.');
   }
   function reset(event: FormEvent) {
     event.preventDefault(); if (!selected) return;
@@ -75,10 +70,9 @@ export default function Accounts() {
         <h2 className="text-xl font-bold">Create account</h2>
         <label className="block">Username<input required autoComplete="off" autoCapitalize="none" pattern="[a-zA-Z0-9._\-]{3,64}" maxLength={64} value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} className={inputClass} /></label>
         <label className="block">Display name<input required maxLength={100} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} className={inputClass} /></label>
-        <label className="block">Access<select value={form.role} onChange={(event) => { const role = event.target.value as Role; setForm({ ...form, role, documentAccess: accessForRole(form.documentAccess, role) }); }} className={inputClass}>{Object.entries(roleLabels).map(([role, label]) => <option key={role} value={role}>{label}</option>)}</select></label>
+        <label className="block">Access<select value={form.role} onChange={(event) => { const role = event.target.value as Role; setForm({ ...form, role, documentAccess: accessForRole(role) }); }} className={inputClass}>{Object.entries(roleLabels).map(([role, label]) => <option key={role} value={role}>{label}</option>)}</select></label>
         <p className="text-sm text-slate-600">Editors can change operational data. Read-only accounts can view and print. Administrators also manage accounts.</p>
-        <label className="block">Child documents<select disabled={form.role === 'admin'} value={accessForRole(form.documentAccess, form.role)} onChange={(event) => setForm({ ...form, documentAccess: event.target.value as DocumentAccess })} className={inputClass}><DocumentAccessOptions role={form.role} /></select></label>
-        <p className="text-sm text-slate-600">Child documents have separate permission from the roster. Administrators always have full document access.</p>
+        <p className="text-sm text-slate-600">Child documents, registration forms and contracts are available only to administrators.</p>
         <label className="block">Temporary password<input required type="password" minLength={15} maxLength={128} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className={inputClass} /></label>
         <p className="text-sm text-slate-600">Use 15–128 characters. This password is not shown again.</p>
         <button className="rounded bg-emerald-700 px-4 py-2 font-semibold text-white">Create account</button>
@@ -88,9 +82,8 @@ export default function Accounts() {
           <option value="">Choose an account</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.displayName} ({item.username}){item.disabled ? ' — Disabled' : ''}</option>)}</select></label>
         {selected && <><form onSubmit={update}><fieldset disabled={busy || loading} className="space-y-4">
           <label className="block">Account display name<input required maxLength={100} value={selected.displayName} onChange={(event) => setSelected({ ...selected, displayName: event.target.value })} className={inputClass} /></label>
-          <label className="block">Account access<select disabled={selected.id === current.id} value={selected.role} onChange={(event) => { const role = event.target.value as Role; setSelected({ ...selected, role, documentAccess: accessForRole(selected.documentAccess, role) }); }} className={inputClass}>{Object.entries(roleLabels).map(([role, label]) => <option key={role} value={role}>{label}</option>)}</select></label>
-          <label className="block">Account child documents<select disabled={selected.role === 'admin'} value={accessForRole(selected.documentAccess, selected.role)} onChange={(event) => setSelected({ ...selected, documentAccess: event.target.value as DocumentAccess })} className={inputClass}><DocumentAccessOptions role={selected.role} /></select></label>
-          <p className="text-sm text-slate-600">View permission includes previews, downloads and earlier versions. Upload and update permission also allows revising documents.</p>
+          <label className="block">Account access<select disabled={selected.id === current.id} value={selected.role} onChange={(event) => { const role = event.target.value as Role; setSelected({ ...selected, role, documentAccess: accessForRole(role) }); }} className={inputClass}>{Object.entries(roleLabels).map(([role, label]) => <option key={role} value={role}>{label}</option>)}</select></label>
+          <p className="text-sm text-slate-600">Teachers and read-only accounts cannot access child documents, registration checklists or contracts.</p>
           <label className="block"><input type="checkbox" disabled={selected.id === current.id} checked={selected.disabled} onChange={(event) => setSelected({ ...selected, disabled: event.target.checked })} /> Disabled</label>
           {selected.id === current.id && <p className="text-sm text-slate-600">Another administrator must change your access. Use Change password in the header for your own password.</p>}
           <button className="rounded border px-4 py-2">Save account</button>

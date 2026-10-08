@@ -103,8 +103,8 @@ NODE
 ```
 
 Run these commands in order and stop if a command fails. This uses the configured
-development database. Migrations 016 and 017 add document access and document
-revision tables. Starting the new backend with pending migrations is rejected.
+development database. Migrations 016–018 add document access, document revisions, registration
+blank templates and reviewed-copy mappings. Starting the new backend with pending migrations is rejected.
 
 ## Try the workflow with fictional paperwork
 
@@ -117,12 +117,12 @@ revision tables. Starting the new backend with pending migrations is rejected.
    inspect the preview, retake it, and select **Confirm photo** before saving.
 4. Edit document details. Upload a new version with a change note. Check the
    current-version badge, uploader/time and earlier version's original download.
-5. Under Accounts, grant an editor **Upload and update documents**, or a viewer
-   **View documents**. Other accounts start with no document access. Access
-   changes sign that account out; test with a fresh sign-in.
+5. Sign in as a teacher/editor and a read-only account. Neither should see
+   Documents, registration checklists or registration forms. Direct document
+   requests must be denied. Only administrators handle this paperwork.
 6. End the fictional child's enrollment, choose inactive children, and reopen
-   their profile. Saved documents and history must remain accessible to users
-   with document permission. Restart the app and check the same files again.
+   their profile. Saved documents and history must remain accessible to
+   administrators. Restart the app and check the same files again.
 
 Camera availability depends on the browser/device; upload remains available.
 Check the actual iPad/iPhone camera and PDF preview before accepting the story.
@@ -152,3 +152,10 @@ bash SKAO.sh update
 ```
 
 SKAO-47 stays In Progress until your review and merge are complete.
+
+## Registration packet
+
+Administrators can now manage reusable blank templates in **Registration forms**.
+Each child profile shows missing, unreviewed, completed and outdated forms.
+See [Registration follow-up instructions](SKAO-47_REGISTRATION_START_HERE.md) for
+packet setup, printing/sharing blanks, linking completed copies and template updates.

@@ -15,7 +15,7 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel, canAd
   const [form, setForm] = useState({ firstName: child?.firstName || '', lastName: child?.lastName || '',
     preferredName: child?.preferredName || '', dateOfBirth: child?.dateOfBirth || '', notes: child?.notes || '',
     roomId: child?.roomId || '', active: child?.active ?? true });
-  const [addDocuments, setAddDocuments] = useState(false);
+  const [addDocuments, setAddDocuments] = useState(!child && canAddDocuments);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -100,7 +100,7 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel, canAd
         {selectedRoom && <p>Current displayed count: {selectedRoom.assignedChildCount}. Proposed count: {proposedCount}. Capacity: {selectedRoom.capacity}.</p>}
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmCapacity} onChange={(event) => setConfirmCapacity(event.target.checked)} className="mt-1" />I acknowledge the capacity warning and want to continue.</label>
       </div>}
-      {!child && canAddDocuments && <div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><label className="flex items-start gap-3"><input type="checkbox" checked={addDocuments} onChange={event => setAddDocuments(event.target.checked)} className="mt-1 h-4 w-4" />Add documents after saving</label><p className="mt-2 text-sm text-slate-600">Save this child first, then attach forms or scan a document.</p></div>}
+      {!child && canAddDocuments && <div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><label className="flex items-start gap-3"><input type="checkbox" checked={addDocuments} onChange={event => setAddDocuments(event.target.checked)} className="mt-1 h-4 w-4" />Add documents after saving</label><p className="mt-2 text-sm text-slate-600">Save this child first, then open their registration checklist to attach completed forms.</p></div>}
       <div className="flex flex-wrap gap-3"><button disabled={loadingRooms || !!duplicates.length && !confirmDuplicate || capacityWarning && !confirmCapacity} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save child'}</button>
         <button type="button" onClick={onCancel} className="rounded-lg border px-4 py-2">Cancel</button></div>
     </fieldset>

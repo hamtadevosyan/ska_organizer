@@ -57,7 +57,7 @@ test('a mounted password is encoded once and development URLs are preserved', ()
 });
 
 function manifest() {
-  return { format: 2, name: 'backup-2026-09-23T12-00-00-000Z-0123456789ab', release: 'a'.repeat(40), sha256: 'b'.repeat(64), postgresMajor: 17,
+  return { format: 3, name: 'backup-2026-09-23T12-00-00-000Z-0123456789ab', release: 'a'.repeat(40), sha256: 'b'.repeat(64), postgresMajor: 17,
     tables: format.required.map((name) => ({ name, count: 1, columns: [{ column_name: 'id', data_type: 'uuid' }], sha256: 'c'.repeat(64) })) };
 }
 test('recovery rejects changed content even when counts match, and checks table definitions', () => {

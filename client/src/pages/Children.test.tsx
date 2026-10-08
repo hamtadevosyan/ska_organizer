@@ -19,6 +19,7 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   vi.mocked(axios.isAxiosError).mockImplementation((error): error is import('axios').AxiosError => !!error && typeof error === 'object' && 'response' in error);
   vi.mocked(axios.get).mockImplementation(async (url, config) => {
+    if (url.endsWith('/documents/checklist')) return { data: { items: [], requiredTotal: 0, requiredComplete: 0, complete: false } };
     if (url.endsWith('/documents')) return { data: { items: [], total: 0 } };
     if (url.endsWith('/rooms')) return { data: { data: [room] } };
     if (url.endsWith('/profile')) return { data: { child: roster.find((row) => url.includes('/' + row.id + '/')), room, recentAttendance: [] } };
@@ -149,19 +150,20 @@ test('pagination can reach children after the first page', async () => {
 });
 
 
-test('optional documents open only after a child is saved successfully with a stable ID', async () => {
+test('the registration checklist opens by default only after a child is saved successfully with a stable ID', async () => {
   vi.mocked(axios.post).mockRejectedValueOnce(new Error('Unavailable'));
   render(<SignedIn><Children /></SignedIn>);
   await screen.findByRole('row', { name: 'Synthetic Child' });
   fireEvent.click(screen.getByRole('button', { name: 'Add child' })); fillNames();
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Add documents after saving' }));
+  expect(screen.getByRole('checkbox', { name: 'Add documents after saving' })).toBeChecked();
   fireEvent.click(screen.getByRole('button', { name: 'Save child' }));
   await screen.findByText('Could not save this child.');
   expect(screen.getByRole('checkbox', { name: 'Add documents after saving' })).toBeChecked();
   expect(screen.queryByLabelText('Upload a document')).not.toBeInTheDocument();
   expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.includes('/documents'))).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: 'Save child' }));
-  await screen.findByRole('form', { name: 'Add document' });
+  await screen.findByRole('region', { name: 'Registration checklist' });
+  expect(screen.queryByRole('form', { name: 'Add document' })).not.toBeInTheDocument();
   expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/children/new-child/documents'), expect.objectContaining({ signal: expect.any(AbortSignal) }));
   expect(axios.post).toHaveBeenCalledTimes(2);
 });
@@ -170,7 +172,7 @@ test('cancelling child creation never starts document upload or links files to a
   render(<SignedIn><Children /></SignedIn>);
   await screen.findByRole('row', { name: 'Synthetic Child' });
   fireEvent.click(screen.getByRole('button', { name: 'Add child' })); fillNames();
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Add documents after saving' }));
+  expect(screen.getByRole('checkbox', { name: 'Add documents after saving' })).toBeChecked();
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(axios.post).not.toHaveBeenCalled();
   expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.includes('/documents'))).toBe(false);

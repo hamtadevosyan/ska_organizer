@@ -5,8 +5,9 @@ const config = require('./config');
 const problem = (message, status = 400, code) => Object.assign(new Error(message), { status, code });
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const csrfToken = (token) => createHmac('sha256', token).update('skao-csrf-v1').digest('hex');
-const documentAccess = (account) => account.role === 'admin' ? 'edit' :
-  ['view', 'edit'].includes(account.documentAccess) ? (account.role === 'viewer' ? 'view' : account.documentAccess) : 'none';
+// Registration paperwork and contracts are reserved for administrators,
+// including accounts with document grants saved by an earlier version.
+const documentAccess = (account) => account.role === 'admin' ? 'edit' : 'none';
 const publicAccount = (account) => {
   const { id, username, displayName, role, disabled, mustChangePassword, createdAt, updatedAt } = account;
   return { id, username, displayName, role, disabled, mustChangePassword, documentAccess: documentAccess(account), createdAt, updatedAt };
@@ -25,9 +26,9 @@ function accountValues(input) {
   return { username, displayName, role: input.role };
 }
 function documentAccessValue(value, role) {
-  if (!['none', 'view', 'edit'].includes(value)) throw problem('Choose no access, view documents, or upload and update documents.');
-  if (role === 'viewer' && value === 'edit') throw problem('Read-only accounts can view child documents but cannot upload or update them.');
-  return value;
+  if (!['none', 'view', 'edit'].includes(value)) throw problem('Choose a valid document access value.');
+  if (role !== 'admin' && value !== 'none') throw problem('Child documents and registration forms are available only to administrators.');
+  return 'none'; // Administrator access is inherent in the role, never a transferable grant.
 }
 async function issueSession(account, remembered = false) {
   const absoluteMs = remembered ? config.rememberAbsoluteMs : config.absoluteMs;
@@ -57,11 +58,10 @@ function operationalPermission(account, write) {
   if (account.mustChangePassword) throw problem('Change your temporary password before continuing.', 403, 'PASSWORD_CHANGE_REQUIRED');
   if (write && !['admin', 'editor'].includes(account.role)) throw problem('Your account has read-only access.', 403, 'FORBIDDEN');
 }
-function documentPermission(account, write = false) {
-  operationalPermission(account, write);
-  const access = documentAccess(account);
-  if (access === 'none' || (write && access !== 'edit')) {
-    throw problem(write ? 'Permission to upload and update child documents is required.' : 'Permission to view child documents is required.', 403, 'DOCUMENT_ACCESS_REQUIRED');
+function documentPermission(account) {
+  operationalPermission(account, false);
+  if (documentAccess(account) === 'none') {
+    throw problem('Administrator access is required for child documents and registration forms.', 403, 'DOCUMENT_ACCESS_REQUIRED');
   }
 }
 async function administrator(token) {
@@ -138,13 +138,8 @@ async function updateAccount(token, id, input) {
     if (!account) throw problem('Account not found.', 404);
     if (typeof input.disabled !== 'boolean') throw problem('Account status must be enabled or disabled.');
     const values = accountValues({ username: account.username, displayName: input.displayName, role: input.role });
-    // Existing clients may omit this newly introduced permission. Keep it unless
-    // a role change makes uploads incompatible with read-only operational access.
     const previousAccess = documentAccess(account);
-    const storedAccess = ['none', 'view', 'edit'].includes(account.documentAccess) ? account.documentAccess : 'none';
-    const requestedAccess = input.documentAccess === undefined ?
-      (values.role === 'viewer' && storedAccess === 'edit' ? 'view' : storedAccess) : input.documentAccess;
-    values.documentAccess = documentAccessValue(requestedAccess, values.role);
+    values.documentAccess = documentAccessValue(input.documentAccess === undefined ? 'none' : input.documentAccess, values.role);
     if (id === actor.id && (input.disabled || values.role !== 'admin')) throw problem('Use another administrator to change your own access.', 409);
     const removesAdmin = account.role === 'admin' && !account.disabled && (input.disabled || values.role !== 'admin');
     if (removesAdmin && (await db.listAccounts()).filter((item) => item.role === 'admin' && !item.disabled).length <= 1) {

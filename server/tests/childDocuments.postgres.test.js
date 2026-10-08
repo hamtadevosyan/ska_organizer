@@ -23,12 +23,26 @@ const file = (content, name) => ({ name, contentType: 'image/png', dataBase64: c
 const data = (response) => response.body.data ?? response.body;
 
 async function seed() {
+  const blankOriginal = image(20); const blankRevised = image(200);
+  const formCreated = await request(app).post('/api/registration-forms').send({
+    requestId: randomUUID(), title: 'Synthetic consent blank', instructions: 'Complete this fictional consent form.',
+    category: 'consent', required: true, file: file(blankOriginal, 'synthetic-blank-original.png'),
+  });
+  expect(formCreated.status).toBe(201);
+  const formOriginal = data(formCreated).form;
+  const formUpdated = await request(app).post('/api/registration-forms/' + formOriginal.id + '/revisions').send({
+    requestId: randomUUID(), version: formOriginal.version, changeNote: 'Synthetic revised blank',
+    file: file(blankRevised, 'synthetic-blank-revised.png'),
+  });
+  expect(formUpdated.status).toBe(201);
+  const form = data(formUpdated).form;
   const child = data(await request(app).post('/api/children').send({ firstName: 'Synthetic', lastName: 'Document persistence', dateOfBirth: '2022-06-15' }));
   expect(child.id).toBeDefined();
   const original = image(40); const revised = image(180);
   const created = await request(app).post('/api/children/' + child.id + '/documents').send({
     requestId: randomUUID(), title: 'Synthetic consent', category: 'consent', documentDate: '2026-10-01',
-    notes: 'Fictional paperwork used only by the automated test.', file: file(original, 'synthetic-original.png'),
+    notes: 'Fictional paperwork used only by the automated test.', registrationFormId: form.id,
+    registrationFormRevisionId: form.currentRevisionId, file: file(original, 'synthetic-original.png'),
   });
   expect(created.status).toBe(201);
   const document = data(created).document;
@@ -36,8 +50,21 @@ async function seed() {
     requestId: randomUUID(), version: document.version, changeNote: 'Synthetic revised page', file: file(revised, 'synthetic-revised.png'),
   });
   expect(updated.status).toBe(201);
+  const reviewed = await request(app).put('/api/children/' + child.id + '/documents/' + document.id + '/review').send({
+    version: data(updated).document.version, reviewed: true,
+  });
+  expect(reviewed.status).toBe(200);
   expect((await request(app).put('/api/children/' + child.id + '/enrollment').send({ active: false })).status).toBe(200);
-  return { child, document: data(updated).document, original, revised };
+  return { child, document: data(reviewed).document, original, revised, form, blankOriginal, blankRevised };
+}
+
+function fileSnapshot(stored) {
+  expect(stored).not.toBeNull();
+  const bytes = Buffer.from(stored.content);
+  expect(stored.sha256).toBe(hash(bytes));
+  expect(stored.byteLength).toBe(bytes.length);
+  const { content, ...metadata } = stored;
+  return { ...metadata, bytes };
 }
 
 async function snapshot(childId, documentId) {
@@ -47,24 +74,47 @@ async function snapshot(childId, documentId) {
   const content = [];
   for (const revision of detail.revisions) {
     const stored = await db.getChildDocumentContent(documentId, revision.id);
-    const bytes = Buffer.from(stored.content);
-    expect(stored.sha256).toBe(hash(bytes));
-    expect(stored.byteLength).toBe(bytes.length);
-    content.push({ id: revision.id, revision: revision.revision, bytes: bytes.toString('base64'), sha256: stored.sha256,
-      actorId: stored.actorId, uploadedBy: stored.uploadedBy, changeNote: stored.changeNote });
+    content.push(fileSnapshot(stored));
   }
+  const formId = detail.document.registrationFormId;
+  expect(formId).toBeDefined();
+  const formResponse = await request(app).get('/api/registration-forms/' + formId);
+  expect(formResponse.status).toBe(200);
+  const formDetail = data(formResponse);
+  const formContent = [];
+  for (const revision of formDetail.revisions) {
+    const stored = await db.getRegistrationFormContent(formId, revision.id);
+    formContent.push(fileSnapshot(stored));
+  }
+  const formMetadata = await db.getRegistrationForm(formId);
+  const formRevisions = await db.listRegistrationFormRevisions(formId);
+  const checklistResponse = await request(app).get('/api/children/' + childId + '/documents/checklist');
+  expect(checklistResponse.status).toBe(200);
   const child = await db.getChildById(childId);
-  return { detail, content, childId: child.id, enrollmentActive: child.active };
+  return { detail, content, childId: child.id, enrollmentActive: child.active,
+    registrationForm: { detail: formDetail, metadata: formMetadata, revisions: formRevisions, content: formContent },
+    checklist: data(checklistResponse) };
 }
 
-test('document bytes, current and old versions, provenance and ended enrollment survive reconnecting', async () => {
+test('document and blank form bytes, revision histories, mappings, reviews and ended enrollment survive reconnecting', async () => {
   const saved = await seed();
   const before = await snapshot(saved.child.id, saved.document.id);
   expect(before.content).toHaveLength(2);
   expect(before.enrollmentActive).toBe(false);
-  expect(before.content.find(({ revision }) => revision === 1).bytes).toBe(saved.original.toString('base64'));
-  expect(before.content.find(({ revision }) => revision === 2).bytes).toBe(saved.revised.toString('base64'));
+  expect(before.content.find(({ revision }) => revision === 1).bytes).toEqual(saved.original);
+  expect(before.content.find(({ revision }) => revision === 2).bytes).toEqual(saved.revised);
   expect(before.content.every(({ uploadedBy, actorId }) => uploadedBy === 'test-admin' && actorId === request.credentials().account.id)).toBe(true);
+  expect(before.registrationForm.content).toHaveLength(2);
+  expect(before.registrationForm.content.find(({ revision }) => revision === 1).bytes).toEqual(saved.blankOriginal);
+  expect(before.registrationForm.content.find(({ revision }) => revision === 2).bytes).toEqual(saved.blankRevised);
+  expect(before.registrationForm.content.every(({ uploadedBy, actorId }) => uploadedBy === 'test-admin' && actorId === request.credentials().account.id)).toBe(true);
+  expect(before.registrationForm.detail.form).toMatchObject({ id: saved.form.id, required: true, active: true, templateRevision: 2,
+    title: 'Synthetic consent blank', instructions: 'Complete this fictional consent form.', category: 'consent' });
+  expect(before.detail.document).toMatchObject({ registrationFormId: saved.form.id, registrationFormRevisionId: saved.form.currentRevisionId,
+    reviewedRevisionId: saved.document.currentRevisionId, reviewedBy: request.credentials().account.id });
+  expect(before.detail.document.reviewedAt).toBeTruthy();
+  expect(before.checklist).toMatchObject({ complete: true, requiredTotal: 1, requiredComplete: 1 });
+  expect(before.checklist.items[0].status).toBe('complete');
   await db.close();
   await db.setup(process.env.DATABASE_URL, { schema: context().schema });
   expect(await snapshot(saved.child.id, saved.document.id)).toEqual(before);
@@ -226,7 +276,7 @@ async function restoreArchive(saved, scope, { corruptArchive = false, loseRename
   return { before, heldSchema };
 }
 
-test('an actual PostgreSQL archive restores every file byte and revision inside its isolated test schema', async () => {
+test('an actual PostgreSQL archive restores completed and blank form bytes, histories, mappings and reviews inside its isolated test schema', async () => {
   const scope = await restoreScope();
   const saved = await seed();
   const { heldSchema } = await restoreArchive(saved, scope);

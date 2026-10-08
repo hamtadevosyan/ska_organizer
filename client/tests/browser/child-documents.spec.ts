@@ -107,6 +107,8 @@ for (const width of [390, 1280]) {
     const created = page.waitForResponse(response => response.url() === api + '/children' && response.request().method() === 'POST');
     await page.getByRole('button', { name: 'Save child', exact: true }).click();
     const child = await childFromResponse(await created);
+    await expect(page.getByRole('region', { name: 'Registration checklist', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Add document', exact: true }).click();
     await expect(page.getByRole('form', { name: 'Add document', exact: true })).toBeVisible();
     const base = `${api}/children/${child.id}/documents`;
     expect((await (await http.get(base)).json()).total).toBe(0);
@@ -243,8 +245,8 @@ test('failed or cancelled child creation cannot upload paperwork; camera capture
   await fits(page);
 });
 
-test('document permission is separate from the roster; a granted viewer can read but cannot change files', async ({ page, browser }) => {
-  test.setTimeout(60000);
+test('teachers and read-only accounts have no paperwork UI and direct requests are denied', async ({ page, browser }) => {
+  test.setTimeout(90000);
   const http = await authenticatedApi(page);
   const suffix = crypto.randomUUID().slice(0, 8);
   const child = await childFromResponse(await http.post(api + '/children', { data: { firstName: 'Synthetic', lastName: 'Permission ' + suffix, dateOfBirth: '2023-01-01', roomId: null } }));
@@ -252,54 +254,38 @@ test('document permission is separate from the roster; a granted viewer can read
   const created = await http.post(base, { data: { title: 'Synthetic restricted paperwork', category: 'medical', documentDate: null, notes: '', requestId: crypto.randomUUID(), file: { name: 'synthetic-paperwork.pdf', contentType: 'application/pdf', dataBase64: syntheticPdf('Synthetic restricted paperwork').toString('base64') } } });
   expect(created.status()).toBe(201);
   const saved = await created.json();
-  for (const documentAccess of ['none', 'view']) {
-    const username = 'docs-' + documentAccess + '-' + suffix;
+  for (const role of ['editor', 'viewer']) {
+    const username = 'docs-' + role + '-' + suffix;
     const temporaryPassword = 'Synthetic temporary paperwork passphrase 20!';
     const password = 'Synthetic changed paperwork passphrase 20!';
-    const accountResponse = await http.post(api + '/admin/accounts', { data: { username, displayName: 'Synthetic ' + documentAccess, role: 'viewer', documentAccess, password: temporaryPassword } });
+    const accountResponse = await http.post(api + '/admin/accounts', { data: { username, displayName: 'Synthetic ' + role, role, documentAccess: 'none', password: temporaryPassword } });
     expect(accountResponse.status()).toBe(201);
-    const account = (await accountResponse.json()).data;
     const context = await browser.newContext({ baseURL: origin, viewport: { width: 390, height: 844 } });
     try {
       const other = await context.newPage();
       const login = await other.request.post(api + '/auth/login', { headers: { Origin: origin }, data: { username, password: temporaryPassword } });
       expect(login.status()).toBe(200);
-      const csrf = (await login.json()).csrfToken;
-      const changed = await other.request.post(api + '/auth/password', { headers: { Origin: origin, 'X-CSRF-Token': csrf }, data: { currentPassword: temporaryPassword, password } });
+      const changed = await other.request.post(api + '/auth/password', { headers: { Origin: origin, 'X-CSRF-Token': (await login.json()).csrfToken }, data: { currentPassword: temporaryPassword, password } });
       expect(changed.status()).toBe(200);
       const headers = { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken };
+      const paperworkRequests: string[] = [];
+      other.on('request', request => { if (/\/api\/(?:registration-forms|children\/[^/]+\/documents)/.test(new URL(request.url()).pathname)) paperworkRequests.push(request.url()); });
       await other.goto('/children');
       await other.getByRole('searchbox', { name: 'Search children', exact: true }).fill('Synthetic Permission ' + suffix);
       await other.getByRole('button', { name: 'View Synthetic Permission ' + suffix, exact: true }).click();
-      expect((await other.request.get(api + '/children/' + child.id + '/profile')).status()).toBe(200);
-      if (documentAccess === 'none') {
-        await expect(other.getByText('Document access is managed separately. Ask an administrator if you need it.', { exact: true })).toBeVisible();
-        expect((await other.request.get(base)).status()).toBe(403);
-        expect((await other.request.get(`${base}/${saved.document.id}/revisions/${saved.revision.id}/content`)).status()).toBe(403);
-        await expect(other.getByText('Synthetic restricted paperwork', { exact: true })).toHaveCount(0);
-      } else {
-        await other.getByRole('button', { name: /^Synthetic restricted paperwork Medical record · Updated/ }).click();
-        await expect(other.getByRole('button', { name: 'Add document', exact: true })).toHaveCount(0);
-        await expect(other.getByRole('button', { name: 'Upload new version', exact: true })).toHaveCount(0);
-        await expect(other.getByRole('button', { name: 'Edit document details', exact: true })).toHaveCount(0);
-        await other.getByRole('button', { name: 'Preview version 1', exact: true }).click();
-        await renderedPdf(other);
-        const content = await other.request.get(`${base}/${saved.document.id}/revisions/${saved.revision.id}/content`);
-        expect(content.status()).toBe(200);
-        expect(content.headers()['cache-control']).toContain('no-store');
-        expect((await other.request.post(base, { headers, data: {} })).status()).toBe(403);
-        expect((await other.request.put(base + '/' + saved.document.id, { headers, data: {} })).status()).toBe(403);
-        await fits(other);
-        expect((await http.put(api + '/admin/accounts/' + account.id, { data: {
-          displayName: 'Synthetic view', role: 'viewer', disabled: false, documentAccess: 'none',
-        } })).status()).toBe(200);
-        // An actual document request observes the revoked session immediately;
-        // this must not depend on a focus-probe timer or browser clock.
-        await other.getByRole('button', { name: 'Download version 1', exact: true }).click();
-        await expect(other.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
-        await expect(other.getByRole('region', { name: 'Document preview', exact: true })).toHaveCount(0);
-        expect((await other.request.get(`${base}/${saved.document.id}/revisions/${saved.revision.id}/content`)).status()).toBe(401);
-      }
+      await expect(other.getByRole('region', { name: 'Child profile', exact: true })).toContainText('2023-01-01');
+      await expect(other.getByRole('region', { name: 'Documents', exact: true })).toHaveCount(0);
+      await expect(other.getByRole('region', { name: 'Registration checklist', exact: true })).toHaveCount(0);
+      await expect(other.getByText('Synthetic restricted paperwork', { exact: true })).toHaveCount(0);
+      expect(paperworkRequests).toEqual([]);
+      await other.goto('/registration-forms');
+      await expect(other.getByRole('alert')).toContainText('Administrator access');
+      expect(paperworkRequests).toEqual([]);
+      expect((await other.request.get(base)).status()).toBe(403);
+      expect((await other.request.get(base + '/checklist')).status()).toBe(403);
+      expect((await other.request.get(`${base}/${saved.document.id}/revisions/${saved.revision.id}/content`)).status()).toBe(403);
+      expect((await other.request.get(api + '/registration-forms')).status()).toBe(403);
+      expect((await other.request.post(base, { headers, data: {} })).status()).toBe(403);
     } finally { await context.close(); }
   }
 });

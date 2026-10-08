@@ -328,27 +328,21 @@ test('roster access never grants document access, including guessed history, con
   expect((await request(app).put(url(savedChild.id, original.document.id)).send({ version: 1, ...metadata })).status).toBe(403);
 });
 
-test.each(['editor', 'viewer'])('%s with view permission can read all revisions but cannot modify them', async role => {
+test.each(['editor', 'viewer'])('%s cannot read private metadata or bytes with legacy view/edit grants', async role => {
   const savedChild = await child();
   const original = await create(savedChild.id);
-  await db.updateAccount(request.credentials().account.id, { role, documentAccess: 'view' });
-  expect((await request(app).get(url(savedChild.id))).status).toBe(200);
-  expect((await request(app).get(url(savedChild.id, original.document.id))).status).toBe(200);
-  expect((await binary(savedChild.id, original.document.id, original.revision.id)).body).toEqual(fixtures.pdf);
-  expect((await request(app).post(url(savedChild.id)).send(upload())).status).toBe(403);
-  expect((await request(app).post(url(savedChild.id, original.document.id) + '/revisions').send({ requestId: randomUUID(), version: 1, file: file('png') })).status).toBe(403);
-  expect((await request(app).put(url(savedChild.id, original.document.id)).send({ version: 1, ...metadata })).status).toBe(403);
-});
-
-test('an editor explicitly granted edit can upload and revise; viewer cannot write even with stored edit', async () => {
-  const savedChild = await child();
-  await db.updateAccount(request.credentials().account.id, { role: 'editor', documentAccess: 'edit' });
-  const original = await create(savedChild.id);
-  const revision = await request(app).post(url(savedChild.id, original.document.id) + '/revisions').send({ requestId: randomUUID(), version: 1, file: file('png') });
-  expect(revision.status).toBe(201);
-  await db.updateAccount(request.credentials().account.id, { role: 'viewer', documentAccess: 'edit' });
-  expect((await request(app).get(url(savedChild.id))).status).toBe(200);
-  expect((await request(app).post(url(savedChild.id)).send(upload())).status).toBe(403);
+  for (const documentAccess of ['view', 'edit']) {
+    await db.updateAccount(request.credentials().account.id, { role, documentAccess });
+    for (const endpoint of [url(savedChild.id), url(savedChild.id, original.document.id), url(savedChild.id, original.document.id, original.revision.id)]) {
+      const denied = await request(app).get(endpoint);
+      expect(denied.status).toBe(403);
+      expect(JSON.stringify(denied.body)).not.toContain(metadata.title);
+    }
+    expect((await request(app).get('/api/children/' + savedChild.id + '/profile')).status).toBe(200);
+    expect((await request(app).post(url(savedChild.id)).send(upload())).status).toBe(403);
+    expect((await request(app).post(url(savedChild.id, original.document.id) + '/revisions').send({ requestId: randomUUID(), version: 1, file: file('png') })).status).toBe(403);
+    expect((await request(app).put(url(savedChild.id, original.document.id)).send({ version: 1, ...metadata })).status).toBe(403);
+  }
 });
 
 test('authentication, document permission, CSRF and origin reject malformed bodies before the larger parser', async () => {
@@ -515,7 +509,6 @@ test('a permission removal that commits while a revision waits prevents the writ
   const savedChild = await child();
   const original = await create(savedChild.id);
   const { account } = request.credentials();
-  await db.updateAccount(account.id, { role: 'editor', documentAccess: 'edit' });
   let release, entered, waiting;
   const reachedLock = new Promise(resolve => { entered = resolve; });
   const writeWaiting = new Promise(resolve => { waiting = resolve; });
@@ -523,7 +516,7 @@ test('a permission removal that commits while a revision waits prevents the writ
   const blocker = db.withAuthLock(async () => {
     entered();
     await gate;
-    await db.updateAccount(account.id, { documentAccess: 'none' });
+    await db.updateAccount(account.id, { role: 'editor', documentAccess: 'none' });
   });
   await reachedLock;
   const originalLock = db.withAuthLock;
@@ -535,7 +528,7 @@ test('a permission removal that commits while a revision waits prevents the writ
     release();
     await blocker;
     expect((await pending).status).toBe(403);
-    await db.updateAccount(account.id, { documentAccess: 'edit' });
+    await db.updateAccount(account.id, { role: 'admin', documentAccess: 'none' });
     expect((await details(savedChild.id, original.document.id)).total).toBe(1);
     expect(await documentAudits()).toHaveLength(1);
   } finally { clearTimeout(timer); release(); await blocker; spy.mockRestore(); }

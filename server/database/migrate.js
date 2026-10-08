@@ -17,6 +17,7 @@ const migrations = [
   { name: '015-strict-room-ages', ...require('./migrations/015-strict-room-ages') },
   { name: '016-child-document-access', ...require('./migrations/016-child-document-access') },
   { name: '017-child-documents', ...require('./migrations/017-child-documents') },
+  { name: '018-registration-forms', ...require('./migrations/018-registration-forms') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

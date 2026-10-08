@@ -26,6 +26,7 @@ export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile',
     {error && <p role="alert" className="text-red-800">{error}</p>}
     {!profile && !error && <p role="status">Loading profile…</p>}
     {profile && <>
+      <ChildDocuments childId={profile.child.id} openAdd={openAddDocuments} onWorkChange={setDocumentWork} />
       <dl className="grid gap-4 text-sm sm:grid-cols-2">
         <div><dt className="text-slate-500">Date of birth</dt><dd>{profile.child.dateOfBirth || 'Not recorded'}</dd></div>
         <div><dt className="text-slate-500">Preferred name</dt><dd>{profile.child.preferredName || 'None'}</dd></div>
@@ -33,7 +34,6 @@ export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile',
         <div><dt className="text-slate-500">Room</dt><dd>{profile.room ? profile.room.name + (profile.room.active ? '' : ' (archived)') : 'Unassigned'}</dd></div>
       </dl>
       <div><h3 className="font-semibold">Operational notes</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{profile.child.notes || 'No notes recorded.'}</p></div>
-      <ChildDocuments childId={profile.child.id} openAdd={openAddDocuments} onWorkChange={setDocumentWork} />
       <div><h3 className="font-semibold">Recent attendance</h3><p className="mt-1 text-sm text-slate-500">The 10 most recent records, including attendance before room or enrollment changes. Times use {profile.timeZone}.</p>
         {!profile.recentAttendance.length ? <p className="mt-3 text-sm">No attendance recorded.</p> : <div className="mt-3 overflow-x-auto"><table role="table" aria-label="Recent attendance" className="ska-record-table w-full text-left text-sm">
           <thead role="rowgroup"><tr role="row" className="border-b"><th role="columnheader" scope="col" className="py-2 pr-3">Room</th><th role="columnheader" scope="col" className="py-2 pr-3">Check-in</th><th role="columnheader" scope="col" className="py-2">Check-out</th></tr></thead>

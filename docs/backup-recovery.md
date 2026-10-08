@@ -92,6 +92,13 @@ requirements and fingerprint order, before migration into the newer schema.
 Such backups correctly report `documents: false` if they predate document
 support; this is not a failed restore or evidence that files were lost.
 
+Format 3 manifests also require `RegistrationForms` and
+`RegistrationFormRevisions`. They include the immutable blank template bytes,
+version history, required/active settings, completed-copy mappings and review
+records. `registrationForms: true` means both template tables contained records.
+Format 1/2 manifests retain their original requirements and fingerprint order;
+backups predating the catalog correctly report `registrationForms: false`.
+
 ## Apply a tested update
 
 First complete all Ubuntu and CI checks for the proposed commit. Arrange a short

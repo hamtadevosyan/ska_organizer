@@ -19,12 +19,15 @@ app.post('/api/meals/recipe-photo', requireSession, requireOperationalAccess, re
   express.json({ limit: '7mb' }), recipePhoto.read);
 const childDocuments = require('./routes/childDocuments');
 childDocuments.mountUploads(app);
+const registrationForms = require('./routes/registrationForms');
+registrationForms.mountUploads(app);
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);
 app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api', requireSession, requireOperationalAccess);
+app.use('/api/registration-forms', registrationForms.router);
 
 // Dashboard route
 app.use('/api/dashboard', require('./routes/dashboard'));

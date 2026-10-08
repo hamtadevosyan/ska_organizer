@@ -23,6 +23,7 @@ beforeEach(() => {
     { ...child, id: 'inactive', firstName: 'Inactive', active: false }, { ...child, id: 'other', firstName: 'Other', roomId: otherRoom.id }];
   catalog = [{ ...room }, { ...otherRoom }];
   vi.mocked(axios.get).mockImplementation(async (url, config) => {
+    if (url.endsWith('/documents/checklist')) return { data: { items: [], requiredTotal: 0, requiredComplete: 0, complete: false } };
     if (url.endsWith('/documents')) return { data: { items: [], total: 0 } };
     if (url.endsWith('/profile')) {
       const value = roster.find(row => url.includes('/' + row.id + '/'))!;

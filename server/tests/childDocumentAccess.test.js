@@ -33,103 +33,64 @@ const update = (account, values = {}) => api(fixture.credentials(), 'put', `/api
   displayName: account.displayName, role: account.role, disabled: false, ...values,
 });
 
-test('existing administrators always have effective full document access', async () => {
+test('administrators have full document access without a transferable grant', async () => {
   const admin = fixture.credentials();
   expect(auth.publicAccount({ ...admin.account, documentAccess: 'none' }).documentAccess).toBe('edit');
-  expect((await documents(admin, 'get', '/read')).body.access).toBe('edit');
+  expect((await documents(admin, 'get', '/read')).status).toBe(200);
   expect((await documents(admin, 'post', '/write')).status).toBe(200);
 });
 
-test('ordinary roster access does not grant document listing or writing', async () => {
-  const editor = await actor('editor', undefined);
-  expect(editor.account.documentAccess).toBe('none');
-  expect((await api(editor, 'get', '/api/children')).status).toBe(200);
-  expect((await documents(editor, 'get', '/read')).body.error.code).toBe('DOCUMENT_ACCESS_REQUIRED');
-  expect((await documents(editor, 'post', '/write')).status).toBe(403);
-  // Middleware ignores an account captured before the fresh session check.
-  expect((await documents(editor, 'get', '/stale')).status).toBe(403);
-});
-
-test('view permission allows reads only, and read-only role never permits a write', async () => {
-  for (const [role, storedAccess] of [['editor', 'view'], ['viewer', 'view'], ['viewer', 'edit']]) {
-    const user = await actor(role, storedAccess);
-    expect(user.account.documentAccess).toBe('view');
-    expect((await documents(user, 'get', '/read')).status).toBe(200);
+test.each(['editor', 'viewer'])('%s cannot read or write documents with any legacy stored grant', async role => {
+  for (const access of [undefined, 'none', 'view', 'edit']) {
+    const user = await actor(role, access);
+    expect(user.account.documentAccess).toBe('none');
+    expect((await api(user, 'get', '/api/children')).status).toBe(200);
+    expect((await documents(user, 'get', '/read')).status).toBe(403);
     expect((await documents(user, 'post', '/write')).status).toBe(403);
+    expect((await documents(user, 'get', '/stale')).status).toBe(403);
   }
 });
 
-test('an explicit upload grant revokes prior sessions and takes effect after sign-in', async () => {
-  const editor = await actor('editor', 'none');
-  const granted = await update(editor.account, { documentAccess: 'edit' });
-  expect(granted.status).toBe(200);
-  expect(granted.body.data.documentAccess).toBe('edit');
-  expect((await api(editor, 'get', '/api/children')).status).toBe(401);
-  expect((await documents(editor, 'get', '/read')).status).toBe(401);
-  const authorized = await signIn(editor.account.username);
-  expect((await documents(authorized, 'post', '/write')).status).toBe(200);
-  const audit = await db.listAudit({ limit: 100, offset: 0 });
-  expect(audit.filter(event => event.action === 'account.update_access')).toEqual([
-    expect.objectContaining({ actorId: fixture.credentials().account.id, entityId: editor.account.id }),
-  ]);
-});
-
-test('revoking document permission invalidates copied cookies and denies a new session', async () => {
-  const editor = await actor('editor', 'edit');
-  expect((await update(editor.account, { documentAccess: 'none' })).status).toBe(200);
-  expect((await documents(editor, 'get', '/read')).status).toBe(401);
-  expect((await documents(editor, 'post', '/write')).status).toBe(401);
-  const revoked = await signIn(editor.account.username);
-  expect((await documents(revoked, 'get', '/read')).status).toBe(403);
-  expect((await api(revoked, 'get', '/api/children')).status).toBe(200);
-});
-
-test('invalid permissions and read-only upload grants are rejected before account creation', async () => {
+test('account creation and updates cannot grant documentation access to teachers or readers', async () => {
   const token = fixture.credentials().cookie.split('=')[1];
-  for (const [role, documentAccess] of [['editor', null], ['editor', 'administrator'], ['viewer', 'edit']]) {
-    await expect(auth.createAccount(token, { username: `invalid-${randomUUID().slice(0, 8)}`,
-      displayName: 'Synthetic invalid access', role, documentAccess, password: fixture.password })).rejects.toMatchObject({ status: 400 });
+  for (const role of ['editor', 'viewer']) {
+    for (const documentAccess of ['view', 'edit']) {
+      await expect(auth.createAccount(token, { username: `invalid-${randomUUID().slice(0, 8)}`,
+        displayName: 'Synthetic invalid grant', role, documentAccess, password: fixture.password })).rejects.toMatchObject({ status: 400 });
+    }
+    const user = await actor(role, 'none');
+    for (const documentAccess of ['view', 'edit', 'all', null]) expect((await update(user.account, { documentAccess })).status).toBe(400);
+    expect((await documents(user, 'get', '/read')).status).toBe(403);
   }
-  expect(await db.listAccounts()).toHaveLength(1);
-  const editor = await actor('editor', 'view');
-  const invalid = await update(editor.account, { documentAccess: 'all' });
-  expect(invalid.status).toBe(400);
-  expect((await documents(editor, 'get', '/read')).status).toBe(200);
 });
 
-test('metadata-only account updates preserve document access; read-only demotion downgrades uploads', async () => {
-  const editor = await actor('editor', 'edit');
-  const preserved = await update(editor.account, { displayName: 'Synthetic renamed operator' });
-  expect(preserved.status).toBe(200);
-  expect(preserved.body.data.documentAccess).toBe('edit');
-  expect((await documents(editor, 'post', '/write')).status).toBe(200);
-  const demoted = await update(editor.account, { role: 'viewer' });
+test('ordinary account updates clear old grants while keeping operational access', async () => {
+  const user = await actor('editor', 'edit');
+  const result = await update(user.account, { displayName: 'Synthetic teacher' });
+  expect(result.status).toBe(200);
+  expect(result.body.data.documentAccess).toBe('none');
+  expect((await db.getAccount(user.account.id)).documentAccess).toBe('none');
+  expect((await api(user, 'get', '/api/children')).status).toBe(200);
+  expect((await documents(user, 'get', '/read')).status).toBe(403);
+});
+
+test('administrator demotion revokes copied cookies and removes documentation access after sign-in', async () => {
+  const user = await actor('admin', 'edit');
+  expect((await documents(user, 'get', '/read')).status).toBe(200);
+  const demoted = await update(user.account, { role: 'editor' });
   expect(demoted.status).toBe(200);
-  expect(demoted.body.data.documentAccess).toBe('view');
-  expect((await documents(editor, 'post', '/write')).status).toBe(401);
-  const viewer = await signIn(editor.account.username);
-  expect((await documents(viewer, 'get', '/read')).status).toBe(200);
-  expect((await documents(viewer, 'post', '/write')).status).toBe(403);
+  expect(demoted.body.data.documentAccess).toBe('none');
+  expect((await documents(user, 'get', '/read')).status).toBe(401);
+  const teacher = await signIn(user.account.username);
+  expect((await documents(teacher, 'get', '/read')).status).toBe(403);
+  expect((await documents(teacher, 'post', '/write')).status).toBe(403);
+  expect((await api(teacher, 'get', '/api/children')).status).toBe(200);
 });
 
-test('an administrator cannot accidentally remove their own effective document access', async () => {
+test('administrators retain inherent access when updating their account', async () => {
   const admin = fixture.credentials();
   const response = await update(admin.account, { documentAccess: 'none' });
   expect(response.status).toBe(200);
   expect(response.body.data.documentAccess).toBe('edit');
   expect((await documents(admin, 'post', '/write')).status).toBe(200);
-});
-
-test('inherent administrator document access is not copied into a demoted account', async () => {
-  const legacyAdmin = await actor('admin', 'none');
-  expect(legacyAdmin.account.documentAccess).toBe('edit');
-  const renamed = await update(legacyAdmin.account, { displayName: 'Synthetic renamed administrator' });
-  expect(renamed.status).toBe(200);
-  expect((await db.getAccount(legacyAdmin.account.id)).documentAccess).toBe('none');
-  const demoted = await update(legacyAdmin.account, { role: 'editor' });
-  expect(demoted.status).toBe(200);
-  expect(demoted.body.data.documentAccess).toBe('none');
-  const editor = await signIn(legacyAdmin.account.username);
-  expect((await documents(editor, 'get', '/read')).status).toBe(403);
-  expect((await api(editor, 'get', '/api/children')).status).toBe(200);
 });

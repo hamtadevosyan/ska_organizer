@@ -8,6 +8,8 @@ export const maxDocumentBytes = 5 * 1024 * 1024;
 export type ChildDocument = {
   id: string; childId: string; title: string; category: DocumentCategory; documentDate: string | null;
   notes: string; version: number; currentRevisionId: string; updatedAt: string;
+  registrationFormId?: string | null; registrationFormRevisionId?: string | null;
+  reviewedRevisionId?: string | null; reviewedBy?: string | null; reviewedAt?: string | null;
 };
 export type DocumentRevision = {
   id: string; revision: number; filename: string; contentType: string; byteLength: number;
@@ -15,13 +17,12 @@ export type DocumentRevision = {
 };
 export type DocumentFile = { name: string; contentType: string; dataBase64: string };
 export type DocumentDetails = { document: ChildDocument; revisions: DocumentRevision[]; total: number };
-export type DocumentMetadata = Pick<ChildDocument, 'title' | 'category' | 'documentDate' | 'notes'>;
+export type DocumentMetadata = Pick<ChildDocument, 'title' | 'category' | 'documentDate' | 'notes' | 'registrationFormId' | 'registrationFormRevisionId'>;
 export type DocumentWork = { dirty: boolean; busy: boolean };
 export function documentAccess(account: Account | null): 'none' | 'view' | 'edit' {
   if (!account || account.disabled || account.mustChangePassword) return 'none';
   if (account.role === 'admin') return 'edit';
-  const access = account.documentAccess || 'none';
-  return account.role === 'viewer' && access === 'edit' ? 'view' : access;
+  return 'none';
 }
 export function documentRequestId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -45,6 +46,9 @@ export async function updateChildDocument(childId: string, document: ChildDocume
 }
 export async function reviseChildDocument(childId: string, document: ChildDocument, file: DocumentFile, changeNote: string, requestId: string, signal: AbortSignal) {
   return (await axios.post<{ document: ChildDocument; revision: DocumentRevision }>(url(childId) + '/' + encodeURIComponent(document.id) + '/revisions', { file, changeNote, requestId, version: document.version }, { signal })).data;
+}
+export async function reviewChildDocument(childId: string, document: ChildDocument, reviewed: boolean, signal: AbortSignal) {
+  return (await axios.put<{ document: ChildDocument }>(url(childId) + '/' + encodeURIComponent(document.id) + '/review', { version: document.version, reviewed }, { signal })).data;
 }
 export async function getDocumentContent(childId: string, id: string, revisionId: string, download: boolean, signal: AbortSignal) {
   return (await axios.get<Blob>(url(childId) + '/' + encodeURIComponent(id) + '/revisions/' + encodeURIComponent(revisionId) + '/content', {

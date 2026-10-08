@@ -7,15 +7,17 @@ import { authError, onSessionExpired } from '../../auth/transport';
 import { useUnsavedChanges } from '../UnsavedChangesContext';
 import {
   addChildDocument, documentAccess, documentCategories, documentRequestId, getChildDocument, getDocumentContent,
-  listChildDocuments, readDocumentFile, reviseChildDocument, updateChildDocument, validateDocumentFile,
+  listChildDocuments, readDocumentFile, reviewChildDocument, reviseChildDocument, updateChildDocument, validateDocumentFile,
 } from '../../api/childDocuments';
 import type { ChildDocument, DocumentCategory, DocumentDetails, DocumentMetadata, DocumentRevision, DocumentWork } from '../../api/childDocuments';
+import type { RegistrationForm } from '../../api/registrationForms';
+import { RegistrationChecklist } from './RegistrationChecklist';
 
 const PdfDocumentPreview = lazy(() => import('./PdfDocumentPreview'));
 
 type Form = { mode: 'new' | 'edit' | 'revise'; original: ChildDocument | null; metadata: DocumentMetadata; changeNote: string };
 const emptyMetadata = (): DocumentMetadata => ({ title: '', category: 'other', documentDate: null, notes: '' });
-const metadataOf = (document: ChildDocument): DocumentMetadata => ({ title: document.title, category: document.category, documentDate: document.documentDate, notes: document.notes || '' });
+const metadataOf = (document: ChildDocument): DocumentMetadata => ({ title: document.title, category: document.category, documentDate: document.documentDate, notes: document.notes || '', registrationFormId: document.registrationFormId || null, registrationFormRevisionId: document.registrationFormRevisionId || null });
 const inputClass = 'mt-1 block w-full min-w-0 rounded-xl border border-slate-300 bg-white p-3';
 const dateTime = (value: string) => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString() : value; };
 const cancelled = (failure: unknown) => axios.isCancel(failure) || failure instanceof DOMException && failure.name === 'AbortError';
@@ -23,11 +25,11 @@ const cancelled = (failure: unknown) => axios.isCancel(failure) || failure insta
 export function ChildDocuments({ childId, openAdd = false, onWorkChange }: { childId: string; openAdd?: boolean; onWorkChange?: (work: DocumentWork) => void }) {
   const { account } = useAuth();
   const access = documentAccess(account);
-  if (access === 'none') return <section aria-label="Documents" className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4"><h3 className="flex items-center gap-2 font-bold"><FileText size={20} aria-hidden="true" />Documents</h3><p className="mt-2 text-sm text-slate-600">Document access is managed separately. Ask an administrator if you need it.</p></section>;
-  return <DocumentArea key={[childId, account?.id, access].join(':')} childId={childId} canEdit={access === 'edit'} openAdd={openAdd} onWorkChange={onWorkChange} />;
+  if (access === 'none') return null;
+  return <DocumentArea key={[childId, account?.id, access].join(':')} childId={childId} canEdit={access === 'edit'} admin={account?.role === 'admin'} openAdd={openAdd} onWorkChange={onWorkChange} />;
 }
 
-function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: string; canEdit: boolean; openAdd: boolean; onWorkChange?: (work: DocumentWork) => void }) {
+function DocumentArea({ childId, canEdit, admin, openAdd, onWorkChange }: { childId: string; canEdit: boolean; admin: boolean; openAdd: boolean; onWorkChange?: (work: DocumentWork) => void }) {
   const [documents, setDocuments] = useState<ChildDocument[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -37,7 +39,11 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
   const [details, setDetails] = useState<DocumentDetails | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [form, setForm] = useState<Form | null>(() => openAdd && canEdit ? { mode: 'new', original: null, metadata: emptyMetadata(), changeNote: '' } : null);
+  const [form, setForm] = useState<Form | null>(null);
+  const [registrationForms, setRegistrationForms] = useState<RegistrationForm[]>([]);
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
+  const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
+  const [versionConflict, setVersionConflict] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [cameraFile, setCameraFile] = useState(false);
   const [photoConfirmed, setPhotoConfirmed] = useState(false);
@@ -75,7 +81,7 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
       downloadUrls.current.clear();
     };
     const unsubscribe = onSessionExpired(() => {
-      stop(); setExpired(true); setDocuments([]); setDetails(null); setPreview(null); setFile(null); setForm(null); setError(''); setMessage(''); setBusy(false); setContentBusy(false);
+      stop(); setExpired(true); setDocuments([]); setDetails(null); setPreview(null); setFile(null); setForm(null); setRegistrationForms([]); setReviewAcknowledged(false); setError(''); setMessage(''); setBusy(false); setContentBusy(false);
     });
     return () => { alive.current = false; stop(); unsubscribe(); };
   }, []);
@@ -99,7 +105,7 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
     return () => { controller.abort(); requestSet.delete(controller); };
   }, [childId, page, refresh, expired]);
   useEffect(() => {
-    setDetails(null); setPreview(null); previewSequence.current++;
+    setDetails(null); setPreview(null); setReviewAcknowledged(false); previewSequence.current++;
     if (!selectedId || expired) return;
     const controller = new AbortController(); const requestSet = requests.current; requestSet.add(controller); setDetailLoading(true);
     void getChildDocument(childId, selectedId, historyPage, controller.signal).then(result => { if (!controller.signal.aborted) setDetails(result); })
@@ -115,7 +121,7 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
   }, [dirty, busy]);
 
   function leaveDraft() { return !busy && (!dirty || window.confirm('Discard the unsaved document changes?')); }
-  function clearForm() { setForm(null); setFile(null); setCameraFile(false); setPhotoConfirmed(false); requestId.current = ''; }
+  function clearForm() { setForm(null); setFile(null); setCameraFile(false); setPhotoConfirmed(false); setMappingConfirmed(false); setVersionConflict(false); requestId.current = ''; }
   function openForm(mode: Form['mode']) {
     if (!leaveDraft() || mode !== 'new' && !details) return;
     clearForm(); setError(''); setMessage(''); setPreview(null);
@@ -124,6 +130,20 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
   function changedMetadata<K extends keyof DocumentMetadata>(key: K, value: DocumentMetadata[K]) {
     setForm(previous => previous && ({ ...previous, metadata: { ...previous.metadata, [key]: value } }));
     requestId.current = ''; setError(''); setMessage('');
+  }
+  function attachCompleted(template: RegistrationForm) {
+    if (!leaveDraft()) return;
+    clearForm(); setError(''); setMessage(''); setPreview(null); setSelectedId('');
+    setForm({ mode: 'new', original: null, metadata: { ...emptyMetadata(), title: template.title, category: template.category, registrationFormId: template.id, registrationFormRevisionId: template.currentRevisionId }, changeNote: '' });
+  }
+  function selectCompleted(id: string) {
+    if (!leaveDraft()) return;
+    clearForm(); setError(''); setMessage(''); setSelectedId(id); setHistoryPage(1);
+  }
+  function changeRegistrationForm(id: string) {
+    const template = registrationForms.find(item => item.id === id);
+    setForm(previous => previous && ({ ...previous, metadata: { ...previous.metadata, registrationFormId: template?.id || null, registrationFormRevisionId: template?.currentRevisionId || null } }));
+    setMappingConfirmed(false); requestId.current = ''; setError(''); setMessage('');
   }
   function chooseFile(selected: File | undefined, camera: boolean) {
     if (!selected) return;
@@ -145,6 +165,7 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
     }
     if (form.mode !== 'edit' && !file) { setError('Choose a PDF, JPG or PNG file first.'); return; }
     if (cameraFile && !photoConfirmed) { setError('Check the photo preview and choose Confirm photo before saving.'); return; }
+    if (form.mode === 'edit' && !form.original?.registrationFormId && metadata.registrationFormId && !mappingConfirmed) { setError('Confirm this completed copy uses the selected blank form version before linking it.'); return; }
     const controller = new AbortController(); requests.current.add(controller); setBusy(true); setError(''); setMessage('');
     try {
       if (!requestId.current) requestId.current = documentRequestId();
@@ -155,7 +176,31 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
       setSelectedId(result.document.id); setHistoryPage(1); setPage(1); clearForm(); setRefresh(value => value + 1);
       setMessage(form.mode === 'new' ? 'Document saved.' : form.mode === 'edit' ? 'Document details saved.' : 'New version saved. Previous versions are kept.');
     } catch (failure) {
-      if (!controller.signal.aborted && !cancelled(failure)) setError(authError(failure, 'Could not save this document. Your changes are still here; try again.'));
+      if (!controller.signal.aborted && !cancelled(failure)) { setError(authError(failure, 'Could not save this document. Your changes are still here; try again.')); setVersionConflict(axios.isAxiosError(failure) && failure.response?.status === 409 && form.mode !== 'new'); setRefresh(value => value + 1); }
+    } finally { requests.current.delete(controller); if (!controller.signal.aborted && alive.current) setBusy(false); }
+  }
+  async function loadLatestForDraft() {
+    if (!form?.original || busy || expired) return;
+    const controller = new AbortController(); requests.current.add(controller); setBusy(true);
+    try {
+      const latest = await getChildDocument(childId, form.original.id, 1, controller.signal);
+      if (controller.signal.aborted || !alive.current) return;
+      setForm(previous => previous && ({ ...previous, original: latest.document, metadata: { ...previous.metadata,
+        ...(latest.document.registrationFormId ? { registrationFormId: latest.document.registrationFormId, registrationFormRevisionId: latest.document.registrationFormRevisionId } : {}) } }));
+      setDetails(latest); setPreview(null); setReviewAcknowledged(false); setVersionConflict(false); requestId.current = '';
+      setError(''); setMessage('Latest document version loaded. Your draft is still here; check it before saving again.');
+    } catch (failure) { if (!controller.signal.aborted && !cancelled(failure)) setError(authError(failure, 'Could not load the latest document version. Your draft is still here.')); }
+    finally { requests.current.delete(controller); if (!controller.signal.aborted && alive.current) setBusy(false); }
+  }
+  async function review(reviewed: boolean) {
+    if (!details || busy || expired || reviewed && !reviewAcknowledged) return;
+    const controller = new AbortController(); requests.current.add(controller); setBusy(true); setError(''); setMessage('');
+    try {
+      await reviewChildDocument(childId, details.document, reviewed, controller.signal);
+      if (controller.signal.aborted || !alive.current) return;
+      setReviewAcknowledged(false); setRefresh(value => value + 1); setMessage(reviewed ? 'Completed copy reviewed.' : 'Review cleared. This copy needs review again.');
+    } catch (failure) {
+      if (!controller.signal.aborted && !cancelled(failure)) { setError(authError(failure, 'Could not save the review. Refresh documents and check the current copy before trying again.')); setRefresh(value => value + 1); }
     } finally { requests.current.delete(controller); if (!controller.signal.aborted && alive.current) setBusy(false); }
   }
   async function content(revision: DocumentRevision, download: boolean) {
@@ -180,19 +225,30 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
   }
   if (expired) return null;
   return <section aria-label="Documents" className="min-w-0 space-y-4 rounded-2xl border border-violet-100 bg-violet-50/40 p-4 sm:p-5">
+    <RegistrationChecklist childId={childId} refreshKey={refresh} busy={busy} canEdit={canEdit} admin={admin} focusOnOpen={openAdd} onAttach={attachCompleted} onSelect={selectCompleted} onForms={setRegistrationForms} />
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="flex items-center gap-2 text-lg font-bold text-slate-800"><FileText size={21} className="text-violet-600" aria-hidden="true" />Documents</h3><p className="mt-1 text-sm text-slate-600">Keep forms and records together, including earlier versions.</p></div>
       <div className="flex flex-wrap gap-2"><button type="button" disabled={busy || loading} onClick={() => { if (leaveDraft()) { clearForm(); setError(''); setPreview(null); setRefresh(value => value + 1); } }} className="ska-button">Refresh documents</button>{canEdit && <button type="button" disabled={busy} onClick={() => openForm('new')} className="ska-button is-primary"><Plus size={18} aria-hidden="true" />Add document</button>}</div>
     </div>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+    {versionConflict && form?.original && <div className="space-y-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900"><p>This document changed since you opened it. Load its latest version to keep your draft and try again.</p><button type="button" disabled={busy} className="ska-button" onClick={() => void loadLatestForDraft()}>Load latest document version</button></div>}
     {message && <p role="status" className="rounded-xl bg-blue-50 p-3 text-sm text-blue-800">{message}</p>}
     {form && <form aria-label={form.mode === 'new' ? 'Add document' : form.mode === 'edit' ? 'Edit document details' : 'Add document version'} onSubmit={event => void save(event)} className="min-w-0 space-y-4 rounded-2xl border bg-white p-4" noValidate>
       <fieldset disabled={busy} className="min-w-0 space-y-4">
         <h4 className="font-bold">{form.mode === 'new' ? 'Add a document' : form.mode === 'edit' ? 'Edit document details' : 'Upload a new version of ' + form.original?.title}</h4>
         {form.mode !== 'revise' && <>
-          <label className="block">Document title<input value={form.metadata.title} maxLength={160} onChange={event => changedMetadata('title', event.target.value)} className={inputClass} required /></label>
+          {form.metadata.registrationFormId && <p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-900">Completed copy for {registrationForms.find(item => item.id === form.metadata.registrationFormId)?.title || form.metadata.title}. Use the matching blank form version. A staff review is required after saving.</p>}
+          {form.mode === 'new' && registrationForms.some(item => item.id === form.metadata.registrationFormId && item.currentRevisionId !== form.metadata.registrationFormRevisionId) && <div className="space-y-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900"><p>The blank form changed while you were preparing this copy. Download the current blank form and choose its new completed copy.</p><button type="button" className="ska-button" onClick={() => {
+            const current = registrationForms.find(item => item.id === form.metadata.registrationFormId)!;
+            setForm({ ...form, metadata: { ...form.metadata, title: current.title, category: current.category, registrationFormRevisionId: current.currentRevisionId } });
+            setFile(null); setCameraFile(false); setPhotoConfirmed(false); requestId.current = ''; setError('');
+          }}>Use latest blank version and choose a new completed file</button></div>}
+          <label className="block">Document title<input autoFocus value={form.metadata.title} maxLength={160} onChange={event => changedMetadata('title', event.target.value)} className={inputClass} required /></label>
           <div className="grid min-w-0 gap-4 sm:grid-cols-2"><label className="block min-w-0">Document category<select value={form.metadata.category} onChange={event => changedMetadata('category', event.target.value as DocumentCategory)} className={inputClass}>{Object.entries(documentCategories).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="block min-w-0">Document date (optional)<input type="date" min="1900-01-01" max="9999-12-31" value={form.metadata.documentDate || ''} onChange={event => changedMetadata('documentDate', event.target.value || null)} className={inputClass} /></label></div>
           <label className="block">Document notes (optional)<textarea value={form.metadata.notes} rows={3} maxLength={2000} onChange={event => changedMetadata('notes', event.target.value)} className={inputClass} /></label>
+          {!form.original?.registrationFormId && <label className="block">Registration form (optional)<select value={form.metadata.registrationFormId || ''} onChange={event => changeRegistrationForm(event.target.value)} className={inputClass}><option value="">Not linked to a registration form</option>{registrationForms.map(item => <option key={item.id} value={item.id}>{item.title} · Blank version {item.templateRevision}</option>)}</select></label>}
+          {form.mode === 'edit' && !form.original?.registrationFormId && form.metadata.registrationFormId && <label className="flex items-start gap-3"><input type="checkbox" checked={mappingConfirmed} onChange={event => setMappingConfirmed(event.target.checked)} className="mt-1" />I confirmed this completed copy uses blank form version {registrationForms.find(item => item.id === form.metadata.registrationFormId)?.templateRevision}.</label>}
+          {form.original?.registrationFormId && <p className="text-sm text-slate-600">This copy keeps its original registration form version. Use Attach completed copy in the checklist for an updated blank form.</p>}
         </>}
         {form.mode !== 'edit' && <>
           <div className="space-y-3"><label htmlFor={fileId} className="block font-medium">Upload a document</label><input id={fileId} type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" onChange={event => { chooseFile(event.target.files?.[0], false); event.target.value = ''; }} className="block w-full min-w-0 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-3 file:font-semibold file:text-blue-800" />
@@ -222,6 +278,12 @@ function DocumentArea({ childId, canEdit, openAdd, onWorkChange }: { childId: st
         <button type="button" disabled={busy} aria-label="Close selected document" onClick={() => { if (leaveDraft()) { clearForm(); setSelectedId(''); } }} className="ska-button"><X size={18} aria-hidden="true" />Close</button></div>
       {details.document.notes && <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{details.document.notes}</p>}
       {canEdit && <div className="flex flex-wrap gap-3"><button disabled={busy} type="button" onClick={() => openForm('edit')} className="ska-button">Edit document details</button><button disabled={busy} type="button" onClick={() => openForm('revise')} className="ska-button"><Upload size={18} aria-hidden="true" />Upload new version</button></div>}
+      {details.document.registrationFormId && <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50 p-3"><h5 className="font-bold">Completed registration copy</h5>
+        {details.document.reviewedRevisionId === details.document.currentRevisionId ? <><p className="text-sm text-emerald-800">Current copy reviewed{details.document.reviewedAt ? ' · ' + dateTime(details.document.reviewedAt) : ''}.</p>{canEdit && <button type="button" disabled={busy} onClick={() => void review(false)} className="ska-button">Clear review</button>}</> : <>
+          <p className="text-sm text-slate-700">Preview or download the current version, then check that it is filled out and signed where required.</p>
+          {registrationForms.some(item => item.id === details.document.registrationFormId && item.currentRevisionId === details.document.registrationFormRevisionId) ? canEdit ? <><label className="flex items-start gap-3"><input type="checkbox" checked={reviewAcknowledged} onChange={event => setReviewAcknowledged(event.target.checked)} disabled={busy} className="mt-1" />I checked this copy is filled out and signed where required</label><button type="button" disabled={busy || !reviewAcknowledged || !!form} onClick={() => void review(true)} className="ska-button is-primary">Mark reviewed</button></> : <p className="text-sm text-slate-700">An account with document editing access must review this copy.</p> : <p className="text-sm text-amber-900">The current blank form must match this copy before it can be reviewed. Use the checklist to attach an updated completed copy.</p>}
+        </>}
+      </div>}
       <h5 className="flex items-center gap-2 font-bold"><History size={18} className="text-violet-600" aria-hidden="true" />Version history</h5>
       <ol className="space-y-3">{details.revisions.map(item => <li key={item.id} className="min-w-0 rounded-xl border border-slate-200 p-3"><div className="flex flex-wrap items-center gap-2"><span className="font-bold">Version {item.revision}</span>{item.current && <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800">Current version</span>}</div><p className="mt-1 break-words text-sm">{item.filename}</p><p className="mt-1 break-words text-sm text-slate-600">Uploaded by {item.uploadedBy} · {dateTime(item.uploadedAt)}</p>{item.changeNote && <p className="mt-2 whitespace-pre-wrap break-words text-sm">{item.changeNote}</p>}
         <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={contentBusy} onClick={() => void content(item, false)} aria-label={'Preview version ' + item.revision} className="ska-button"><FileText size={17} aria-hidden="true" />Preview</button><button type="button" disabled={contentBusy} onClick={() => void content(item, true)} aria-label={'Download version ' + item.revision} className="ska-button"><Download size={17} aria-hidden="true" />Download</button></div></li>)}</ol>

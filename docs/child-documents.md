@@ -1,17 +1,18 @@
 # Child documents
 
-Authorized staff can keep PDF, JPG/JPEG and PNG paperwork on the child's saved
+Administrators can keep PDF, JPG/JPEG and PNG paperwork on the child's saved
 profile. Each file must be no larger than 5 MB. A scanner export can be uploaded
 like any other supported file. The upload contains the document itself; this
 feature does not extract text or ingredients from it.
 
-## Grant access
+## Administrator-only access
 
-Administrators have document editing access. Other accounts initially have
-**No access**, even when they can view or edit the child roster. In **Accounts**,
-an administrator can grant document viewing or editing separately from the
-account's general role. A viewer can receive viewing access; document editing
-also requires an editor role. Changes to account access require a fresh sign-in.
+Only administrators can access child documentation, registration checklists,
+blank templates, medical paperwork, insurance records and contracts. Teacher
+(editor) and read-only accounts retain their operational roster access but see
+no documentation section. Older stored document grants do not override this
+policy. Account management cannot grant paperwork access to a non-administrator.
+Administrator demotion revokes sessions and removes documentation access.
 
 These permissions apply to document lists, metadata, every historical revision,
 previews, downloads and writes. Knowing a child or file ID does not grant access.
@@ -42,7 +43,7 @@ offer camera capture. No phone configuration or new hardware is required.
 Edit metadata to correct its title, category, date or notes. To replace the file,
 upload or capture a new revision, optionally explain the change, and save it.
 The newest revision is clearly identified. Older files remain available to
-authorized staff with the uploader, time and change note.
+administrators with the uploader, time and change note.
 
 A failed upload leaves the saved current file unchanged. A conflicting edit
 asks the user to reload the saved document before trying again. Retry an
@@ -114,3 +115,34 @@ schema, closes all Node connections, and compares the same records after the
 database restarts. API and browser suites separately cover permissions, upload
 failures, revisions and the mobile workflow. Never use real children's paperwork
 as a test fixture or put it in Git, shared screenshots or the handoff ZIP.
+
+## Registration templates and checklist
+
+Administrators upload a facility catalog of blank forms through Registration forms.
+Required/optional flags, active/archive status, titles and instructions are editable.
+A file change creates an immutable blank revision; earlier files remain available.
+Templates use the same PDF/JPG/PNG validation, 5 MB limit, two shared upload slots,
+private no-store content headers and permission rechecks as child documents.
+
+Child document metadata can link to a form and its blank revision. A manual review
+records the exact current child-file revision, reviewer account ID and timestamp.
+Uploading a replacement child file or changing its requirement mapping clears review.
+The checklist reads all matching document metadata, independent of list pagination;
+a reviewed current submission takes priority over an unreviewed duplicate.
+
+New required catalog entries show Missing on existing child profiles. A revised
+blank shows Updated form needed for copies linked to its older revision. Completion
+requires reviewed current copies for every active required form; optional forms do
+not block it. Empty catalogs do not report completion. Packet completion is separate
+from active enrollment/attendance, so existing enrollment is not changed by migration.
+
+Print rasterizes only the selected blank template into a sandboxed local print frame.
+Sharing passes only blank file bytes to a user-initiated device share sheet, with
+download fallback. There is no parent account, messaging service or remote file URL.
+Staff verify filled fields/signatures; the system does not infer them or monitor laws.
+
+Migration018 stores RegistrationForms, RegistrationFormRevisions and child review
+mappings. Native dumps include them. Pilot format3 fingerprints both binary tables
+by stable IDs with one file row held at a time; format1/2 fingerprints retain their
+original ordering for compatibility. Actual archive/restart tests verify synthetic
+template bytes/history and completed mappings/reviews.

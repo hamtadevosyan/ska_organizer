@@ -16,6 +16,7 @@ const navigation = {
   staff: { to: '/staff', label: 'Staff', icon: Users },
   reports: { to: '/reports', label: 'Reports', icon: FileText },
   accounts: { to: '/accounts', label: 'Accounts', icon: Users, adminOnly: true },
+  registrationForms: { to: '/registration-forms', label: 'Registration forms', icon: FileText, adminOnly: true },
 } satisfies Record<string, NavigationItem>;
 
 const allItems: NavigationItem[] = Object.values(navigation);

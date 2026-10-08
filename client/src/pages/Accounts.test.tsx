@@ -16,39 +16,35 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 
-test('account creation explicitly starts with no document permission and grants it separately', async () => {
+test('teacher creation has no document grant control and sends no access', async () => {
   vi.mocked(axios.post).mockResolvedValue({ data: { data: editor } });
   render(<SignedIn><Accounts /></SignedIn>);
-  const documents = await screen.findByLabelText('Child documents', { exact: true });
-  await waitFor(() => expect(documents).toBeEnabled());
-  expect(documents).toHaveValue('none');
+  await waitFor(() => expect(screen.getByLabelText('Username', { exact: true })).toBeEnabled());
+  expect(screen.queryByLabelText('Child documents', { exact: true })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Username', { exact: true }), { target: { value: 'new-editor' } });
   fireEvent.change(screen.getByLabelText('Display name', { exact: true }), { target: { value: 'New synthetic editor' } });
   fireEvent.change(screen.getByLabelText('Temporary password', { exact: true }), { target: { value: 'Synthetic long password 20!' } });
-  fireEvent.change(documents, { target: { value: 'edit' } });
   fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
-  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/accounts'), expect.objectContaining({ role: 'editor', documentAccess: 'edit' })));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/accounts'), expect.objectContaining({ role: 'editor', documentAccess: 'none' })));
 });
 
-test('read-only role restricts document access and administrators retain full access', async () => {
+test('documentation policy remains administrator-only for every role selection', async () => {
   render(<SignedIn><Accounts /></SignedIn>);
-  const documents = await screen.findByLabelText('Child documents', { exact: true });
-  await waitFor(() => expect(documents).toBeEnabled());
-  fireEvent.change(documents, { target: { value: 'edit' } });
-  fireEvent.change(screen.getByLabelText('Access', { exact: true }), { target: { value: 'viewer' } });
-  expect(documents).toHaveValue('view');
-  expect(documents.querySelector('option[value="edit"]')).toBeDisabled();
-  fireEvent.change(screen.getByLabelText('Access', { exact: true }), { target: { value: 'admin' } });
-  expect(documents).toHaveValue('edit'); expect(documents).toBeDisabled();
+  await waitFor(() => expect(screen.getByLabelText('Access', { exact: true })).toBeEnabled());
+  for (const role of ['viewer', 'admin', 'editor']) {
+    fireEvent.change(screen.getByLabelText('Access', { exact: true }), { target: { value: role } });
+    expect(screen.queryByLabelText('Child documents', { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByText('Child documents, registration forms and contracts are available only to administrators.')).toBeInTheDocument();
+  }
 });
 
-test('managing an account sends the independent grant and explains session revocation', async () => {
-  vi.mocked(axios.put).mockResolvedValue({ data: { data: { ...editor, documentAccess: 'edit' } } });
+test('saving a legacy teacher account clears an old grant and offers no document access control', async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: { data: String(url).includes('/accounts') ? [testAccount, { ...editor, documentAccess: 'edit' }] : [] } }));
+  vi.mocked(axios.put).mockResolvedValue({ data: { data: editor } });
   render(<SignedIn><Accounts /></SignedIn>);
   await waitFor(() => expect(screen.getByLabelText('Account', { exact: true })).toBeEnabled());
   fireEvent.change(screen.getByLabelText('Account', { exact: true }), { target: { value: editor.id } });
-  fireEvent.change(screen.getByLabelText('Account child documents', { exact: true }), { target: { value: 'edit' } });
+  expect(screen.queryByLabelText('Account child documents', { exact: true })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Save account' }));
-  await waitFor(() => expect(axios.put).toHaveBeenCalledWith(expect.stringContaining(`/accounts/${editor.id}`), expect.objectContaining({ documentAccess: 'edit' })));
-  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('document access or status sign out their existing sessions'));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledWith(expect.stringContaining(`/accounts/${editor.id}`), expect.objectContaining({ documentAccess: 'none' })));
 });

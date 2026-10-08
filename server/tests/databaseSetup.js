@@ -31,7 +31,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   if (!connection) db.reset();
   else {
-    const tables = ['ChildDocumentRevisions', 'ChildDocuments', 'PurchaseReceipts', 'InventoryMovements', 'InventoryItems', 'InventoryGroups', 'MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'AttendanceCorrections', 'Attendances', 'Activities', 'ScheduleEntries', 'ScheduleWeeks', 'StaffMembers', 'Rooms', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
+    const tables = ['ChildDocumentRevisions', 'ChildDocuments', 'RegistrationFormRevisions', 'RegistrationForms', 'PurchaseReceipts', 'InventoryMovements', 'InventoryItems', 'InventoryGroups', 'MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'AttendanceCorrections', 'Attendances', 'Activities', 'ScheduleEntries', 'ScheduleWeeks', 'StaffMembers', 'Rooms', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
     await setupStep('clearing the PostgreSQL test tables', () =>
       connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`));
   }

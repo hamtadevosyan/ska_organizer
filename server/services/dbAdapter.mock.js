@@ -7,7 +7,7 @@ const { amount } = require('./inventoryValidation');
 const mock = {
   rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
-  children: [], childDocuments: [], childDocumentRevisions: [],
+  children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
   attendance: [], attendanceCorrections: [],
   activities: [],
   meals: [
@@ -181,6 +181,7 @@ module.exports = {
     mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
+    mock.registrationForms = []; mock.registrationFormRevisions = [];
     mock.attendance = [];
     mock.attendanceCorrections = [];
     mock.activities = [];
@@ -535,13 +536,16 @@ Object.assign(module.exports, {
 const documentRevisionMetadata = (row) => row ? Object.fromEntries(Object.entries(row)
   .filter(([key]) => !['content', 'requestId', 'requestScope', 'requestHash'].includes(key))) : null;
 Object.assign(module.exports, {
-  createChildDocument: async (values) => insert('childDocuments', { createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
+  createChildDocument: async (values) => insert('childDocuments', { registrationFormId: null, registrationFormRevisionId: null,
+    reviewedRevisionId: null, reviewedBy: null, reviewedAt: null, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
   updateChildDocument: async (id, values) => edit('childDocuments', id, { ...values, updatedAt: mock.nowIso() }),
   getChildDocument: async (id, childId) => copy(mock.childDocuments.find((row) => row.id === id && row.childId === childId) || null),
   listChildDocuments: async (childId, { page = 1, pageSize = 20 } = {}) => copy(mock.childDocuments
     .filter((row) => row.childId === childId).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt) || a.id.localeCompare(b.id))
     .slice((page - 1) * pageSize, page * pageSize)),
   countChildDocuments: async (childId) => mock.childDocuments.filter((row) => row.childId === childId).length,
+  listAllChildDocuments: async (childId) => copy(mock.childDocuments.filter((row) => row.childId === childId)
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt) || a.id.localeCompare(b.id))),
   createChildDocumentRevision: async (values) => {
     mock.childDocumentRevisions.push(copy(values)); return copy(documentRevisionMetadata(values));
   },
@@ -558,4 +562,27 @@ Object.assign(module.exports, {
     .filter((row) => row.documentId === documentId).sort((a, b) => b.revision - a.revision)
     .slice((page - 1) * pageSize, page * pageSize).map(documentRevisionMetadata)),
   countChildDocumentRevisions: async (documentId) => mock.childDocumentRevisions.filter((row) => row.documentId === documentId).length,
+  createRegistrationForm: async (values) => insert('registrationForms', { required: false, active: true,
+    instructions: '', createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
+  updateRegistrationForm: async (id, values) => edit('registrationForms', id, { ...values, updatedAt: mock.nowIso() }),
+  getRegistrationForm: async (id) => find('registrationForms', id),
+  listRegistrationForms: async ({ includeArchived = false } = {}) => copy(mock.registrationForms
+    .filter((row) => includeArchived || row.active).sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id))),
+  countRegistrationForms: async () => mock.registrationForms.length,
+  createRegistrationFormRevision: async (values) => {
+    mock.registrationFormRevisions.push(copy(values)); return copy(documentRevisionMetadata(values));
+  },
+  getRegistrationFormRevision: async (formId, revisionId) => copy(documentRevisionMetadata(mock.registrationFormRevisions
+    .find((row) => row.formId === formId && row.id === revisionId))),
+  getRegistrationFormContent: async (formId, revisionId) => copy(mock.registrationFormRevisions
+    .find((row) => row.formId === formId && row.id === revisionId) || null),
+  getRegistrationFormRevisionByRequest: async (requestScope, requestId) => {
+    const row = mock.registrationFormRevisions.find((item) => item.requestScope === requestScope && item.requestId === requestId);
+    if (!row) return null;
+    const { content: _content, ...metadata } = row; return copy(metadata);
+  },
+  listRegistrationFormRevisions: async (formId, { page = 1, pageSize = 20 } = {}) => copy(mock.registrationFormRevisions
+    .filter((row) => row.formId === formId).sort((a, b) => b.revision - a.revision)
+    .slice((page - 1) * pageSize, page * pageSize).map(documentRevisionMetadata)),
+  countRegistrationFormRevisions: async (formId) => mock.registrationFormRevisions.filter((row) => row.formId === formId).length,
 });

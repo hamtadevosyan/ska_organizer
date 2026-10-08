@@ -195,6 +195,9 @@ exports.listChildDocuments = (childId, { page = 1, pageSize = 20 } = {}) => list
   where: { childId }, order: [['updatedAt', 'DESC'], ['id', 'ASC']], limit: pageSize, offset: (page - 1) * pageSize,
 });
 exports.countChildDocuments = (childId) => model('ChildDocument').count({ where: { childId }, transaction: transactionContext.getStore() });
+exports.listAllChildDocuments = (childId) => list('ChildDocument', {
+  where: { childId }, order: [['updatedAt', 'DESC'], ['id', 'ASC']],
+});
 exports.createChildDocumentRevision = (values) => transact(async (transaction) => {
   await model('ChildDocumentRevision').create(values, { transaction });
   return exports.getChildDocumentRevision(values.documentId, values.id);
@@ -212,6 +215,33 @@ exports.listChildDocumentRevisions = (documentId, { page = 1, pageSize = 20 } = 
   where: { documentId }, attributes: revisionMetadataColumns, order: [['revision', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize,
 });
 exports.countChildDocumentRevisions = (documentId) => model('ChildDocumentRevision').count({ where: { documentId }, transaction: transactionContext.getStore() });
+
+const formRevisionMetadataColumns = ['id', 'formId', 'revision', 'filename', 'contentType', 'byteLength', 'sha256',
+  'uploadedAt', 'actorId', 'uploadedBy', 'changeNote'];
+exports.createRegistrationForm = (values) => create('RegistrationForm', values);
+exports.updateRegistrationForm = (id, values) => update('RegistrationForm', id, values);
+exports.getRegistrationForm = (id) => get('RegistrationForm', id);
+exports.listRegistrationForms = ({ includeArchived = false } = {}) => list('RegistrationForm', {
+  where: includeArchived ? {} : { active: true }, order: [['title', 'ASC'], ['id', 'ASC']],
+});
+exports.countRegistrationForms = () => model('RegistrationForm').count({ transaction: transactionContext.getStore() });
+exports.createRegistrationFormRevision = (values) => transact(async (transaction) => {
+  await model('RegistrationFormRevision').create(values, { transaction });
+  return exports.getRegistrationFormRevision(values.formId, values.id);
+});
+exports.getRegistrationFormRevision = async (formId, id) => (await list('RegistrationFormRevision', {
+  where: { formId, id }, attributes: formRevisionMetadataColumns, limit: 1,
+}))[0] || null;
+exports.getRegistrationFormContent = async (formId, id) => (await list('RegistrationFormRevision', {
+  where: { formId, id }, attributes: [...formRevisionMetadataColumns, 'content'], limit: 1,
+}))[0] || null;
+exports.getRegistrationFormRevisionByRequest = async (requestScope, requestId) => (await list('RegistrationFormRevision', {
+  where: { requestScope, requestId }, attributes: [...formRevisionMetadataColumns, 'requestId', 'requestScope', 'requestHash'], limit: 1,
+}))[0] || null;
+exports.listRegistrationFormRevisions = (formId, { page = 1, pageSize = 20 } = {}) => list('RegistrationFormRevision', {
+  where: { formId }, attributes: formRevisionMetadataColumns, order: [['revision', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countRegistrationFormRevisions = (formId) => model('RegistrationFormRevision').count({ where: { formId }, transaction: transactionContext.getStore() });
 
 exports.listInventoryForIngredients = (ids) => list('InventoryItem', { where: { ingredientId: { [Op.in]: ids } }, order: [['id', 'ASC']] });
 exports.createPurchaseReceipt = (values) => create('PurchaseReceipt', values);

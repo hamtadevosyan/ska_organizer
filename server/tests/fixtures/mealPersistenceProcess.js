@@ -5,6 +5,8 @@ const request = require('supertest');
 const app = require('../../index');
 const db = require('../../services/dbAdapter');
 const auth = require('../../auth/service');
+const registrationForms = require('../../services/registrationFormsService');
+const childDocuments = require('../../services/childDocumentsService');
 const { PNG } = require('pngjs');
 const { createHash, randomUUID } = require('node:crypto');
 let credentials;
@@ -23,15 +25,53 @@ function syntheticPage(shade) {
 const pageFile = (shade, name) => ({ name, contentType: 'image/png', dataBase64: syntheticPage(shade).toString('base64') });
 
 async function saveDocuments() {
+  const blank = await registrationForms.create(credentials.token, { requestId: randomUUID(), title: 'Synthetic restart consent form',
+    instructions: 'Complete this fictional registration form for the restart check.', category: 'consent', required: true,
+    file: pageFile(20, 'synthetic-blank-original.png') });
   const child = await api('post', '/api/children', { firstName: 'Synthetic', lastName: 'Document restart', dateOfBirth: '2022-06-15' }, 201);
   const root = '/api/children/' + child.id + '/documents';
   const saved = await api('post', root, { requestId: randomUUID(), title: 'Synthetic restart consent', category: 'consent',
-    documentDate: '2026-10-01', notes: 'Automated fictional paperwork.', file: pageFile(40, 'synthetic-original.png') }, 201);
+    documentDate: '2026-10-01', notes: 'Automated fictional paperwork.', registrationFormId: blank.form.id,
+    registrationFormRevisionId: blank.revision.id, file: pageFile(40, 'synthetic-original.png') }, 201);
   const revised = await api('post', root + '/' + saved.document.id + '/revisions', { requestId: randomUUID(),
     version: saved.document.version, changeNote: 'Synthetic revised page', file: pageFile(180, 'synthetic-revised.png') }, 201);
-  await api('put', root + '/' + saved.document.id, { version: revised.document.version, title: 'Updated synthetic restart consent',
+  const updated = await api('put', root + '/' + saved.document.id, { version: revised.document.version, title: 'Updated synthetic restart consent',
     category: 'consent', documentDate: '2026-10-02', notes: 'Updated automated fictional paperwork.' });
+  await childDocuments.review(credentials.token, child.id, saved.document.id, { version: updated.document.version, reviewed: true });
+  const accepted = await childDocuments.checklist(credentials.token, child.id, {});
+  if (!accepted.complete || accepted.items[0]?.status !== 'complete') throw new Error('Synthetic completed form was not manually accepted.');
+  const configured = await registrationForms.update(credentials.token, blank.form.id, { version: blank.form.version,
+    title: 'Updated synthetic restart consent form', instructions: 'Updated fictional form instructions.', category: 'consent', required: true, active: true });
+  await registrationForms.revise(credentials.token, blank.form.id, { requestId: randomUUID(), version: configured.form.version,
+    changeNote: 'Synthetic revised blank form', file: pageFile(200, 'synthetic-blank-revised.png') });
   await api('put', '/api/children/' + child.id + '/enrollment', { active: false });
+}
+
+function fileSnapshot(stored) {
+  const bytes = Buffer.from(stored.content);
+  if (createHash('sha256').update(bytes).digest('hex') !== stored.sha256) throw new Error('Synthetic document checksum changed.');
+  return { revisionId: stored.id, revision: stored.revision, sha256: stored.sha256, bytes: bytes.toString('base64'),
+    actorId: stored.actorId, uploadedBy: stored.uploadedBy, changeNote: stored.changeNote };
+}
+
+async function registrationSnapshot(document) {
+  const forms = await registrationForms.list(credentials.token, { includeArchived: '1' });
+  const form = forms.items.find((item) => item.title === 'Updated synthetic restart consent form');
+  if (!form || !form.required || !form.active || form.templateRevision !== 2) throw new Error('Synthetic blank form configuration was not preserved.');
+  const detail = await registrationForms.get(credentials.token, form.id, {});
+  if (detail.revisions.length !== 2) throw new Error('Synthetic blank form history was not preserved.');
+  const files = [];
+  for (const revision of detail.revisions) {
+    const stored = await registrationForms.content(credentials.token, form.id, revision.id, {});
+    const expected = syntheticPage(revision.revision === 1 ? 20 : 200);
+    if (!stored.content.equals(expected)) throw new Error('Synthetic blank form bytes were not preserved.');
+    files.push(fileSnapshot(stored));
+  }
+  const original = detail.revisions.find((revision) => revision.revision === 1);
+  if (document.registrationFormId !== form.id || document.registrationFormRevisionId !== original.id) {
+    throw new Error('Synthetic completed document template mapping was not preserved.');
+  }
+  return { detail, files };
 }
 
 async function documentSnapshot() {
@@ -43,15 +83,22 @@ async function documentSnapshot() {
   if (!document) throw new Error('Synthetic document metadata was not preserved.');
   const detail = await api('get', '/api/children/' + child.id + '/documents/' + document.id);
   if (detail.revisions.length !== 2) throw new Error('Synthetic document history was not preserved.');
+  if (detail.document.reviewedRevisionId !== detail.document.currentRevisionId || !detail.document.reviewedBy || !detail.document.reviewedAt) {
+    throw new Error('Synthetic current-file review was not preserved.');
+  }
   const files = [];
   for (const revision of detail.revisions) {
     const stored = await db.getChildDocumentContent(document.id, revision.id);
-    const bytes = Buffer.from(stored.content);
-    if (createHash('sha256').update(bytes).digest('hex') !== stored.sha256) throw new Error('Synthetic document checksum changed.');
-    files.push({ revisionId: revision.id, revision: revision.revision, sha256: stored.sha256, bytes: bytes.toString('base64'),
-      actorId: stored.actorId, uploadedBy: stored.uploadedBy, changeNote: stored.changeNote });
+    const expected = syntheticPage(revision.revision === 1 ? 40 : 180);
+    if (!Buffer.from(stored.content).equals(expected)) throw new Error('Synthetic completed form bytes were not preserved.');
+    files.push(fileSnapshot(stored));
   }
-  return { childId: child.id, active: child.active, detail, files };
+  const checklist = await childDocuments.checklist(credentials.token, child.id, {});
+  if (checklist.complete || checklist.requiredTotal !== 1 || checklist.requiredComplete !== 0 || checklist.items[0]?.status !== 'outdated') {
+    throw new Error('Synthetic completed form did not retain its outdated template assignment.');
+  }
+  return { childId: child.id, active: child.active, detail, files, checklist,
+    registrationForms: await registrationSnapshot(detail.document) };
 }
 
 (async () => {
@@ -64,7 +111,7 @@ async function documentSnapshot() {
         passwordHash: await hashPassword(identity.password), role: 'admin', disabled: false, mustChangePassword: false });
     }
     const signedIn = await auth.login(identity, 'restart-test');
-    credentials = { cookie: `skao_session=${signedIn.token}`, csrf: signedIn.csrfToken };
+    credentials = { cookie: `skao_session=${signedIn.token}`, csrf: signedIn.csrfToken, token: signedIn.token };
     if (process.argv[2] === 'write') {
       const meal = await api('post', '/api/meals', { name: 'Egg Breakfast', type: 'breakfast' }, 201);
       for (const type of ['snack', 'lunch', 'afternoonSnack']) {
