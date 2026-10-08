@@ -5,10 +5,13 @@ import type { ChildProfile as Profile } from '../../api/children';
 import type { Room } from '../../api/rooms';
 import { authError } from '../../auth/transport';
 import { attendanceTime } from '../../api/attendance';
+import { useAuth } from '../../auth/context';
+import { EnrollmentProgress } from './EnrollmentProgress';
 import { ChildDocuments } from './ChildDocuments';
 import type { DocumentWork } from '../../api/childDocuments';
 
 export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile', openAddDocuments = false, onWorkChange }: { id: string; rooms: Pick<Room, 'id' | 'name'>[]; onClose: () => void; closeLabel?: string; openAddDocuments?: boolean; onWorkChange?: (work: DocumentWork) => void }) {
+  const { account } = useAuth();
   const [documentWork, setDocumentWork] = useState<DocumentWork>({ dirty: false, busy: false });
   useEffect(() => { onWorkChange?.(documentWork); }, [documentWork, onWorkChange]);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -26,6 +29,7 @@ export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile',
     {error && <p role="alert" className="text-red-800">{error}</p>}
     {!profile && !error && <p role="status">Loading profile…</p>}
     {profile && <>
+      {account?.role === 'editor' && <EnrollmentProgress childId={profile.child.id} />}
       <ChildDocuments childId={profile.child.id} openAdd={openAddDocuments} onWorkChange={setDocumentWork} />
       <dl className="grid gap-4 text-sm sm:grid-cols-2">
         <div><dt className="text-slate-500">Date of birth</dt><dd>{profile.child.dateOfBirth || 'Not recorded'}</dd></div>

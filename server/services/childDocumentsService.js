@@ -39,10 +39,9 @@ exports.list = (token, childId, query) => authorized(token, false, childId, asyn
   const [rows, total] = await Promise.all([db.listChildDocuments(childId, pagination), db.countChildDocuments(childId)]);
   return { items: rows.map(summary), total };
 });
-exports.checklist = (token, childId, query) => authorized(token, false, childId, async () => {
-  v.object(query || {}, [], 'checklist');
+async function childChecklist(childId) {
   const [templates, documents] = await Promise.all([db.listRegistrationForms(), db.listAllChildDocuments(childId)]);
-  const items = await Promise.all(templates.map(async (form) => {
+  const items = await Promise.all(templates.filter(form => (form.audience || 'child') === 'child').map(async (form) => {
     const matching = documents.filter((document) => document.registrationFormId === form.id);
     const current = matching.filter((document) => document.registrationFormRevisionId === form.currentRevisionId);
     // Prefer an accepted current submission even when a later duplicate exists.
@@ -53,7 +52,27 @@ exports.checklist = (token, childId, query) => authorized(token, false, childId,
   }));
   const required = items.filter((item) => item.form.required);
   const requiredComplete = required.filter((item) => item.status === 'complete').length;
-  return { items, requiredTotal: required.length, requiredComplete, complete: items.length > 0 && requiredComplete === required.length };
+  const child = await db.getChildById(childId);
+  const missingBasicInfo = [['firstName', 'First name'], ['lastName', 'Last name'], ['dateOfBirth', 'Date of birth']]
+    .filter(([key]) => !child[key]).map(([, label]) => label);
+  const total = required.length + 3;
+  const complete = items.length > 0 && !missingBasicInfo.length && requiredComplete === required.length;
+  const percentage = items.length ? Math.floor(100 * (requiredComplete + 3 - missingBasicInfo.length) / total) : 0;
+  return { items, requiredTotal: required.length, requiredComplete, missingBasicInfo, percentage, complete };
+}
+exports.checklist = (token, childId, query) => authorized(token, false, childId, async () => {
+  v.object(query || {}, [], 'checklist');
+  return childChecklist(childId);
+});
+// Editors may see only a coarse enrollment indicator, never template names,
+// medical details, contracts, submissions or review metadata.
+exports.enrollmentProgress = (token, childId, query) => db.withAuthLock(async () => {
+  const actor = await auth.sessionAccount(token, { touch: true });
+  auth.operationalPermission(actor, true);
+  await requireChild(childId);
+  v.object(query || {}, [], 'enrollment progress');
+  const result = await childChecklist(childId);
+  return { complete: result.complete, percentage: result.percentage };
 });
 exports.get = (token, childId, documentId, query) => authorized(token, false, childId, async () => {
   const pagination = v.pagination(query);
@@ -98,7 +117,7 @@ function mapping(payload, fallback = { registrationFormId: null, registrationFor
 async function requireCurrentMapping(values) {
   if (values.registrationFormId === null) return;
   const form = await db.getRegistrationForm(values.registrationFormId);
-  if (!form || !form.active || form.currentRevisionId !== values.registrationFormRevisionId) {
+  if (!form || (form.audience || 'child') !== 'child' || !form.active || form.currentRevisionId !== values.registrationFormRevisionId) {
     throw conflict('This registration form is no longer the current active blank. Reload the checklist and choose its current version.');
   }
 }

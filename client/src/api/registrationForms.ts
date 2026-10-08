@@ -2,14 +2,17 @@ import axios from 'axios';
 import { API_BASE_URL } from '../lib/api';
 import type { ChildDocument, DocumentCategory, DocumentFile, DocumentRevision } from './childDocuments';
 
+export type TemplateAudience = 'child' | 'employee' | 'facility';
+export const templateAudiences = { child: 'Children', employee: 'Employees', facility: 'Facility' };
 export type RegistrationForm = {
+  audience?: TemplateAudience;
   id: string; title: string; instructions: string; category: DocumentCategory; required: boolean;
   active: boolean; version: number; currentRevisionId: string; templateRevision: number; updatedAt: string;
 };
-export type RegistrationFormMetadata = Pick<RegistrationForm, 'title' | 'instructions' | 'category' | 'required'>;
+export type RegistrationFormMetadata = Pick<RegistrationForm, 'title' | 'instructions' | 'category' | 'audience' | 'required'>;
 export type RegistrationFormDetails = { form: RegistrationForm; revisions: DocumentRevision[]; total: number };
 export type RegistrationChecklistItem = { form: RegistrationForm; status: 'missing' | 'needs_review' | 'complete' | 'outdated'; document: ChildDocument | null };
-export type RegistrationChecklist = { items: RegistrationChecklistItem[]; requiredTotal: number; requiredComplete: number; complete: boolean };
+export type RegistrationChecklist = { items: RegistrationChecklistItem[]; requiredTotal: number; requiredComplete: number; complete: boolean; percentage?: number; missingBasicInfo?: string[] };
 const base = `${API_BASE_URL}/api/registration-forms`;
 const formUrl = (id: string) => base + '/' + encodeURIComponent(id);
 export async function listRegistrationForms(includeArchived: boolean, signal: AbortSignal) {

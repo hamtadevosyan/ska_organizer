@@ -29,9 +29,9 @@ for (const width of [320, 1280]) {
       const url = new URL(request.url());
       if (['http:', 'https:'].includes(url.protocol) && ![origin, new URL(api).origin].includes(url.origin)) external.push(url.origin);
     });
-    async function createForm(title: string) {
+    async function createForm(title: string, audience = 'child') {
       const response = await http.post(api + '/registration-forms', { data: { title, instructions: 'Complete and sign this synthetic form.',
-        category: 'consent', required: true, requestId: crypto.randomUUID(),
+        category: 'consent', audience, required: true, requestId: crypto.randomUUID(),
         file: { name: 'synthetic-blank.png', contentType: 'image/png', dataBase64: png.toString('base64') } } });
       expect(response.status()).toBe(201);
       const form = (await response.json()).form as Form;
@@ -39,6 +39,8 @@ for (const width of [320, 1280]) {
     }
     try {
       const blank = await createForm('Synthetic registration consent ' + suffix);
+      const employee = await createForm('Synthetic employee template ' + suffix, 'employee');
+      const facility = await createForm('Synthetic facility template ' + suffix, 'facility');
       await page.goto('/children');
       await page.getByRole('button', { name: 'Add child', exact: true }).click();
       await page.getByLabel('First name', { exact: true }).fill('Synthetic');
@@ -48,6 +50,9 @@ for (const width of [320, 1280]) {
       await page.getByRole('button', { name: 'Save child', exact: true }).click();
       const checklist = page.getByRole('region', { name: 'Registration checklist', exact: true });
       await expect(checklist).toBeVisible();
+      await expect(checklist.getByRole('article', { name: employee.title, exact: true })).toHaveCount(0);
+      await expect(checklist.getByRole('article', { name: facility.title, exact: true })).toHaveCount(0);
+      await expect(checklist).toContainText('Enrollment 75%');
       const card = checklist.getByRole('article', { name: blank.title, exact: true });
       await expect(card).toContainText('Missing');
       await fits(page);
@@ -65,6 +70,7 @@ for (const width of [320, 1280]) {
       await page.getByRole('checkbox', { name: 'I checked this copy is filled out and signed where required', exact: true }).check();
       await page.getByRole('button', { name: 'Mark reviewed', exact: true }).click();
       await expect(card).toContainText('Complete');
+      await expect(checklist).toContainText('Enrollment 100%');
       const revised = await http.post(`${api}/registration-forms/${blank.id}/revisions`, { data: { version: blank.version,
         requestId: crypto.randomUUID(), changeNote: 'Synthetic updated registration requirements.',
         file: { name: 'synthetic-blank-v2.png', contentType: 'image/png', dataBase64: png.toString('base64') } } });

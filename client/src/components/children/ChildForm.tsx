@@ -74,6 +74,7 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel, canAd
   return <form onSubmit={(event) => void submit(event)} noValidate className="rounded-2xl border bg-white p-6 shadow-sm" aria-label={child ? 'Edit child' : 'Add child'}>
     <fieldset disabled={busy} className="space-y-4">
       <h2 className="text-xl font-bold">{child ? 'Edit ' + childName(child) : 'Add child'}</h2>
+      {!child && <p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-900">Start with a name and date of birth. You can save before paperwork is ready. Enrollment is complete when all required items have been reviewed by an administrator.</p>}
       {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-800">{error}</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         {([['firstName', 'First name'], ['lastName', 'Last name'], ['preferredName', 'Preferred name (optional)']] as const).map(([key, label]) =>

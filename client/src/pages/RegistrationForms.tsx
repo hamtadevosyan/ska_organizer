@@ -11,12 +11,14 @@ import type { DocumentCategory, DocumentRevision } from '../api/childDocuments';
 import {
   addRegistrationForm, getRegistrationForm, listRegistrationForms, reviseRegistrationForm, updateRegistrationForm,
 } from '../api/registrationForms';
+import { templateAudiences } from '../api/registrationForms';
+import type { TemplateAudience } from '../api/registrationForms';
 import type { RegistrationForm, RegistrationFormDetails } from '../api/registrationForms';
 
-type Metadata = Pick<RegistrationForm, 'title' | 'instructions' | 'category' | 'required' | 'active'>;
+type Metadata = Pick<RegistrationForm, 'title' | 'instructions' | 'category' | 'audience' | 'required' | 'active'>;
 type Draft = { mode: 'new' | 'edit' | 'revise'; original: RegistrationForm | null; metadata: Metadata; changeNote: string };
-const emptyMetadata = (): Metadata => ({ title: '', instructions: '', category: 'other', required: false, active: true });
-const metadataOf = (form: RegistrationForm): Metadata => ({ title: form.title, instructions: form.instructions || '', category: form.category, required: form.required, active: form.active });
+const emptyMetadata = (): Metadata => ({ title: '', instructions: '', category: 'other', audience: 'child', required: false, active: true });
+const metadataOf = (form: RegistrationForm): Metadata => ({ title: form.title, instructions: form.instructions || '', category: form.category, audience: form.audience || 'child', required: form.required, active: form.active });
 const inputClass = 'mt-1 block w-full min-w-0 rounded-xl border border-slate-300 bg-white p-3';
 const dateTime = (value: string) => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString() : value; };
 const cancelled = (failure: unknown) => axios.isCancel(failure) || failure instanceof DOMException && failure.name === 'AbortError';
@@ -29,6 +31,7 @@ export default function RegistrationForms() {
 
 function RegistrationFormManager() {
   const [forms, setForms] = useState<RegistrationForm[]>([]);
+  const [audienceFilter, setAudienceFilter] = useState('all');
   const [includeArchived, setIncludeArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState('');
@@ -128,7 +131,7 @@ function RegistrationFormManager() {
     const controller = new AbortController(); requests.current.add(controller); setBusy(true); setError(''); setMessage('');
     try {
       if (!requestId.current) requestId.current = documentRequestId();
-      const newMetadata = { title: metadata.title, instructions: metadata.instructions, category: metadata.category, required: metadata.required };
+      const newMetadata = { title: metadata.title, instructions: metadata.instructions, category: metadata.category, audience: metadata.audience || 'child', required: metadata.required };
       const result = draft.mode === 'edit' ? await updateRegistrationForm(draft.original!, metadata, controller.signal)
         : draft.mode === 'new' ? await addRegistrationForm(newMetadata, await readDocumentFile(file!, controller.signal), requestId.current, controller.signal)
           : await reviseRegistrationForm(draft.original!, await readDocumentFile(file!, controller.signal), draft.changeNote.trim(), requestId.current, controller.signal);
@@ -172,10 +175,11 @@ function RegistrationFormManager() {
     </li>;
   }
   if (expired) return null;
+  const visibleForms = forms.filter(form => audienceFilter === 'all' || (form.audience || 'child') === audienceFilter);
   const currentRevisions = details?.revisions.filter(revision => revision.current || revision.id === details.form.currentRevisionId) || [];
   const oldRevisions = details?.revisions.filter(revision => !revision.current && revision.id !== details.form.currentRevisionId) || [];
   return <div className="mx-auto min-w-0 max-w-5xl space-y-5 p-3 sm:p-6">
-    <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><FileText size={25} className="shrink-0 text-violet-600" aria-hidden="true" />Registration forms</h1><p className="mt-2 max-w-2xl text-sm text-slate-600">Manage reusable blank forms for registration. Upload templates without child information. Completed forms belong in each child's Documents.</p></div>
+    <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><FileText size={25} className="shrink-0 text-violet-600" aria-hidden="true" />Registration forms</h1><p className="mt-2 max-w-2xl text-sm text-slate-600">Manage blank templates for children, employees and the facility. Upload blank forms only. Required child templates appear in each child's enrollment checklist.</p></div>
       <div className="flex flex-wrap gap-2"><button type="button" disabled={busy || loading} className="ska-button" onClick={() => { if (leaveDraft()) { clearDraft(); setError(''); setRefresh(value => value + 1); } }}>Refresh templates</button><button type="button" disabled={busy} className="ska-button is-primary" onClick={() => openDraft('new')}><Plus size={18} aria-hidden="true" />Add blank form</button></div></div>
     {error && <p role="alert" className="break-words rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {message && <p role="status" className="break-words rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
@@ -184,9 +188,10 @@ function RegistrationFormManager() {
       <h2 className="text-lg font-bold">{draft.mode === 'new' ? 'Add blank form template' : draft.mode === 'edit' ? 'Edit template details' : 'Upload a new blank version'}</h2>
       {draft.mode !== 'revise' && <>
         <label className="block text-sm font-semibold">Form title<input required autoFocus maxLength={160} value={draft.metadata.title} onChange={event => changeMetadata('title', event.target.value)} className={inputClass} /></label>
+        <label className="block text-sm font-semibold">Template for<select disabled={draft.mode !== 'new'} value={draft.metadata.audience || 'child'} onChange={event => changeMetadata('audience', event.target.value as TemplateAudience)} className={inputClass}>{Object.entries(templateAudiences).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><span className="mt-1 block text-xs text-slate-500">Choose the group when uploading. It stays with this template and its history.</span></label>
         <label className="block text-sm font-semibold">Document category<select value={draft.metadata.category} onChange={event => changeMetadata('category', event.target.value as DocumentCategory)} className={inputClass}>{Object.entries(documentCategories).map(([category, label]) => <option key={category} value={category}>{label}</option>)}</select></label>
         <label className="block text-sm font-semibold">Instructions (optional)<textarea rows={3} maxLength={2000} value={draft.metadata.instructions} onChange={event => changeMetadata('instructions', event.target.value)} className={inputClass} /></label>
-        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={draft.metadata.required} onChange={event => changeMetadata('required', event.target.checked)} className="mt-1" /><span>Required for registration</span></label>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={draft.metadata.required} onChange={event => changeMetadata('required', event.target.checked)} className="mt-1" /><span>Required for this group</span></label>
         {draft.mode === 'edit' && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={draft.metadata.active} onChange={event => changeMetadata('active', event.target.checked)} className="mt-1" /><span>Active template</span></label>}
       </>}
       {draft.mode !== 'edit' && <>
@@ -198,11 +203,12 @@ function RegistrationFormManager() {
       <div className="flex flex-wrap gap-2"><button type="submit" className="ska-button is-primary">{busy ? 'Saving…' : draft.mode === 'new' ? 'Save blank form' : draft.mode === 'edit' ? 'Save template details' : 'Save new blank version'}</button><button type="button" className="ska-button" onClick={() => { if (leaveDraft()) { clearDraft(); setError(''); } }}>Cancel template changes</button></div>
     </fieldset></form>}
     <section aria-label="Template list" className="min-w-0 space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">Blank form templates</h2><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeArchived} disabled={busy} onChange={event => { if (leaveDraft()) { clearDraft(); setIncludeArchived(event.target.checked); setError(''); } }} />Include archived templates</label></div>
-      {loading ? <p role="status">Loading registration forms…</p> : !forms.length ? <p className="rounded-xl border bg-white p-4 text-sm text-slate-600">{includeArchived ? 'No blank form templates saved yet.' : 'No active blank form templates. Add a blank form or include archived templates.'}</p> : <ul className="grid min-w-0 gap-3 sm:grid-cols-2">{forms.map(form => <li key={form.id} className="min-w-0"><button type="button" disabled={busy} aria-pressed={selectedId === form.id} onClick={() => { if (leaveDraft()) { clearDraft(); setError(''); setMessage(''); setSelectedId(form.id); setHistoryPage(1); } }} className={'w-full min-w-0 rounded-xl border p-4 text-left disabled:opacity-50 ' + (selectedId === form.id ? 'border-violet-400 bg-violet-100/70' : 'border-slate-200 bg-white')}><span className="block break-words font-bold">{form.title}</span><span className="mt-1 block break-words text-sm text-slate-600">{documentCategories[form.category]} · {form.required ? 'Required' : 'Optional'} · {form.active ? 'Active' : 'Archived'}</span><span className="mt-1 block text-xs text-slate-500">Blank version {form.templateRevision} · Updated {dateTime(form.updatedAt)}</span></button></li>)}</ul>}
+      <label className="block text-sm font-semibold">Filter templates<select className={inputClass} value={audienceFilter} onChange={event => setAudienceFilter(event.target.value)}><option value="all">All groups</option>{Object.entries(templateAudiences).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      {loading ? <p role="status">Loading registration forms…</p> : !visibleForms.length ? <p className="rounded-xl border bg-white p-4 text-sm text-slate-600">{includeArchived ? 'No blank form templates saved yet.' : 'No active templates in this group. Add a blank form, choose another group or include archived templates.'}</p> : <ul className="grid min-w-0 gap-3 sm:grid-cols-2">{visibleForms.map(form => <li key={form.id} className="min-w-0"><button type="button" disabled={busy} aria-pressed={selectedId === form.id} onClick={() => { if (leaveDraft()) { clearDraft(); setError(''); setMessage(''); setSelectedId(form.id); setHistoryPage(1); } }} className={'w-full min-w-0 rounded-xl border p-4 text-left disabled:opacity-50 ' + (selectedId === form.id ? 'border-violet-400 bg-violet-100/70' : 'border-slate-200 bg-white')}><span className="block break-words font-bold">{form.title}</span><span className="mt-1 block break-words text-sm text-slate-600">{templateAudiences[form.audience || 'child']} · {documentCategories[form.category]} · {form.required ? 'Required' : 'Optional'} · {form.active ? 'Active' : 'Archived'}</span><span className="mt-1 block text-xs text-slate-500">Blank version {form.templateRevision} · Updated {dateTime(form.updatedAt)}</span></button></li>)}</ul>}
     </section>
     {detailLoading && <p role="status">Loading template history…</p>}
     {details && <section aria-label="Selected registration template" className="min-w-0 space-y-4 rounded-2xl border bg-white p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words text-xl font-bold">{details.form.title}</h2><p className="mt-1 text-sm text-slate-600">{documentCategories[details.form.category]} · {details.form.required ? 'Required for registration' : 'Optional for registration'} · {details.form.active ? 'Active' : 'Archived'}</p></div><button type="button" disabled={busy} className="ska-button" aria-label="Close selected template" onClick={() => { if (leaveDraft()) { clearDraft(); setSelectedId(''); setError(''); } }}><X size={18} aria-hidden="true" />Close</button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words text-xl font-bold">{details.form.title}</h2><p className="mt-1 text-sm text-slate-600">{templateAudiences[details.form.audience || 'child']} · {documentCategories[details.form.category]} · {details.form.required ? 'Required for this group' : 'Optional for this group'} · {details.form.active ? 'Active' : 'Archived'}</p></div><button type="button" disabled={busy} className="ska-button" aria-label="Close selected template" onClick={() => { if (leaveDraft()) { clearDraft(); setSelectedId(''); setError(''); } }}><X size={18} aria-hidden="true" />Close</button></div>
       {details.form.instructions && <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{details.form.instructions}</p>}
       <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => openDraft('edit')} className="ska-button">Edit template details</button><button type="button" disabled={busy} onClick={() => openDraft('revise')} className="ska-button"><Upload size={18} aria-hidden="true" />Upload new blank version</button><button type="button" disabled={busy} onClick={() => void toggleArchive()} className="ska-button"><Archive size={18} aria-hidden="true" />{details.form.active ? 'Archive template' : 'Restore template'}</button></div>
       <h3 className="flex items-center gap-2 font-bold"><History size={18} className="text-violet-600" aria-hidden="true" />Blank template version history</h3>

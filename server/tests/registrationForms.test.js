@@ -134,7 +134,7 @@ test.each(['pdf', 'png'])('an administrator saves a real %s template with privat
 
 test('an empty catalog cannot claim registration is complete, and adding requirements reaches existing children', async () => {
   const existingChild = await child();
-  expect(await checklist(existingChild.id)).toEqual({ items: [], requiredTotal: 0, requiredComplete: 0, complete: false });
+  expect(await checklist(existingChild.id)).toEqual({ items: [], requiredTotal: 0, requiredComplete: 0, missingBasicInfo: [], percentage: 0, complete: false });
   const required = await createForm();
   const optional = await createForm({ title: 'Synthetic optional form', required: false });
   const list = await checklist(existingChild.id);
@@ -552,4 +552,53 @@ test.each(['create', 'revision', 'review'])('audit failure rolls back registrati
       expect((await checklist(savedChild.id)).complete).toBe(false);
     }
   } finally { audit.mockRestore(); log.mockRestore(); }
+});
+
+
+test('only child templates affect enrollment and a reviewed packet reaches 100 percent', async () => {
+  const record = await child();
+  const childForm = (await createForm({ audience: 'child' })).form;
+  const employeeForm = (await createForm({ audience: 'employee', title: 'Employee contract' })).form;
+  await createForm({ audience: 'facility', title: 'Facility license' });
+  const checklist = await request(app).get(documentUrl(record.id) + '/checklist');
+  expect(checklist.body.items.map(item => item.form.id)).toEqual([childForm.id]);
+  expect(checklist.body).toMatchObject({ complete: false, requiredTotal: 1, percentage: 75 });
+  const rejected = await request(app).post(documentUrl(record.id)).send({ requestId: randomUUID(), title: 'Wrong group', category: 'contract', file: file(), registrationFormId: employeeForm.id, registrationFormRevisionId: employeeForm.currentRevisionId });
+  expect(rejected.status).toBe(409);
+  const copy = await upload(record.id, childForm);
+  expect((await request(app).get('/api/children/' + record.id + '/enrollment-progress')).body).toEqual({ complete: false, percentage: 75 });
+  await review(record.id, copy.document);
+  expect((await request(app).get('/api/children/' + record.id + '/enrollment-progress')).body).toEqual({ complete: true, percentage: 100 });
+  await db.updateChild(record.id, { dateOfBirth: null });
+  expect((await request(app).get(documentUrl(record.id) + '/checklist')).body).toMatchObject({ complete: false, percentage: 75, missingBasicInfo: ['Date of birth'] });
+  const moved = await request(app).put(formUrl(childForm.id)).send(formEdit(childForm, { audience: 'facility' }));
+  expect(moved.status).toBe(400);
+});
+
+test('editors save basic information and see only coarse progress; read-only users cannot request it', async () => {
+  const template = (await createForm({ audience: 'child', title: 'Private medical history' })).form;
+  for (const role of ['editor', 'viewer']) {
+    const administrator = request.credentials().account;
+    const account = await db.createAccount({ id: randomUUID(), username: 'progress-' + randomUUID().slice(0, 8), displayName: 'Synthetic user', passwordHash: administrator.passwordHash, role, disabled: false, mustChangePassword: false });
+    const login = await anonymous(app).post('/api/auth/login').set('Origin', request.origin).send({ username: account.username, password: request.password });
+    const cookie = login.headers['set-cookie'][0].split(';')[0];
+    const basic = await anonymous(app).post('/api/children').set('Origin', request.origin).set('Cookie', cookie).set('X-CSRF-Token', login.body.csrfToken).send({ firstName: 'Basic', lastName: randomUUID(), dateOfBirth: '2023-01-01' });
+    if (role === 'viewer') { expect(basic.status).toBe(403); }
+    const record = role === 'editor' ? basic.body : await child();
+    if (role === 'editor') expect(basic.status).toBe(201);
+    const result = await anonymous(app).get('/api/children/' + record.id + '/enrollment-progress').set('Cookie', cookie);
+    expect(result.status).toBe(role === 'editor' ? 200 : 403);
+    if (role === 'editor') {
+      expect(result.body).toEqual({ complete: false, percentage: 75 });
+      expect(JSON.stringify(result.body)).not.toContain(template.title);
+      expect((await anonymous(app).get(documentUrl(record.id) + '/checklist').set('Cookie', cookie)).status).toBe(403);
+    }
+  }
+});
+
+test('invalid groups are rejected and a facility-only catalog cannot declare a child complete', async () => {
+  expect((await request(app).post(formUrl()).send(formPayload({ audience: 'unknown' }))).status).toBe(400);
+  await createForm({ audience: 'facility' });
+  const record = await child();
+  expect((await request(app).get(documentUrl(record.id) + '/checklist')).body).toMatchObject({ items: [], complete: false, percentage: 0 });
 });

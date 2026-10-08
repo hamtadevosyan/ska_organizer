@@ -123,6 +123,7 @@ module.exports = (sequelize) => {
     requestHash: { type: DataTypes.STRING(64), allowNull: false },
   }, { timestamps: false });
   const RegistrationForm = sequelize.define('RegistrationForm', {
+    audience: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'child' },
     id: id(), title: { type: DataTypes.STRING(160), allowNull: false },
     instructions: { type: DataTypes.STRING(2000), allowNull: false, defaultValue: '' },
     category: { type: DataTypes.STRING(16), allowNull: false },

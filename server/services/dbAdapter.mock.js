@@ -562,7 +562,7 @@ Object.assign(module.exports, {
     .filter((row) => row.documentId === documentId).sort((a, b) => b.revision - a.revision)
     .slice((page - 1) * pageSize, page * pageSize).map(documentRevisionMetadata)),
   countChildDocumentRevisions: async (documentId) => mock.childDocumentRevisions.filter((row) => row.documentId === documentId).length,
-  createRegistrationForm: async (values) => insert('registrationForms', { required: false, active: true,
+  createRegistrationForm: async (values) => insert('registrationForms', { audience: 'child', required: false, active: true,
     instructions: '', createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
   updateRegistrationForm: async (id, values) => edit('registrationForms', id, { ...values, updatedAt: mock.nowIso() }),
   getRegistrationForm: async (id) => find('registrationForms', id),

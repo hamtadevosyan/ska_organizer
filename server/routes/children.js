@@ -4,6 +4,10 @@ const controller = require('../controllers/childrenController');
 const router = express.Router();
 
 router.get('/', controller.listChildren);
+router.get('/:id/enrollment-progress', async (req, res, next) => {
+  try { res.json(await require('../services/childDocumentsService').enrollmentProgress(req.sessionToken, req.params.id, req.query)); }
+  catch (error) { next(error); }
+});
 router.get('/:id/profile', controller.getProfile);
 router.get('/:id', controller.getChildById);
 router.post('/', audited('child.create', controller.createChild));

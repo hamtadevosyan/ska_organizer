@@ -146,3 +146,9 @@ mappings. Native dumps include them. Pilot format3 fingerprints both binary tabl
 by stable IDs with one file row held at a time; format1/2 fingerprints retain their
 original ordering for compatibility. Actual archive/restart tests verify synthetic
 template bytes/history and completed mappings/reviews.
+
+## Template groups and enrollment completion
+
+Migration 019 adds a `child`, `employee` or `facility` audience to blank templates. Existing templates become child templates. Administrators select the audience when uploading and can filter the catalog by group. The audience is immutable so a template with submitted history cannot be moved out of its original packet. Its medical/contract/consent/other document type is separate.
+
+Child checklists include only active child templates. Child submissions cannot link to employee/facility templates. Completion covers first name, last name, date of birth and all reviewed current required child forms; an unconfigured child catalog cannot report completion. Admins and editors can save basic child information before documentation is complete. Saving opens the profile with completion warnings. Editors may request only `{ complete, percentage }` from `/api/children/:id/enrollment-progress`; template and document details remain administrator-only, and viewers are denied this endpoint. Completion is calculated from current records, never persisted as a stale flag.

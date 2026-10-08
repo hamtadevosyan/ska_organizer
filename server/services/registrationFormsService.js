@@ -8,7 +8,8 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
 const conflict = (message = 'This registration form changed elsewhere. Reload it before saving again.') =>
   auth.problem(message, 409, 'REGISTRATION_FORM_CONFLICT');
 const summary = (form, revision) => ({
-  ...Object.fromEntries(['id', 'title', 'instructions', 'category', 'required', 'active', 'version', 'currentRevisionId']
+  audience: form.audience || 'child',
+  ...Object.fromEntries(['id', 'title', 'instructions', 'category', 'audience', 'required', 'active', 'version', 'currentRevisionId']
     .map((key) => [key, form[key]])),
   templateRevision: revision.revision,
   updatedAt: new Date(form.updatedAt).toISOString(),
@@ -18,11 +19,13 @@ const revisionSummary = (revision, form) => ({
     .map((key) => [key, revision[key]])),
   uploadedAt: new Date(revision.uploadedAt).toISOString(), current: revision.id === form.currentRevisionId,
 });
-function metadata(payload) {
+function metadata(payload, previousAudience = 'child') {
+  const audience = payload.audience === undefined ? previousAudience : payload.audience;
+  if (!['child', 'employee', 'facility'].includes(audience)) throw v.invalid('Choose children, employees or facility.', 'audience');
   if (!['medical', 'contract', 'consent', 'other'].includes(payload.category)) throw v.invalid('Choose a form category.', 'category');
   if (typeof payload.required !== 'boolean') throw v.invalid('Choose whether this form is required.', 'required');
   return { title: v.text(payload.title, 'title', 160, { required: true }),
-    instructions: v.text(payload.instructions, 'instructions', 2000), category: payload.category, required: payload.required };
+    audience, instructions: v.text(payload.instructions, 'instructions', 2000), category: payload.category, required: payload.required };
 }
 const authorized = (token, write, fn) => db.withAuthLock(async () => {
   const actor = await auth.sessionAccount(token, { touch: true });
@@ -75,10 +78,11 @@ function revisionValues(file, actor, requestId, requestScope, requestHash, formI
     uploadedAt: new Date().toISOString(), requestId, requestScope, requestHash, formId, revision, changeNote };
 }
 exports.create = (token, payload) => authorized(token, true, async (actor) => {
-  v.object(payload, ['requestId', 'title', 'instructions', 'category', 'required', 'file'], 'registration form');
+  v.object(payload, ['requestId', 'title', 'instructions', 'category', 'audience', 'required', 'file'], 'registration form');
   const requestId = v.requestId(payload.requestId); const values = metadata(payload); const file = v.file(payload.file);
   const requestScope = hash([actor.id, 'registration-form-create']);
-  const requestHash = hash([values, file.filename, file.contentType, file.sha256]);
+  const hashedValues = payload.audience === undefined ? Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'audience')) : values;
+  const requestHash = hash([hashedValues, file.filename, file.contentType, file.sha256]);
   const replay = await repeated(requestScope, requestId, requestHash);
   if (replay) return replay;
   if (await db.countRegistrationForms() >= MAX_FORMS) {
@@ -92,10 +96,12 @@ exports.create = (token, payload) => authorized(token, true, async (actor) => {
   return { form: summary(form, revision), revision: revisionSummary(revision, form), replayed: false };
 });
 exports.update = (token, formId, payload) => authorized(token, true, async (actor) => {
-  v.object(payload, ['version', 'title', 'instructions', 'category', 'required', 'active'], 'registration form');
-  const version = v.version(payload.version); const values = metadata(payload);
-  if (typeof payload.active !== 'boolean') throw v.invalid('Choose whether this form is active.', 'active');
+  v.object(payload, ['version', 'title', 'instructions', 'category', 'audience', 'required', 'active'], 'registration form');
+  const version = v.version(payload.version);
   const form = await requireForm(formId);
+  const values = metadata(payload, form.audience || 'child');
+  if (values.audience !== (form.audience || 'child')) throw v.invalid('The template belongs to its original group. Upload a separate template for another group.', 'audience');
+  if (typeof payload.active !== 'boolean') throw v.invalid('Choose whether this form is active.', 'active');
   if (form.version !== version) throw conflict();
   const saved = await db.updateRegistrationForm(formId, { ...values, active: payload.active, version: version + 1 });
   await auth.audit(actor, 'registration_form.update_metadata', formId);

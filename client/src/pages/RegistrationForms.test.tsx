@@ -55,7 +55,7 @@ test('only an active administrator can fetch and manage templates', () => {
 
 test('manager explains blank templates and separates current and earlier blank versions', async () => {
   render(<SignedIn><RegistrationForms /></SignedIn>); await selectTemplate();
-  expect(screen.getByText(/Upload templates without child information/)).toBeInTheDocument();
+  expect(screen.getByText(/Upload blank forms only/)).toBeInTheDocument();
   expect(within(screen.getByRole('list', { name: 'Current blank template version' })).getByText('blank-consent.pdf')).toBeInTheDocument();
   expect(within(screen.getByRole('list', { name: 'Earlier blank template versions' })).getByText('original-blank-consent.pdf')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Blank file actions for version 1' })).toHaveAttribute('data-form-id', template.id);
@@ -94,7 +94,7 @@ test('a failed new template upload preserves metadata, file and request ID for r
   newForm();
   fireEvent.change(screen.getByLabelText('Document category'), { target: { value: 'contract' } });
   fireEvent.change(screen.getByLabelText('Instructions (optional)'), { target: { value: 'Return this blank contract after completion.' } });
-  fireEvent.click(screen.getByLabelText('Required for registration')); upload();
+  fireEvent.click(screen.getByLabelText('Required for this group')); upload();
   fireEvent.click(screen.getByRole('button', { name: 'Save blank form' }));
   await screen.findByText(/Your draft and file are still here/);
   expect(screen.getByLabelText('Form title')).toHaveValue('New blank contract');
@@ -102,7 +102,7 @@ test('a failed new template upload preserves metadata, file and request ID for r
   const requestId = vi.mocked(api.addRegistrationForm).mock.calls[0][2]; expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
   fireEvent.click(screen.getByRole('button', { name: 'Save blank form' }));
   await screen.findByText('Blank form template added.');
-  expect(api.addRegistrationForm).toHaveBeenLastCalledWith({ title: 'New blank contract', instructions: 'Return this blank contract after completion.', category: 'contract', required: true }, expect.objectContaining({ name: 'new-blank.pdf' }), requestId, expect.any(AbortSignal));
+  expect(api.addRegistrationForm).toHaveBeenLastCalledWith({ title: 'New blank contract', instructions: 'Return this blank contract after completion.', category: 'contract', audience: 'child', required: true }, expect.objectContaining({ name: 'new-blank.pdf' }), requestId, expect.any(AbortSignal));
   await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false));
 });
 
@@ -123,7 +123,7 @@ test('metadata edits preserve the file history and use the saved optimistic vers
   fireEvent.change(screen.getByLabelText('Form title'), { target: { value: 'Updated blank consent' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save template details' }));
   await screen.findByText('Template details saved.');
-  expect(api.updateRegistrationForm).toHaveBeenCalledWith(template, { title: 'Updated blank consent', category: 'consent', instructions: template.instructions, required: true, active: true }, expect.any(AbortSignal));
+  expect(api.updateRegistrationForm).toHaveBeenCalledWith(template, { title: 'Updated blank consent', audience: 'child', category: 'consent', instructions: template.instructions, required: true, active: true }, expect.any(AbortSignal));
   expect(documents.readDocumentFile).not.toHaveBeenCalled(); expect(api.reviseRegistrationForm).not.toHaveBeenCalled();
 });
 
@@ -213,7 +213,7 @@ test('session expiry aborts in-flight uploads, clears drafts and ignores late re
   await waitFor(() => expect(api.addRegistrationForm).toHaveBeenCalled());
   const signal = vi.mocked(api.addRegistrationForm).mock.calls[0][3];
   act(() => { for (const callback of sessionExpired) callback(); });
-  expect(signal.aborted).toBe(true);
+  await waitFor(() => expect(signal.aborted).toBe(true));
   expect(screen.queryByRole('heading', { name: 'Registration forms' })).not.toBeInTheDocument();
   await act(async () => { finish({ form: template, revision }); });
   expect(screen.queryByText('Blank form template added.')).not.toBeInTheDocument();
@@ -225,7 +225,23 @@ test('unmount aborts a late list response without displaying its templates', asy
   vi.mocked(api.listRegistrationForms).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const result = render(<SignedIn><RegistrationForms /></SignedIn>);
   const signal = vi.mocked(api.listRegistrationForms).mock.calls[0][1]; result.unmount();
-  expect(signal.aborted).toBe(true);
+  await waitFor(() => expect(signal.aborted).toBe(true));
   await act(async () => { finish({ items: [template] }); });
   expect(screen.queryByText('Blank consent')).not.toBeInTheDocument();
+});
+
+
+test('new employee templates preserve their group and catalog filters separate facility templates', async () => {
+  vi.mocked(api.listRegistrationForms).mockResolvedValue({ items: [template,
+    { ...template, id: 'employee-form', title: 'Employee onboarding', audience: 'employee' },
+    { ...template, id: 'facility-form', title: 'Facility emergency plan', audience: 'facility' }] });
+  render(<SignedIn><RegistrationForms /></SignedIn>);
+  await screen.findByRole('button', { name: /Employee onboarding/ });
+  fireEvent.change(screen.getByLabelText('Filter templates'), { target: { value: 'facility' } });
+  expect(screen.getByRole('button', { name: /Facility emergency plan/ })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Employee onboarding/ })).not.toBeInTheDocument();
+  newForm();
+  fireEvent.change(screen.getByLabelText(/Template for/), { target: { value: 'employee' } });
+  upload(); fireEvent.click(screen.getByRole('button', { name: 'Save blank form' }));
+  await waitFor(() => expect(api.addRegistrationForm).toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee' }), expect.anything(), expect.any(String), expect.any(AbortSignal)));
 });

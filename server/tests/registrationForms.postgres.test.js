@@ -97,7 +97,7 @@ test('an archived requirement retains its linked, reviewed history after reconne
   expect(before.form.form.active).toBe(false);
   expect(before.form.total).toBe(2);
   expect(before.document.document.reviewedRevisionId).toBe(saved.document.currentRevisionId);
-  expect(before.checklist).toEqual({ items: [], requiredTotal: 0, requiredComplete: 0, complete: false });
+  expect(before.checklist).toEqual({ items: [], requiredTotal: 0, requiredComplete: 0, missingBasicInfo: [], percentage: 0, complete: false });
   await db.close();
   await db.setup(process.env.DATABASE_URL, { schema: context().schema });
   expect(await snapshot(saved)).toEqual(before);
@@ -144,6 +144,7 @@ test('the registration migration adds nullable mapping/review columns and stores
   }
   expect(column('ChildDocuments', 'reviewedAt')).toMatchObject({ udt_name: 'timestamptz', is_nullable: 'YES' });
   expect(column('RegistrationFormRevisions', 'content')).toMatchObject({ udt_name: 'bytea', is_nullable: 'NO' });
+  expect(column('RegistrationForms', 'audience')).toMatchObject({ udt_name: 'varchar', is_nullable: 'NO' });
   for (const name of ['required', 'active']) expect(column('RegistrationForms', name)).toMatchObject({ udt_name: 'bool', is_nullable: 'NO' });
   const child = await createChild();
   const legacy = await request(app).post(documentUrl(child.id)).send({ requestId: randomUUID(), title: 'Synthetic unlinked legacy document',

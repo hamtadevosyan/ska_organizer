@@ -54,7 +54,7 @@ export default function Children() {
     setEditing(child); setFormOpen(true); setProfileId(''); setMessage(''); setError('');
   }
   function saved(child: ChildRecord, addDocuments = false) {
-    setFormOpen(false); setEditing(null); setOpenAddDocuments(addDocuments); setProfileId(addDocuments ? child.id : '');
+    setFormOpen(false); setEditing(null); setOpenAddDocuments(addDocuments); setProfileId(child.id);
     setMessage(childName(child) + ' saved.'); setRevision((value) => value + 1);
     void refreshRooms();
   }

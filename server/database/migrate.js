@@ -18,6 +18,7 @@ const migrations = [
   { name: '016-child-document-access', ...require('./migrations/016-child-document-access') },
   { name: '017-child-documents', ...require('./migrations/017-child-documents') },
   { name: '018-registration-forms', ...require('./migrations/018-registration-forms') },
+  { name: '019-template-audience', ...require('./migrations/019-template-audience') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>
