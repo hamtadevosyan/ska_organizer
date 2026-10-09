@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import Accounts from "../pages/Accounts";
+import RegistrationForms from "../pages/RegistrationForms";
 import Rooms from "../pages/Rooms";
 import RoomRoster from "../pages/RoomRoster";
 import Children from "../pages/Children";
@@ -16,6 +17,7 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/accounts" element={<Accounts />} />
+      <Route path="/registration-forms" element={<RegistrationForms />} />
       <Route path="/rooms" element={<Rooms />} />
       <Route path="/rooms/:roomId" element={<RoomRoster />} />
       <Route path="/children" element={<Children />} />

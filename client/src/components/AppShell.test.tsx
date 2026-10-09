@@ -61,10 +61,11 @@ test.each(['admin', 'editor', 'viewer'] as const)('More and desktop preserve %s 
   setup('/dashboard', role);
   const sidebar = within(screen.getByRole('navigation', { name: 'Desktop navigation' }));
   expect(Boolean(sidebar.queryByRole('link', { name: 'Accounts' }))).toBe(role === 'admin');
+  expect(Boolean(sidebar.queryByRole('link', { name: 'Registration forms' }))).toBe(role === 'admin');
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const more = within(screen.getByRole('navigation', { name: 'More navigation' }));
   expect(more.getAllByRole('link').map((link) => link.textContent)).toEqual([
-    'Children', 'Rooms & Classes', 'Inventory', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts'] : []),
+    'Children', 'Rooms & Classes', 'Inventory', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
   ]);
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
 });

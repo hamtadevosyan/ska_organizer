@@ -8,13 +8,14 @@ import type { Room } from '../../api/rooms';
 import { RoomSelect } from '../rooms/RoomSelect';
 
 const inputClass = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2.5';
-export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
+export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel, canAddDocuments = false }: {
   child: ChildRecord | null; rooms: Room[]; loadingRooms: boolean;
-  onSaved: (child: ChildRecord) => void; onCancel: () => void;
+  onSaved: (child: ChildRecord, addDocuments?: boolean) => void; onCancel: () => void; canAddDocuments?: boolean;
 }) {
   const [form, setForm] = useState({ firstName: child?.firstName || '', lastName: child?.lastName || '',
     preferredName: child?.preferredName || '', dateOfBirth: child?.dateOfBirth || '', notes: child?.notes || '',
     roomId: child?.roomId || '', active: child?.active ?? true });
+  const [addDocuments, setAddDocuments] = useState(!child && canAddDocuments);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -53,7 +54,10 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
     setBusy(true); setError('');
     const values: ChildSettings = { ...form, firstName: form.firstName.trim(), lastName: form.lastName.trim(),
       preferredName: form.preferredName.trim(), notes: form.notes.trim(), roomId: form.roomId || null };
-    try { onSaved(await saveChild(child?.id || null, { ...values, confirmDuplicate, confirmOverCapacity: confirmCapacity })); }
+    try {
+      const saved = await saveChild(child?.id || null, { ...values, confirmDuplicate, confirmOverCapacity: confirmCapacity });
+      if (addDocuments && !child && canAddDocuments) onSaved(saved, true); else onSaved(saved);
+    }
     catch (failure) {
       if (!axios.isCancel(failure)) {
         setError(authError(failure, 'Could not save this child.'));
@@ -70,6 +74,7 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
   return <form onSubmit={(event) => void submit(event)} noValidate className="rounded-2xl border bg-white p-6 shadow-sm" aria-label={child ? 'Edit child' : 'Add child'}>
     <fieldset disabled={busy} className="space-y-4">
       <h2 className="text-xl font-bold">{child ? 'Edit ' + childName(child) : 'Add child'}</h2>
+      {!child && <p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-900">Start with a name and date of birth. You can save before paperwork is ready. Enrollment is complete when all required items have been reviewed by an administrator.</p>}
       {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-800">{error}</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         {([['firstName', 'First name'], ['lastName', 'Last name'], ['preferredName', 'Preferred name (optional)']] as const).map(([key, label]) =>
@@ -96,6 +101,7 @@ export function ChildForm({ child, rooms, loadingRooms, onSaved, onCancel }: {
         {selectedRoom && <p>Current displayed count: {selectedRoom.assignedChildCount}. Proposed count: {proposedCount}. Capacity: {selectedRoom.capacity}.</p>}
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmCapacity} onChange={(event) => setConfirmCapacity(event.target.checked)} className="mt-1" />I acknowledge the capacity warning and want to continue.</label>
       </div>}
+      {!child && canAddDocuments && <div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><label className="flex items-start gap-3"><input type="checkbox" checked={addDocuments} onChange={event => setAddDocuments(event.target.checked)} className="mt-1 h-4 w-4" />Add documents after saving</label><p className="mt-2 text-sm text-slate-600">Save this child first, then open their registration checklist to attach completed forms.</p></div>}
       <div className="flex flex-wrap gap-3"><button disabled={loadingRooms || !!duplicates.length && !confirmDuplicate || capacityWarning && !confirmCapacity} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save child'}</button>
         <button type="button" onClick={onCancel} className="rounded-lg border px-4 py-2">Cancel</button></div>
     </fieldset>

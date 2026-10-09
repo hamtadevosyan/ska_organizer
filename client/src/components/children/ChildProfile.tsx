@@ -5,8 +5,15 @@ import type { ChildProfile as Profile } from '../../api/children';
 import type { Room } from '../../api/rooms';
 import { authError } from '../../auth/transport';
 import { attendanceTime } from '../../api/attendance';
+import { useAuth } from '../../auth/context';
+import { EnrollmentProgress } from './EnrollmentProgress';
+import { ChildDocuments } from './ChildDocuments';
+import type { DocumentWork } from '../../api/childDocuments';
 
-export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile' }: { id: string; rooms: Pick<Room, 'id' | 'name'>[]; onClose: () => void; closeLabel?: string }) {
+export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile', openAddDocuments = false, onWorkChange }: { id: string; rooms: Pick<Room, 'id' | 'name'>[]; onClose: () => void; closeLabel?: string; openAddDocuments?: boolean; onWorkChange?: (work: DocumentWork) => void }) {
+  const { account } = useAuth();
+  const [documentWork, setDocumentWork] = useState<DocumentWork>({ dirty: false, busy: false });
+  useEffect(() => { onWorkChange?.(documentWork); }, [documentWork, onWorkChange]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -18,10 +25,12 @@ export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile' 
   }, [id]);
   return <section className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm" aria-label="Child profile">
     <div className="flex flex-wrap items-start justify-between gap-4"><h2 className="text-xl font-bold">{profile ? childName(profile.child) : 'Child profile'}</h2>
-      <button onClick={onClose} className="ska-button">{closeLabel}</button></div>
+      <button disabled={documentWork.busy} onClick={() => { if (!documentWork.dirty || window.confirm('Discard the unsaved document changes and close this profile?')) onClose(); }} className="ska-button">{closeLabel}</button></div>
     {error && <p role="alert" className="text-red-800">{error}</p>}
     {!profile && !error && <p role="status">Loading profile…</p>}
     {profile && <>
+      {account?.role === 'editor' && <EnrollmentProgress childId={profile.child.id} />}
+      <ChildDocuments childId={profile.child.id} openAdd={openAddDocuments} onWorkChange={setDocumentWork} />
       <dl className="grid gap-4 text-sm sm:grid-cols-2">
         <div><dt className="text-slate-500">Date of birth</dt><dd>{profile.child.dateOfBirth || 'Not recorded'}</dd></div>
         <div><dt className="text-slate-500">Preferred name</dt><dd>{profile.child.preferredName || 'None'}</dd></div>

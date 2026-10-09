@@ -23,6 +23,8 @@ beforeEach(() => {
     { ...child, id: 'inactive', firstName: 'Inactive', active: false }, { ...child, id: 'other', firstName: 'Other', roomId: otherRoom.id }];
   catalog = [{ ...room }, { ...otherRoom }];
   vi.mocked(axios.get).mockImplementation(async (url, config) => {
+    if (url.endsWith('/documents/checklist')) return { data: { items: [], requiredTotal: 0, requiredComplete: 0, complete: false } };
+    if (url.endsWith('/documents')) return { data: { items: [], total: 0 } };
     if (url.endsWith('/profile')) {
       const value = roster.find(row => url.includes('/' + row.id + '/'))!;
       return { data: { child: value, room: catalog.find(item => item.id === value.roomId), recentAttendance: [
@@ -160,4 +162,35 @@ test('viewers can read room profiles without receiving child or room edit contro
   await screen.findByText('Uses a blue cup.');
   expect(axios.post).not.toHaveBeenCalled();
   expect(axios.put).not.toHaveBeenCalled();
+});
+
+
+test('automatic room refresh preserves a document draft and closing asks before discarding it', async () => {
+  vi.spyOn(window, 'confirm').mockReturnValue(false);
+  show();
+  await screen.findByRole('table', { name: 'Room roster records' });
+  fireEvent.click(screen.getAllByRole('button', { name: 'View Synthetic Child' })[0]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Add document' }));
+  fireEvent.change(screen.getByLabelText('Document title'), { target: { value: 'Unsaved room form' } });
+  fireEvent.focus(window);
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Room enrollment' })).toBeInTheDocument());
+  expect(screen.getByLabelText('Document title')).toHaveValue('Unsaved room form');
+  fireEvent.click(screen.getByRole('button', { name: 'Back to room roster' }));
+  expect(screen.getByLabelText('Document title')).toHaveValue('Unsaved room form');
+  vi.mocked(window.confirm).mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Back to room roster' }));
+  await screen.findByRole('table', { name: 'Room roster records' });
+});
+
+
+test('a failed background roster refresh preserves the document draft in the open profile', async () => {
+  show(); await screen.findByRole('table', { name: 'Room roster records' });
+  fireEvent.click(screen.getAllByRole('button', { name: 'View Synthetic Child' })[0]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Add document' }));
+  fireEvent.change(screen.getByLabelText('Document title'), { target: { value: 'Retained during outage' } });
+  const get = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((url, config) => url.endsWith('/children') ? Promise.reject(new Error('Unavailable')) : get(url, config));
+  fireEvent.focus(window);
+  await screen.findByText('Could not load this room roster.');
+  expect(screen.getByLabelText('Document title')).toHaveValue('Retained during outage');
 });

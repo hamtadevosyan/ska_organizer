@@ -63,7 +63,7 @@ test('the generated worker lists only exact public build files with matching has
   assert.ok(manifest.length > 1);
   assert.ok(manifest.some(file => file.url === '/index.html'));
   for (const file of manifest) {
-    assert.match(file.url, /^(?:\/index\.html|\/assets\/[^?#]+\.(?:js|css|woff2?|ttf|otf|png|jpe?g|webp|avif|gif|svg|ico))$/);
+    assert.match(file.url, /^(?:\/index\.html|\/assets\/[^?#]+\.(?:m?js|css|woff2?|ttf|otf|pfb|png|jpe?g|webp|avif|gif|svg|ico))$/);
     assert.equal(file.sha256, createHash('sha256').update(bodies.get(file.url)).digest('hex'));
   }
   assert.match(cacheName, /^skao-static-v1-[a-f0-9]{20}$/);

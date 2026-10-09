@@ -90,6 +90,64 @@ module.exports = (sequelize) => {
     photoConsent: DataTypes.BOOLEAN, notes: DataTypes.TEXT, roomId: DataTypes.STRING,
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   });
+  const ChildDocument = sequelize.define('ChildDocument', {
+    id: id(), childId: { type: DataTypes.STRING, allowNull: false },
+    title: { type: DataTypes.STRING(160), allowNull: false },
+    category: { type: DataTypes.STRING(16), allowNull: false },
+    documentDate: { type: DataTypes.DATEONLY, allowNull: true },
+    notes: { type: DataTypes.STRING(2000), allowNull: false, defaultValue: '' },
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    currentRevisionId: { type: DataTypes.STRING, allowNull: false },
+    registrationFormId: { type: DataTypes.STRING, allowNull: true },
+    registrationFormRevisionId: { type: DataTypes.STRING, allowNull: true },
+    reviewedRevisionId: { type: DataTypes.STRING, allowNull: true },
+    reviewedBy: { type: DataTypes.STRING, allowNull: true },
+    reviewedAt: { type: DataTypes.DATE, allowNull: true },
+  });
+  // Revisions are immutable. Content is part of the PostgreSQL transaction and
+  // normal database backup, never a public static file or external storage URL.
+  const ChildDocumentRevision = sequelize.define('ChildDocumentRevision', {
+    id: id(), documentId: { type: DataTypes.STRING, allowNull: false },
+    revision: { type: DataTypes.INTEGER, allowNull: false },
+    filename: { type: DataTypes.STRING(200), allowNull: false },
+    contentType: { type: DataTypes.STRING(32), allowNull: false },
+    byteLength: { type: DataTypes.INTEGER, allowNull: false },
+    sha256: { type: DataTypes.STRING(64), allowNull: false },
+    content: { type: DataTypes.BLOB, allowNull: false },
+    uploadedAt: { type: DataTypes.DATE, allowNull: false },
+    actorId: { type: DataTypes.STRING, allowNull: false },
+    uploadedBy: { type: DataTypes.STRING(64), allowNull: false },
+    changeNote: { type: DataTypes.STRING(500), allowNull: false, defaultValue: '' },
+    requestId: { type: DataTypes.STRING(36), allowNull: false },
+    requestScope: { type: DataTypes.STRING(64), allowNull: false },
+    requestHash: { type: DataTypes.STRING(64), allowNull: false },
+  }, { timestamps: false });
+  const RegistrationForm = sequelize.define('RegistrationForm', {
+    audience: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'child' },
+    id: id(), title: { type: DataTypes.STRING(160), allowNull: false },
+    instructions: { type: DataTypes.STRING(2000), allowNull: false, defaultValue: '' },
+    category: { type: DataTypes.STRING(16), allowNull: false },
+    required: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    currentRevisionId: { type: DataTypes.STRING, allowNull: false },
+  });
+  const RegistrationFormRevision = sequelize.define('RegistrationFormRevision', {
+    id: id(), formId: { type: DataTypes.STRING, allowNull: false },
+    revision: { type: DataTypes.INTEGER, allowNull: false },
+    filename: { type: DataTypes.STRING(200), allowNull: false },
+    contentType: { type: DataTypes.STRING(32), allowNull: false },
+    byteLength: { type: DataTypes.INTEGER, allowNull: false },
+    sha256: { type: DataTypes.STRING(64), allowNull: false },
+    content: { type: DataTypes.BLOB, allowNull: false },
+    uploadedAt: { type: DataTypes.DATE, allowNull: false },
+    actorId: { type: DataTypes.STRING, allowNull: false },
+    uploadedBy: { type: DataTypes.STRING(64), allowNull: false },
+    changeNote: { type: DataTypes.STRING(500), allowNull: false, defaultValue: '' },
+    requestId: { type: DataTypes.STRING(36), allowNull: false },
+    requestScope: { type: DataTypes.STRING(64), allowNull: false },
+    requestHash: { type: DataTypes.STRING(64), allowNull: false },
+  }, { timestamps: false });
   const Attendance = sequelize.define('Attendance', {
     id: id(), childId: { type: DataTypes.STRING, allowNull: false },
     roomId: DataTypes.STRING, checkIn: DataTypes.DATE,
@@ -119,6 +177,7 @@ module.exports = (sequelize) => {
     displayName: { type: DataTypes.STRING(100), allowNull: false },
     passwordHash: { type: DataTypes.TEXT, allowNull: false },
     role: { type: DataTypes.STRING(16), allowNull: false },
+    documentAccess: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'none' },
     disabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   });
@@ -135,5 +194,6 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt };
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt,
+    ChildDocument, ChildDocumentRevision, RegistrationForm, RegistrationFormRevision };
 };

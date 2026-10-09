@@ -15,6 +15,10 @@ const migrations = [
   { name: '013-full-day-activities', ...require('./migrations/013-full-day-activities') },
   { name: '014-remembered-sessions', ...require('./migrations/014-remembered-sessions') },
   { name: '015-strict-room-ages', ...require('./migrations/015-strict-room-ages') },
+  { name: '016-child-document-access', ...require('./migrations/016-child-document-access') },
+  { name: '017-child-documents', ...require('./migrations/017-child-documents') },
+  { name: '018-registration-forms', ...require('./migrations/018-registration-forms') },
+  { name: '019-template-audience', ...require('./migrations/019-template-audience') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

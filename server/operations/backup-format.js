@@ -1,17 +1,26 @@
 const { createHash } = require('node:crypto');
 const { isDeepStrictEqual } = require('node:util');
 
-const required = ['Meals', 'Ingredients', 'MealIngredients', 'WeeklyPlans', 'Accounts', 'Rooms', 'Children',
+const legacyRequired = ['Meals', 'Ingredients', 'MealIngredients', 'WeeklyPlans', 'Accounts', 'Rooms', 'Children',
   'Attendances', 'StaffMembers', 'InventoryGroups', 'InventoryItems', 'InventoryMovements', 'PurchaseReceipts',
   'Activities', 'ScheduleEntries', 'ScheduleWeeks', 'AuditEvents', 'SequelizeMeta'];
+const documentRequired = [...legacyRequired, 'ChildDocuments', 'ChildDocumentRevisions'];
+const required = [...documentRequired, 'RegistrationForms', 'RegistrationFormRevisions'];
+function requiredForFormat(version) {
+  if (version === 1) return legacyRequired;
+  if (version === 2) return documentRequired;
+  if (version === 3) return required;
+  throw new Error('Unsupported or incomplete backup manifest.');
+}
 const coverage = {
   meals: ['Meals', 'Ingredients', 'MealIngredients'], plans: ['WeeklyPlans'], accounts: ['Accounts'],
-  children: ['Children'], attendance: ['Attendances'], inventory: ['InventoryItems', 'InventoryMovements'],
+  children: ['Children'], documents: ['ChildDocuments', 'ChildDocumentRevisions'], registrationForms: ['RegistrationForms', 'RegistrationFormRevisions'],
+  attendance: ['Attendances'], inventory: ['InventoryItems', 'InventoryMovements'],
   purchases: ['PurchaseReceipts'], activities: ['Activities', 'ScheduleEntries', 'ScheduleWeeks'], audits: ['AuditEvents'],
 };
 const safeName = (name) => typeof name === 'string' && /^backup-[0-9TZ-]+-[a-f0-9]{12}$/.test(name);
 function validateManifest(value) {
-  if (value?.format !== 1 || !safeName(value.name) || !/^[a-f0-9]{40}$/.test(value.release || '') ||
+  if (![1, 2, 3].includes(value?.format) || !safeName(value.name) || !/^[a-f0-9]{40}$/.test(value.release || '') ||
       !/^[a-f0-9]{64}$/.test(value.sha256 || '') || value.postgresMajor !== 17 || !Array.isArray(value.tables)) {
     throw new Error('Unsupported or incomplete backup manifest.');
   }
@@ -21,7 +30,7 @@ function validateManifest(value) {
         !/^[a-f0-9]{64}$/.test(table.sha256 || '') || !Array.isArray(table.columns)) throw new Error('Invalid table fingerprint.');
     names.add(table.name);
   }
-  if (required.some((name) => !names.has(name))) throw new Error('Backup is missing required organizer tables.');
+  if (requiredForFormat(value.format).some((name) => !names.has(name))) throw new Error('Backup is missing required organizer tables.');
   return value;
 }
 function compareTables(expected, actual) {
@@ -39,4 +48,4 @@ function rowDigest() {
     finish() { return { count, sha256: digest.digest('hex') }; },
   };
 }
-module.exports = { required, safeName, validateManifest, compareTables, coverageResult, rowDigest };
+module.exports = { required, legacyRequired, requiredForFormat, safeName, validateManifest, compareTables, coverageResult, rowDigest };

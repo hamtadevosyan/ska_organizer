@@ -37,19 +37,24 @@ async function pg(command, args, name = database) {
     child.once('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(command + ' failed. Source data and existing databases were preserved.')); });
   });
 }
-async function fingerprint(client) {
+async function fingerprint(client, manifestFormat = 3) {
   const rows = (await client.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename COLLATE \"C\"")).rows;
   const names = rows.map((row) => row.tablename);
-  if (format.required.some((name) => !names.includes(name))) throw new Error('Migrate the organizer database before creating a pilot backup.');
+  if (format.requiredForFormat(manifestFormat).some((name) => !names.includes(name))) throw new Error('Migrate the organizer database before creating a pilot backup.');
   const tables = [];
   for (const name of names) {
     const columns = (await client.query(`SELECT column_name, data_type, udt_name, is_nullable, column_default
       FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`, [name])).rows;
-    // Ordered canonical JSON also catches changed values when row counts match.
-    await client.query(`DECLARE pilot_rows NO SCROLL CURSOR FOR SELECT to_jsonb(t)::text AS value FROM public.${quote(name)} t ORDER BY to_jsonb(t)::text COLLATE "C"`);
+    // Format 1 preserves its original row order for existing backup manifests.
+    // File rows can contain several megabytes of BYTEA; use the stable primary
+    // key instead of sorting full file contents, and hold just one row at a time.
+    const fileRows = (name === 'ChildDocumentRevisions' && manifestFormat >= 2) ||
+      (name === 'RegistrationFormRevisions' && manifestFormat >= 3);
+    const order = fileRows ? 't."id" COLLATE "C"' : 'to_jsonb(t)::text COLLATE "C"';
+    await client.query(`DECLARE pilot_rows NO SCROLL CURSOR FOR SELECT to_jsonb(t)::text AS value FROM public.${quote(name)} t ORDER BY ${order}`);
     const digest = format.rowDigest();
     for (;;) {
-      const batch = (await client.query('FETCH 1000 FROM pilot_rows')).rows;
+      const batch = (await client.query(`FETCH ${fileRows ? 1 : 1000} FROM pilot_rows`)).rows;
       if (!batch.length) break;
       for (const row of batch) digest.add(row.value);
     }
@@ -98,7 +103,7 @@ async function backup() {
     await pg('pg_restore', ['--list', dump]);
     const tables = await fingerprint(client);
     await client.query('COMMIT');
-    const manifest = { format: 1, name, release, createdAt: new Date().toISOString(), postgresMajor: 17,
+    const manifest = { format: 3, name, release, createdAt: new Date().toISOString(), postgresMajor: 17,
       sourceDatabase: database, sha256: await sha256(dump), tables, coverage: format.coverageResult(tables) };
     await fs.chmod(dump, 0o600);
     await writeJson(path.join(directory, 'manifest.json'), manifest);
@@ -117,7 +122,7 @@ async function restore(name, keep = false) {
     await pg('pg_restore', ['--exit-on-error', '--single-transaction', '--no-owner', '--no-acl', '--dbname=' + target, dump], target);
     clone = await connection(target);
     await clone.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    const tables = await fingerprint(clone);
+    const tables = await fingerprint(clone, manifest.format);
     format.compareTables(manifest.tables, tables);
     await clone.query('COMMIT');
     if (keep) {

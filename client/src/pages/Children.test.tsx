@@ -19,6 +19,8 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   vi.mocked(axios.isAxiosError).mockImplementation((error): error is import('axios').AxiosError => !!error && typeof error === 'object' && 'response' in error);
   vi.mocked(axios.get).mockImplementation(async (url, config) => {
+    if (url.endsWith('/documents/checklist')) return { data: { items: [], requiredTotal: 0, requiredComplete: 0, complete: false } };
+    if (url.endsWith('/documents')) return { data: { items: [], total: 0 } };
     if (url.endsWith('/rooms')) return { data: { data: [room] } };
     if (url.endsWith('/profile')) return { data: { child: roster.find((row) => url.includes('/' + row.id + '/')), room, recentAttendance: [] } };
     const { q = '', roomId, active = 'true', page = 1, pageSize = 25 } = config?.params || {};
@@ -145,4 +147,51 @@ test('pagination can reach children after the first page', async () => {
   await screen.findByRole('row', { name: 'Child25 Child' });
   expect(screen.queryByRole('row', { name: 'Child0 Child' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+});
+
+
+test('the registration checklist opens by default only after a child is saved successfully with a stable ID', async () => {
+  vi.mocked(axios.post).mockRejectedValueOnce(new Error('Unavailable'));
+  render(<SignedIn><Children /></SignedIn>);
+  await screen.findByRole('row', { name: 'Synthetic Child' });
+  fireEvent.click(screen.getByRole('button', { name: 'Add child' })); fillNames();
+  expect(screen.getByRole('checkbox', { name: 'Add documents after saving' })).toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: 'Save child' }));
+  await screen.findByText('Could not save this child.');
+  expect(screen.getByRole('checkbox', { name: 'Add documents after saving' })).toBeChecked();
+  expect(screen.queryByLabelText('Upload a document')).not.toBeInTheDocument();
+  expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.includes('/documents'))).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Save child' }));
+  await screen.findByRole('region', { name: 'Registration checklist' });
+  expect(screen.queryByRole('form', { name: 'Add document' })).not.toBeInTheDocument();
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/children/new-child/documents'), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  expect(axios.post).toHaveBeenCalledTimes(2);
+});
+
+test('cancelling child creation never starts document upload or links files to another profile', async () => {
+  render(<SignedIn><Children /></SignedIn>);
+  await screen.findByRole('row', { name: 'Synthetic Child' });
+  fireEvent.click(screen.getByRole('button', { name: 'Add child' })); fillNames();
+  expect(screen.getByRole('checkbox', { name: 'Add documents after saving' })).toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(axios.post).not.toHaveBeenCalled();
+  expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.includes('/documents'))).toBe(false);
+});
+
+test('switching or closing profiles protects an unsaved document draft', async () => {
+  roster.push({ ...child, id: 'other-child', firstName: 'Other' });
+  render(<SignedIn><Children /></SignedIn>);
+  fireEvent.click(await screen.findByRole('button', { name: 'View Synthetic Child' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Add document' }));
+  fireEvent.change(screen.getByLabelText('Document title'), { target: { value: 'Unsaved form' } });
+  vi.mocked(window.confirm).mockReturnValue(false);
+  fireEvent.click(screen.getByRole('button', { name: 'View Other Child' }));
+  expect(screen.getByRole('region', { name: 'Child profile' })).toHaveTextContent('Synthetic Child');
+  expect(screen.getByLabelText('Document title')).toHaveValue('Unsaved form');
+  fireEvent.click(screen.getByRole('button', { name: 'Close profile' }));
+  expect(screen.getByLabelText('Document title')).toHaveValue('Unsaved form');
+  vi.mocked(window.confirm).mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: 'View Other Child' }));
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Child profile' })).toHaveTextContent('Other Child'));
+  expect(screen.queryByLabelText('Document title')).not.toBeInTheDocument();
 });

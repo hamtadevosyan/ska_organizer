@@ -32,7 +32,8 @@ jobs:
       run:
         working-directory: server
     env:
-      TEST_DATABASE_URL: postgresql://postgres:ci-test-password@127.0.0.1:5432/ska_organizer_test
+      TEST_DATABASE_URL: postgresql://skao_ci_test:ci-test-password@127.0.0.1:5432/ska_organizer_test
+      SKAO_TEST_PG_CONTAINER: ${{ job.services.postgres.id }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
@@ -41,6 +42,15 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      - name: Create a test database owner without database creation privileges
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          PGPASSWORD: ci-test-password
+        run: |
+          docker exec -i --env PGPASSWORD "$POSTGRES_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE skao_ci_test WITH LOGIN PASSWORD 'ci-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+          ALTER DATABASE ska_organizer_test OWNER TO skao_ci_test;
+          SQL
       - name: Install local recipe photo reader
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
       - name: Mock API suite

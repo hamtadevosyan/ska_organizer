@@ -8,6 +8,8 @@ import type { ChildRecord, RosterFilters } from '../api/children';
 import { useRooms } from '../components/rooms/useRooms';
 import { ChildForm } from '../components/children/ChildForm';
 import { ChildProfile } from '../components/children/ChildProfile';
+import { documentAccess } from '../api/childDocuments';
+import type { DocumentWork } from '../api/childDocuments';
 
 const pageSize = 25;
 export default function Children() {
@@ -28,6 +30,10 @@ export default function Children() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ChildRecord | null>(null);
   const [profileId, setProfileId] = useState('');
+  const [openAddDocuments, setOpenAddDocuments] = useState(false);
+  const [documentWork, setDocumentWork] = useState<DocumentWork>({ dirty: false, busy: false });
+  const leaveProfile = () => !documentWork.busy && (!documentWork.dirty || window.confirm('Discard the unsaved document changes?'));
+  function viewProfile(id: string) { if (id === profileId || !leaveProfile()) return; setDocumentWork({ dirty: false, busy: false }); setOpenAddDocuments(false); setProfileId(id); }
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError('');
@@ -43,20 +49,23 @@ export default function Children() {
     return () => { clearTimeout(timer); controller.abort(); };
   }, [q, roomId, active, page, revision]);
   function open(child: ChildRecord | null) {
+    if (!leaveProfile()) return;
+    setDocumentWork({ dirty: false, busy: false }); setOpenAddDocuments(false);
     setEditing(child); setFormOpen(true); setProfileId(''); setMessage(''); setError('');
   }
-  function saved(child: ChildRecord) {
-    setFormOpen(false); setEditing(null); setProfileId('');
+  function saved(child: ChildRecord, addDocuments = false) {
+    setFormOpen(false); setEditing(null); setOpenAddDocuments(addDocuments); setProfileId(child.id);
     setMessage(childName(child) + ' saved.'); setRevision((value) => value + 1);
     void refreshRooms();
   }
   async function end(child: ChildRecord) {
+    if (!leaveProfile()) return;
     if (!window.confirm('End enrollment for ' + childName(child) + '? Their profile, room reference and attendance history will remain.')) return;
     setBusyId(child.id); setError(''); setMessage('');
     try {
       await endEnrollment(child.id);
       setMessage('Enrollment ended for ' + childName(child) + '. History was preserved.');
-      setProfileId(''); setRevision((value) => value + 1);
+      setProfileId(''); setDocumentWork({ dirty: false, busy: false }); setOpenAddDocuments(false); setRevision((value) => value + 1);
       await refreshRooms();
     } catch (failure) { if (!axios.isCancel(failure)) setError(authError(failure, 'Could not end enrollment.')); }
     finally { setBusyId(''); }
@@ -68,13 +77,13 @@ export default function Children() {
   return <div className="ska-page ska-core-page space-y-6">
     <header className="ska-page-head"><div><h1><span className="ska-heading-icon is-coral"><Users size={24} aria-hidden="true" /></span>Children</h1>
       <p className="mt-2 text-slate-600">Maintain the roster, enrollment details and room assignments.</p></div>
-      <div className="ska-header-actions">{canEdit && !formOpen && <button disabled={!!busyId} onClick={() => open(null)} className="ska-button is-primary"><Plus size={18} aria-hidden="true" />Add child</button>}
+      <div className="ska-header-actions">{canEdit && !formOpen && <button disabled={!!busyId || documentWork.busy} onClick={() => open(null)} className="ska-button is-primary"><Plus size={18} aria-hidden="true" />Add child</button>}
         <button disabled={loading || !!busyId || formOpen} onClick={() => { setRevision((value) => value + 1); void refreshRooms(); }} className="ska-button">Refresh roster</button></div>
     </header>
     {(error || roomError) && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{error || roomError}</p>}
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-800">{message}</p>}
-    {canEdit && formOpen && <ChildForm key={editing?.id || 'new'} child={editing} rooms={rooms} loadingRooms={loadingRooms} onSaved={saved} onCancel={() => { setFormOpen(false); setEditing(null); }} />}
-    {profileId && <ChildProfile key={profileId} id={profileId} rooms={rooms} onClose={() => setProfileId('')} />}
+    {canEdit && formOpen && <ChildForm key={editing?.id || 'new'} child={editing} rooms={rooms} loadingRooms={loadingRooms} canAddDocuments={documentAccess(account) === 'edit'} onSaved={saved} onCancel={() => { setFormOpen(false); setEditing(null); }} />}
+    {profileId && <ChildProfile key={profileId} id={profileId} rooms={rooms} openAddDocuments={openAddDocuments} onWorkChange={setDocumentWork} onClose={() => { setProfileId(''); setDocumentWork({ dirty: false, busy: false }); }} />}
     <section className="rounded-2xl border bg-white p-5 shadow-sm" aria-label="Child roster">
       <div className="grid gap-4 md:grid-cols-3">
         <label>Search children<input type="search" maxLength={100} value={q} placeholder="Name or preferred name" onChange={(event) => { setQ(event.target.value); setPage(1); }} className="mt-1 block w-full rounded-lg border p-2.5" /></label>
@@ -90,9 +99,9 @@ export default function Children() {
             <td role="cell" data-primary className="p-3 font-semibold">{childName(child)}{child.preferredName && <span className="mt-1 block font-normal text-slate-500">Goes by {child.preferredName}</span>}</td>
             <td role="cell" data-label="Date of birth" className="p-3">{child.dateOfBirth || 'Not recorded'}</td><td role="cell" data-label="Room" className="p-3">{roomName(child.roomId)}</td>
             <td role="cell" data-label="Enrollment" className="p-3"><span className={'rounded-full px-2 py-1 text-xs ' + (child.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600')}>{child.active ? 'Active' : 'Inactive'}</span></td>
-            <td role="cell" className="ska-record-actions p-3"><div className="ska-table-actions"><button disabled={formOpen || !!busyId} onClick={() => setProfileId(child.id)} aria-label={'View ' + childName(child)} className="text-emerald-800 disabled:opacity-50">View profile</button>
-              {canEdit && <><button disabled={formOpen || !!busyId} onClick={() => open(child)} aria-label={'Edit ' + childName(child)} className="text-emerald-800 disabled:opacity-50">Edit</button>
-                {child.active && <button disabled={formOpen || !!busyId} onClick={() => void end(child)} aria-label={'End enrollment for ' + childName(child)} className="text-slate-600 disabled:opacity-50">{busyId === child.id ? 'Saving…' : 'End enrollment'}</button>}</>}
+            <td role="cell" className="ska-record-actions p-3"><div className="ska-table-actions"><button disabled={formOpen || !!busyId || documentWork.busy} onClick={() => viewProfile(child.id)} aria-label={'View ' + childName(child)} className="text-emerald-800 disabled:opacity-50">View profile</button>
+              {canEdit && <><button disabled={formOpen || !!busyId || documentWork.busy} onClick={() => open(child)} aria-label={'Edit ' + childName(child)} className="text-emerald-800 disabled:opacity-50">Edit</button>
+                {child.active && <button disabled={formOpen || !!busyId || documentWork.busy} onClick={() => void end(child)} aria-label={'End enrollment for ' + childName(child)} className="text-slate-600 disabled:opacity-50">{busyId === child.id ? 'Saving…' : 'End enrollment'}</button>}</>}
             </div></td>
           </tr>)}</tbody></table></div>
         <div className="mt-4 flex justify-between"><button disabled={page === 1} onClick={() => setPage(page - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-50">Previous</button>
