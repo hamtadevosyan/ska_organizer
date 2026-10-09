@@ -16,12 +16,23 @@ const printLimitMessage = 'This blank form is too large to print here. Download 
 
 // Print only rasterized blank template pages. Never mount a PDF's scripts,
 // links or active annotation layers, or include the surrounding child profile.
-async function printBlank(blob: Blob, revision: DocumentRevision, title: string, signal: AbortSignal, register: (cleanup: () => void) => void) {
+type PreparedPrint = { frame: HTMLIFrameElement; pages: number };
+async function prepareBlankPrint(blob: Blob, revision: DocumentRevision, title: string, signal: AbortSignal, holder: HTMLDivElement, register: (cleanup: () => void) => void): Promise<PreparedPrint | undefined> {
   const frame = document.createElement('iframe');
   frame.setAttribute('sandbox', 'allow-same-origin allow-modals');
-  frame.title = 'Blank form print'; frame.style.cssText = 'position:fixed;width:1px;height:1px;left:-10000px;border:0';
-  document.body.appendChild(frame);
+  frame.title = 'Blank form print'; frame.style.cssText = 'display:block;width:100%;height:360px;border:0;background:white';
   const cleanup = () => frame.remove(); register(cleanup);
+  // Wait for the frame's own document before adding pixels. Otherwise its
+  // initial navigation can replace a document populated too early.
+  await new Promise<void>((resolve, reject) => {
+    const stop = () => { cleanup(); reject(new DOMException('Cancelled', 'AbortError')); };
+    const done = () => { signal.removeEventListener('abort', stop); resolve(); };
+    frame.addEventListener('load', done, { once: true });
+    signal.addEventListener('abort', stop, { once: true });
+    if (signal.aborted) { stop(); return; }
+    holder.appendChild(frame);
+  });
+  if (signal.aborted) { cleanup(); return; }
   const target = frame.contentDocument;
   if (!target || !frame.contentWindow) { cleanup(); throw new Error('Print is unavailable. Download the blank form to print it.'); }
   target.title = 'Blank form · ' + title;
@@ -46,7 +57,7 @@ async function printBlank(blob: Blob, revision: DocumentRevision, title: string,
       const stop = () => { void task.destroy().catch(() => {}); }; signal.addEventListener('abort', stop, { once: true });
       try {
         const pdf = await task.promise;
-        if (pdf.numPages > 100) throw new Error(printLimitMessage);
+        if (!Number.isSafeInteger(pdf.numPages) || pdf.numPages < 1 || pdf.numPages > 100) throw new Error(printLimitMessage);
         for (let number = 1; number <= pdf.numPages; number++) {
           if (signal.aborted) return;
           const page = await pdf.getPage(number); const original = page.getViewport({ scale: 1 });
@@ -74,14 +85,16 @@ async function printBlank(blob: Blob, revision: DocumentRevision, title: string,
     }
     await Promise.all(Array.from(target.images).map(image => image.decode()));
     if (signal.aborted) return;
-    frame.contentWindow.addEventListener('afterprint', cleanup, { once: true });
-    frame.contentWindow.focus(); frame.contentWindow.print();
-    window.setTimeout(cleanup, 60_000);
+    // The caller exposes a ready button. Printing happens directly in that
+    // click handler, rather than after asynchronous fetch/render/decode work.
+    return { frame, pages: target.images.length };
   } catch (failure) { cleanup(); throw failure; }
 }
 
 export function BlankFormActions({ form, revision, disabled = false }: { form: RegistrationForm; revision?: DocumentRevision; disabled?: boolean }) {
   const [preview, setPreview] = useState<{ blob: Blob; revision: DocumentRevision; url: string } | null>(null);
+  const [preparedPrint, setPreparedPrint] = useState<PreparedPrint | null>(null);
+  const printHolder = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [expired, setExpired] = useState(false);
   const requests = useRef(new Set<AbortController>()); const urls = useRef(new Set<string>()); const printCleanup = useRef(new Set<() => void>()); const alive = useRef(true);
   const generation = useRef(0);
@@ -89,13 +102,13 @@ export function BlankFormActions({ form, revision, disabled = false }: { form: R
   useEffect(() => {
     alive.current = true;
     const stop = () => { requests.current.forEach(request => request.abort()); requests.current.clear(); urls.current.forEach(url => URL.revokeObjectURL(url)); urls.current.clear(); printCleanup.current.forEach(cleanup => cleanup()); printCleanup.current.clear(); };
-    const unsubscribe = onSessionExpired(() => { generation.current++; stop(); setPreview(null); setBusy(false); setError(''); setMessage(''); setExpired(true); });
+    const unsubscribe = onSessionExpired(() => { generation.current++; stop(); setPreview(null); setPreparedPrint(null); setBusy(false); setError(''); setMessage(''); setExpired(true); });
     return () => { alive.current = false; stop(); unsubscribe(); };
   }, []);
   useEffect(() => {
     generation.current++; requests.current.forEach(request => request.abort()); requests.current.clear();
     urls.current.forEach(url => URL.revokeObjectURL(url)); urls.current.clear(); printCleanup.current.forEach(cleanup => cleanup()); printCleanup.current.clear();
-    setPreview(null); setBusy(false); setError(''); setMessage('');
+    setPreview(null); setPreparedPrint(null); setBusy(false); setError(''); setMessage('');
   }, [form.id, form.currentRevisionId, revision?.id]);
   useEffect(() => () => { if (preview?.url && urls.current.delete(preview.url)) URL.revokeObjectURL(preview.url); }, [preview]);
   function download(blob: Blob, name: string) {
@@ -105,6 +118,7 @@ export function BlankFormActions({ form, revision, disabled = false }: { form: R
   }
   async function open(action: 'preview' | 'download' | 'share' | 'print') {
     if (busy || disabled || expired) return;
+    printCleanup.current.forEach(cleanup => cleanup()); printCleanup.current.clear(); setPreparedPrint(null);
     const controller = new AbortController(); requests.current.add(controller); setBusy(true); setError(''); setMessage('');
     const epoch = generation.current;
     try {
@@ -128,13 +142,28 @@ export function BlankFormActions({ form, revision, disabled = false }: { form: R
           catch (failure) { if (controller.signal.aborted || !alive.current || epoch !== generation.current || failure instanceof DOMException && failure.name === 'AbortError') return; download(blob, name); setMessage('Sharing is unavailable here. The blank form was downloaded for you to share.'); }
         } else { download(blob, name); setMessage('The blank form was downloaded for you to share.'); }
       } else if (action === 'print') {
-        await printBlank(blob, selected, form.title, controller.signal, cleanup => printCleanup.current.add(cleanup));
+        if (!printHolder.current) throw new Error('Print is unavailable. Download the blank form to print it.');
+        const prepared = await prepareBlankPrint(blob, selected, form.title, controller.signal, printHolder.current, cleanup => printCleanup.current.add(cleanup));
+        if (prepared && !controller.signal.aborted && alive.current && epoch === generation.current) setPreparedPrint(prepared);
       } else {
         const url = selected.contentType === 'application/pdf' ? '' : URL.createObjectURL(blob); if (url) urls.current.add(url);
         setPreview({ blob, revision: selected, url });
       }
     } catch (failure) { if (!controller.signal.aborted && !cancelled(failure) && alive.current && epoch === generation.current) setError(authError(failure, failure instanceof Error ? failure.message : 'Could not open the blank form. Try again.')); }
     finally { requests.current.delete(controller); if (!controller.signal.aborted && alive.current && epoch === generation.current) setBusy(false); }
+  }
+  function closePrint() {
+    printCleanup.current.forEach(cleanup => cleanup()); printCleanup.current.clear(); setPreparedPrint(null); setMessage('');
+  }
+  function printPrepared() {
+    if (!preparedPrint || !preparedPrint.frame.isConnected || busy || expired || disabled) return;
+    try {
+      const target = preparedPrint.frame.contentWindow;
+      if (!target) throw new Error('Print is unavailable. Download the blank form to print it.');
+      // No awaits: retain the user's activation for the browser print dialog.
+      target.focus(); target.print();
+      setMessage('Choose your printer in the print dialog. If it did not open, use Download blank form and print the downloaded file.');
+    } catch { setError('Print is unavailable here. Download the blank form to print it.'); }
   }
   if (expired) return null;
   return <div className="min-w-0 space-y-3">
@@ -147,6 +176,13 @@ export function BlankFormActions({ form, revision, disabled = false }: { form: R
     {busy && <p role="status" className="text-sm">Opening blank form…</p>}
     {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {message && <p role="status" className="text-sm text-blue-800">{message}</p>}
+    <section hidden={!preparedPrint} aria-label="Blank form ready to print" className="min-w-0 space-y-3 rounded-xl border bg-white p-3">
+      <h5 className="break-words font-bold">Blank {form.title} · Ready to print</h5>
+      <p>{preparedPrint?.pages} {preparedPrint?.pages === 1 ? 'page' : 'pages'} · Only this blank form will be printed.</p>
+      <div className="flex flex-wrap gap-2"><button type="button" className="ska-button is-primary" disabled={!preparedPrint || busy || disabled} onClick={printPrepared}><Printer size={17} aria-hidden="true" />Open print dialog</button>
+        <button type="button" className="ska-button" onClick={closePrint}>Close print preview</button></div>
+      <div ref={printHolder} className="overflow-hidden rounded-lg border" />
+    </section>
     {preview && <section aria-label={'Blank form preview · ' + suffix} className="min-w-0 space-y-3 rounded-xl border bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h5 className="break-words font-bold">Blank {form.title} · Version {preview.revision.revision}</h5><button type="button" className="ska-button" onClick={() => setPreview(null)}>Close blank preview</button></div>
       {preview.revision.contentType === 'application/pdf' ? <Suspense fallback={<p role="status">Loading PDF preview…</p>}><PdfDocumentPreview blob={preview.blob} /></Suspense> : <img src={preview.url} alt={'Blank ' + form.title + ' preview'} className="max-h-[36rem] w-full rounded-xl object-contain" />}
     </section>}

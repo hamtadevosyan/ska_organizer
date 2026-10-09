@@ -136,7 +136,7 @@ requires reviewed current copies for every active required form; optional forms 
 not block it. Empty catalogs do not report completion. Packet completion is separate
 from active enrollment/attendance, so existing enrollment is not changed by migration.
 
-Print rasterizes only the selected blank template into a sandboxed local print frame.
+Print rasterizes only the selected blank template into a sandboxed local print frame. After all pages finish loading, choose **Open print dialog** in the ready preview; this call happens directly from the tap. The prepared pages remain available if the browser dialog is cancelled. Close the print preview to remove them. Changing the form/version, leaving the component or session expiry also clears the pixels.
 Sharing passes only blank file bytes to a user-initiated device share sheet, with
 download fallback. There is no parent account, messaging service or remote file URL.
 Staff verify filled fields/signatures; the system does not infer them or monitor laws.

@@ -140,10 +140,10 @@ test('current actions require a refreshed catalog when the latest revision chang
 
 test('printing a blank image uses an isolated frame containing only its pixels', async () => {
   const print = vi.fn(); const focus = vi.fn();
-  const realAppend = document.body.appendChild.bind(document.body);
+  const realAppend = Node.prototype.appendChild;
   let frame: HTMLIFrameElement | null = null;
-  vi.spyOn(document.body, 'appendChild').mockImplementation(function <T extends Node>(node: T): T {
-    const appended = realAppend(node);
+  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
+    const appended = realAppend.call(this, node) as T;
     if (node instanceof HTMLIFrameElement) {
       frame = node;
       const target = node.contentDocument!;
@@ -155,7 +155,10 @@ test('printing a blank image uses an isolated frame containing only its pixels',
   });
   vi.mocked(api.getRegistrationFormContent).mockResolvedValue(new Blob(['synthetic image pixels'], { type: 'image/png' }));
   render(<><p>Child Synthetic Private Name</p><BlankFormActions form={form} revision={imageRevision} /></>);
-  click('Print'); await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+  click('Print'); await screen.findByRole('region', { name: 'Blank form ready to print' });
+  expect(print).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Open print dialog' }));
+  expect(print).toHaveBeenCalledTimes(1);
   const printedFrame = frame as HTMLIFrameElement | null;
   expect(printedFrame).not.toBeNull();
   expect(printedFrame!.getAttribute('sandbox')).toBe('allow-same-origin allow-modals');
@@ -167,6 +170,10 @@ test('printing a blank image uses an isolated frame containing only its pixels',
   expect(focus).toHaveBeenCalledTimes(1);
   expect(api.getRegistrationFormContent).toHaveBeenCalledWith(form.id, imageRevision.id, false, expect.any(AbortSignal));
   printedFrame!.contentWindow!.dispatchEvent(new Event('afterprint'));
+  // Keep the prepared pixels available when a browser closes or cancels its
+  // dialog asynchronously; remove them on explicit close.
+  expect(printedFrame!.isConnected).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Close print preview' }));
   expect(document.querySelector('iframe')).toBeNull();
 });
 
@@ -179,9 +186,9 @@ test('a cumulative PDF print limit stops before rendering excessive pages and ke
   const destroy = vi.fn().mockResolvedValue(undefined);
   pdfjs.getDocument.mockReturnValue({ promise: Promise.resolve({ numPages: 9, getPage }), destroy });
   const print = vi.fn();
-  const realAppend = document.body.appendChild.bind(document.body);
-  vi.spyOn(document.body, 'appendChild').mockImplementation(function <T extends Node>(node: T): T {
-    const appended = realAppend(node);
+  const realAppend = Node.prototype.appendChild;
+  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
+    const appended = realAppend.call(this, node) as T;
     if (node instanceof HTMLIFrameElement) Object.defineProperty(node.contentWindow!, 'print', { configurable: true, value: print });
     return appended;
   });
@@ -240,4 +247,49 @@ test('unmount and session expiry abort pending content and ignore late responses
   act(() => { for (const callback of sessionExpired) callback(); }); expect(secondSignal.aborted).toBe(true);
   await act(async () => { finishes.forEach(finish => finish(new Blob(['late']))); });
   expect(downloadClicks).toHaveLength(0); expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+
+
+test('printing waits for decoded pages and session expiry removes prepared pixels', async () => {
+  const print = vi.fn();
+  let finishDecode: () => void = () => {};
+  const decode = vi.fn(() => new Promise<void>(resolve => { finishDecode = resolve; }));
+  const realAppend = Node.prototype.appendChild;
+  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
+    const appended = realAppend.call(this, node) as T;
+    if (node instanceof HTMLIFrameElement) {
+      Object.defineProperty(Object.getPrototypeOf(node.contentDocument!.createElement('img')), 'decode', { configurable: true, value: decode });
+      Object.defineProperty(node.contentWindow!, 'print', { configurable: true, value: print });
+    }
+    return appended;
+  });
+  vi.mocked(api.getRegistrationFormContent).mockResolvedValue(new Blob(['synthetic image pixels'], { type: 'image/png' }));
+  render(<BlankFormActions form={form} revision={imageRevision} />);
+  click('Print'); await waitFor(() => expect(decode).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole('button', { name: 'Open print dialog' })).not.toBeInTheDocument();
+  expect(print).not.toHaveBeenCalled();
+  await act(async () => finishDecode());
+  expect(await screen.findByRole('button', { name: 'Open print dialog' })).toBeEnabled();
+  act(() => { for (const callback of sessionExpired) callback(); });
+  expect(document.querySelector('iframe')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Blank form ready to print' })).not.toBeInTheDocument();
+  expect(print).not.toHaveBeenCalled();
+});
+
+test('an expired session cannot expose pages whose decode finishes late', async () => {
+  let finishDecode: () => void = () => {};
+  const decode = vi.fn(() => new Promise<void>(resolve => { finishDecode = resolve; }));
+  const realAppend = Node.prototype.appendChild;
+  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
+    const appended = realAppend.call(this, node) as T;
+    if (node instanceof HTMLIFrameElement) Object.defineProperty(Object.getPrototypeOf(node.contentDocument!.createElement('img')), 'decode', { configurable: true, value: decode });
+    return appended;
+  });
+  vi.mocked(api.getRegistrationFormContent).mockResolvedValue(new Blob(['synthetic image pixels'], { type: 'image/png' }));
+  render(<BlankFormActions form={form} revision={imageRevision} />);
+  click('Print'); await waitFor(() => expect(decode).toHaveBeenCalledTimes(1));
+  act(() => { for (const callback of sessionExpired) callback(); });
+  await act(async () => finishDecode());
+  expect(document.querySelector('iframe')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Open print dialog' })).not.toBeInTheDocument();
 });

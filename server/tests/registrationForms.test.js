@@ -3,6 +3,7 @@ const { randomUUID, createHash } = require('node:crypto');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const request = require('./helpers/authenticatedRequest');
+const { compatiblePdfFixtures } = require('./helpers/pdfCompatibilityFixtures');
 const app = require('../index');
 const db = require('../services/dbAdapter');
 
@@ -100,6 +101,18 @@ async function signIn(username) {
   expect(response.status).toBe(200);
   return { cookie: response.headers['set-cookie'][0].split(';')[0], csrf: response.body.csrfToken, account: response.body.account };
 }
+
+test.each(compatiblePdfFixtures)('a compatible PDF template (%s) uploads and downloads without changing file bytes', async (_name, bytes) => {
+  const saved = await createForm({ file: { ...file(), dataBase64: bytes.toString('base64') } });
+  expect(saved.revision.byteLength).toBe(bytes.length);
+  expect(saved.revision.sha256).toBe(digest(bytes));
+  for (const query of [{}, { download: '1' }]) {
+    const response = await binary(contentUrl(saved.form.id, saved.revision.id), query);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(bytes);
+    expect(response.headers['cache-control']).toContain('no-store');
+  }
+});
 
 test.each(['pdf', 'png'])('an administrator saves a real %s template with private, byte-exact preview and download', async extension => {
   const saved = await createForm({ file: file(extension) });

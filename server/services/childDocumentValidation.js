@@ -145,16 +145,20 @@ function jpeg(buffer) {
   }
   throw invalid('The JPG file is damaged or incomplete.');
 }
+const PDF_WHITESPACE = '[\\x00\\t\\n\\f\\r ]';
+const PDF_SEPARATORS = '(?:' + PDF_WHITESPACE + '|%[^\\r\\n]*(?:\\r\\n?|\\n|$))+';
+const pdfSeparators = new RegExp('^' + PDF_SEPARATORS);
 function pdf(buffer) {
   if (!/^%PDF-(?:1\.[0-7]|2\.0)[\r\n]/.test(buffer.toString('latin1', 0, Math.min(buffer.length, 12))) ||
-    !/%%EOF[\t\r\n ]*$/.test(buffer.toString('latin1', Math.max(0, buffer.length - 1024)))) {
+    !new RegExp('%%EOF' + PDF_WHITESPACE + '*$').test(buffer.toString('latin1', Math.max(0, buffer.length - 1024)))) {
     throw invalid('The PDF file is damaged or incomplete.');
   }
   // Basic integrity checks, not a complete PDF parser or malware scan. Keep the
   // bounded cross-reference/trailer checks compatible with classic tables,
   // compressed cross-reference streams and inherited incremental trailers.
   const tailOffset = Math.max(0, buffer.length - 4096);
-  const terminal = /(?:^|[\r\n])startxref[\t\r\n ]+(\d{1,10})[\t\r\n ]+%%EOF[\t\r\n ]*$/.exec(buffer.toString('latin1', tailOffset));
+  const terminal = new RegExp('(?:^|[\\r\\n])startxref' + PDF_SEPARATORS + '(\\d{1,10})' + PDF_SEPARATORS +
+    '%%EOF' + PDF_WHITESPACE + '*$').exec(buffer.toString('latin1', tailOffset));
   if (!terminal) throw invalid('The PDF file is damaged or incomplete.');
   const finalSectionEnd = tailOffset + terminal.index;
   let position = Number(terminal[1]);
@@ -163,60 +167,153 @@ function pdf(buffer) {
     if (!Number.isSafeInteger(position) || position < 9 || position >= finalSectionEnd || visited.has(position)) break;
     visited.add(position);
     const section = buffer.toString('latin1', position, Math.min(finalSectionEnd, position + 1024 * 1024));
+    // startxref must address the actual keyword/object, not nearby whitespace.
+    if (!/^(?:xref|[1-9]\d{0,9})(?=[\x00\t\n\f\r %])/.test(section)) break;
+    const reader = { value: section, index: 0 };
+    const first = pdfToken(reader);
     let dictionary;
-    if (/^xref[\t\r\n ]/.test(section)) {
-      if (!/^xref[\t\r\n ]+\d+[\t ]+[1-9]\d*[\t\r\n ]+\d{10}[\t ]+\d{5}[\t ]+[nf](?:[\t\r\n ]|$)/.test(section)) break;
-      const trailer = /\btrailer[\t\r\n ]*(?=<<)/.exec(section);
-      if (!trailer) break;
-      dictionary = pdfDictionary(section.slice(trailer.index + trailer[0].length));
+    if (first?.type === 'atom' && first.value === 'xref') {
+      let sections = 0;
+      while (reader.index < section.length) {
+        const start = pdfToken(reader);
+        if (start?.type === 'atom' && start.value === 'trailer') {
+          if (sections) dictionary = pdfDictionary(section.slice(reader.index));
+          break;
+        }
+        const count = pdfInteger(pdfToken(reader), 1);
+        if (pdfInteger(start, 0) === null || count === null || count > (section.length - reader.index) / 18) break;
+        let valid = true;
+        for (let entry = 0; entry < count; entry++) {
+          const offset = pdfToken(reader); const generation = pdfToken(reader); const flag = pdfToken(reader);
+          if (offset?.type !== 'atom' || !/^\d{10}$/.test(offset.value) || generation?.type !== 'atom' ||
+            !/^\d{5}$/.test(generation.value) || Number(generation.value) > 65535 || flag?.type !== 'atom' || !/^[nf]$/.test(flag.value)) {
+            valid = false; break;
+          }
+        }
+        if (!valid) break;
+        sections++;
+      }
     } else {
-      const header = /^[1-9]\d{0,9}[\t\r\n ]+\d{1,5}[\t\r\n ]+obj\b[\t\r\n ]*/.exec(section);
-      if (!header) break;
-      const body = section.slice(header[0].length);
+      const generation = pdfToken(reader); const object = pdfToken(reader);
+      if (pdfInteger(first, 1) === null || pdfInteger(generation, 0, 65535) === null || object?.type !== 'atom' || object.value !== 'obj') break;
+      const body = section.slice(reader.index);
       dictionary = pdfDictionary(body);
-      if (!dictionary || !/\/Type[\t\r\n ]*\/XRef\b/.test(dictionary.text) ||
-        !/\/W[\t\r\n ]*\[[\t\r\n ]*\d+[\t\r\n ]+\d+[\t\r\n ]+\d+[\t\r\n ]*\]/.test(dictionary.text) ||
-        !/\/Length[\t\r\n ]+[1-9]\d*\b/.test(dictionary.text)) break;
-      const afterDictionary = body.slice(dictionary.length);
-      if (!/^[\t\r\n ]*stream(?:\r\n|\n|\r)/.test(afterDictionary) || !/endstream[\t\r\n ]+endobj\b/.test(afterDictionary)) break;
+      if (!dictionary || dictionary.entries.get('Type')?.type !== 'name' || dictionary.entries.get('Type').value !== 'XRef') break;
+      const widths = dictionary.entries.get('W'); const length = dictionary.entries.get('Length');
+      if (widths?.type !== 'array' || widths.values.length !== 3 || widths.values.some(value => pdfInteger(value, 0) === null) ||
+        (pdfInteger(length, 1) === null && !(length?.type === 'reference' && pdfInteger({ type: 'atom', value: length.object }, 1) !== null))) break;
+      const afterDictionary = body.slice(dictionary.length).replace(pdfSeparators, '');
+      if (!/^stream(?:\r\n|\n|\r)/.test(afterDictionary) ||
+        !new RegExp('endstream' + PDF_SEPARATORS + 'endobj(?=' + PDF_WHITESPACE + '|[()<>\\[\\]/%]|$)').test(afterDictionary)) break;
     }
     if (!dictionary) break;
-    const size = /\/Size[\t\r\n ]+([1-9]\d*)\b/.exec(dictionary.text);
-    if (!size || !Number.isSafeInteger(Number(size[1]))) break;
-    const root = /\/Root[\t\r\n ]+([1-9]\d*)[\t\r\n ]+(\d{1,5})[\t\r\n ]+R\b/.exec(dictionary.text);
-    if (root && Number(root[1]) < Number(size[1]) && Number(root[2]) <= 65535) return;
-    const previous = /\/Prev[\t\r\n ]+(\d{1,10})\b/.exec(dictionary.text);
-    if (!previous || Number(previous[1]) >= position) break;
-    position = Number(previous[1]);
+    const size = pdfInteger(dictionary.entries.get('Size'), 1);
+    if (size === null) break;
+    const root = dictionary.entries.get('Root');
+    if (root?.type === 'reference' && pdfInteger({ type: 'atom', value: root.object }, 1, size - 1) !== null &&
+      pdfInteger({ type: 'atom', value: root.generation }, 0, 65535) !== null) return;
+    const previous = pdfInteger(dictionary.entries.get('Prev'), 0);
+    if (previous === null || previous >= position) break;
+    position = previous;
   }
   throw invalid('The PDF file is damaged or incomplete.');
 }
-function pdfDictionary(value) {
-  // Track nested dictionaries and ignore comments/literal strings when finding
-  // the closing delimiter. Bound dictionary scans independently of file size.
-  value = value.slice(0, 65536);
-  if (!value.startsWith('<<')) return null;
-  let nesting = 0; let string = 0; let comment = false; let filtered = '';
-  for (let index = 0; index < value.length; index++) {
-    const char = value[index]; const next = value[index + 1];
-    if (comment) { if (char === '\r' || char === '\n') { comment = false; filtered += ' '; } continue; }
-    if (string) {
-      if (char === '\\') { index++; continue; }
-      if (char === '(') string++;
-      else if (char === ')') string--;
+function pdfInteger(token, minimum, maximum = Number.MAX_SAFE_INTEGER) {
+  if (!token || !['atom', 'number'].includes(token.type) || !/^\d+$/.test(token.value)) return null;
+  const number = Number(token.value);
+  return Number.isSafeInteger(number) && number >= minimum && number <= maximum ? number : null;
+}
+function pdfToken(reader) {
+  const value = reader.value;
+  while (reader.index < value.length) {
+    const char = value[reader.index];
+    if (/[\x00\t\n\f\r ]/.test(char)) { reader.index++; continue; }
+    if (char === '%') {
+      while (reader.index < value.length && !/[\r\n]/.test(value[reader.index])) reader.index++;
       continue;
     }
-    if (char === '%') { comment = true; continue; }
-    if (char === '(') { string = 1; filtered += ' '; continue; }
-    if (char === '<' && next === '<') { nesting++; filtered += '<<'; index++; continue; }
-    if (char === '>' && next === '>') {
-      nesting--; filtered += '>>'; index++;
-      if (nesting === 0) return { text: filtered, length: index + 1 };
-      continue;
+    break;
+  }
+  if (reader.index >= value.length) return null;
+  const start = reader.index++; const char = value[start];
+  if ((char === '<' || char === '>') && value[reader.index] === char) {
+    reader.index++; return { type: 'delimiter', value: char + char };
+  }
+  if (char === '(') {
+    let nesting = 1;
+    while (reader.index < value.length) {
+      const next = value[reader.index++];
+      if (next === '\\') { if (reader.index >= value.length) return null; reader.index++; }
+      else if (next === '(') nesting++;
+      else if (next === ')' && --nesting === 0) return { type: 'string' };
     }
-    filtered += char;
+    return null;
+  }
+  if (char === '<') {
+    while (reader.index < value.length) {
+      const next = value[reader.index++];
+      if (next === '>') return { type: 'string' };
+      if (!/[0-9a-fA-F\x00\t\n\f\r ]/.test(next)) return null;
+    }
+    return null;
+  }
+  if (char === '[' || char === ']') return { type: 'delimiter', value: char };
+  if (char !== '/' && /[)>%{}]/.test(char)) return null;
+  while (reader.index < value.length && !/[\x00\t\n\f\r ()<>\[\]/%{}]/.test(value[reader.index])) reader.index++;
+  if (char === '/') {
+    const name = value.slice(start + 1, reader.index);
+    if (/#(?![0-9a-fA-F]{2})/.test(name)) return null;
+    return { type: 'name', value: name.replace(/#([0-9a-fA-F]{2})/g, (_, code) => String.fromCharCode(parseInt(code, 16))) };
+  }
+  return { type: 'atom', value: value.slice(start, reader.index) };
+}
+function pdfValue(reader, token, depth) {
+  if (!token || depth > 32) return null;
+  if (token.type === 'name' || token.type === 'string') return token;
+  if (token.type === 'delimiter' && token.value === '<<') return pdfEntries(reader, depth + 1);
+  if (token.type === 'delimiter' && token.value === '[') {
+    const values = [];
+    while (reader.index < reader.value.length) {
+      const item = pdfToken(reader);
+      if (item?.type === 'delimiter' && item.value === ']') return { type: 'array', values };
+      const parsed = pdfValue(reader, item, depth + 1);
+      if (!parsed) return null;
+      values.push(parsed);
+    }
+    return null;
+  }
+  if (token.type !== 'atom') return null;
+  if (/^\d+$/.test(token.value)) {
+    const position = reader.index; const generation = pdfToken(reader); const reference = pdfToken(reader);
+    if (generation?.type === 'atom' && /^\d+$/.test(generation.value) && reference?.type === 'atom' && reference.value === 'R') {
+      return { type: 'reference', object: token.value, generation: generation.value };
+    }
+    reader.index = position;
+  }
+  if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(token.value)) return { type: 'number', value: token.value };
+  return /^(?:true|false|null)$/.test(token.value) ? token : null;
+}
+function pdfEntries(reader, depth) {
+  const entries = new Map();
+  while (reader.index < reader.value.length) {
+    const key = pdfToken(reader);
+    if (key?.type === 'delimiter' && key.value === '>>') return { type: 'dictionary', entries };
+    if (key?.type !== 'name') return null;
+    const value = pdfValue(reader, pdfToken(reader), depth);
+    if (!value) return null;
+    entries.set(key.value, value);
   }
   return null;
+}
+function pdfDictionary(value) {
+  // Read only the bounded dictionary, respecting names, comments, literal/hex
+  // strings and nested values. A nested or quoted /Root cannot supply the
+  // trailer's top-level catalog reference.
+  const reader = { value: value.slice(0, 65536), index: 0 };
+  const start = pdfToken(reader);
+  if (start?.type !== 'delimiter' || start.value !== '<<') return null;
+  const dictionary = pdfEntries(reader, 0);
+  return dictionary ? { entries: dictionary.entries, length: reader.index } : null;
 }
 function file(payload) {
   object(payload, ['name', 'contentType', 'dataBase64'], 'file');
