@@ -9,6 +9,7 @@ const registrationForms = require('../../services/registrationFormsService');
 const childDocuments = require('../../services/childDocumentsService');
 const { PNG } = require('pngjs');
 const { createHash, randomUUID } = require('node:crypto');
+const { saveStaffDocuments, staffDocumentSnapshot } = require('../helpers/staffDocumentStorage');
 let credentials;
 
 async function api(method, url, body, status = 200) {
@@ -134,6 +135,7 @@ async function documentSnapshot() {
         await api('put', `/api/menu/plans/${weekStart}`, { previewToken: calculated.previewToken });
       }
       await saveDocuments();
+      await saveStaffDocuments(await db.findAccount(identity.username));
     }
     const meals = await api('get', '/api/meals');
     const breakfast = meals.find((meal) => meal.type === 'breakfast');
@@ -146,6 +148,7 @@ async function documentSnapshot() {
       datedPlans: [await api('get', '/api/menu/plans/2026-09-07'), await api('get', '/api/menu/plans/2026-09-14')],
       datedShopping: await api('get', '/api/shelf/final?weekStart=2026-09-07'),
       childDocuments: await documentSnapshot(),
+      staffDocuments: await staffDocumentSnapshot(),
     };
     await db.close();
     process.send({ snapshot }, () => process.disconnect());

@@ -5,22 +5,25 @@ const legacyRequired = ['Meals', 'Ingredients', 'MealIngredients', 'WeeklyPlans'
   'Attendances', 'StaffMembers', 'InventoryGroups', 'InventoryItems', 'InventoryMovements', 'PurchaseReceipts',
   'Activities', 'ScheduleEntries', 'ScheduleWeeks', 'AuditEvents', 'SequelizeMeta'];
 const documentRequired = [...legacyRequired, 'ChildDocuments', 'ChildDocumentRevisions'];
-const required = [...documentRequired, 'RegistrationForms', 'RegistrationFormRevisions'];
+const registrationRequired = [...documentRequired, 'RegistrationForms', 'RegistrationFormRevisions'];
+const required = [...registrationRequired, 'StaffDocuments', 'StaffDocumentRevisions', 'StaffDocumentSettings'];
 function requiredForFormat(version) {
   if (version === 1) return legacyRequired;
   if (version === 2) return documentRequired;
-  if (version === 3) return required;
+  if (version === 3) return registrationRequired;
+  if (version === 4) return required;
   throw new Error('Unsupported or incomplete backup manifest.');
 }
 const coverage = {
   meals: ['Meals', 'Ingredients', 'MealIngredients'], plans: ['WeeklyPlans'], accounts: ['Accounts'],
   children: ['Children'], documents: ['ChildDocuments', 'ChildDocumentRevisions'], registrationForms: ['RegistrationForms', 'RegistrationFormRevisions'],
+  staffDocuments: ['StaffDocuments', 'StaffDocumentRevisions'], staffDocumentSettings: ['StaffDocumentSettings'],
   attendance: ['Attendances'], inventory: ['InventoryItems', 'InventoryMovements'],
   purchases: ['PurchaseReceipts'], activities: ['Activities', 'ScheduleEntries', 'ScheduleWeeks'], audits: ['AuditEvents'],
 };
 const safeName = (name) => typeof name === 'string' && /^backup-[0-9TZ-]+-[a-f0-9]{12}$/.test(name);
 function validateManifest(value) {
-  if (![1, 2, 3].includes(value?.format) || !safeName(value.name) || !/^[a-f0-9]{40}$/.test(value.release || '') ||
+  if (![1, 2, 3, 4].includes(value?.format) || !safeName(value.name) || !/^[a-f0-9]{40}$/.test(value.release || '') ||
       !/^[a-f0-9]{64}$/.test(value.sha256 || '') || value.postgresMajor !== 17 || !Array.isArray(value.tables)) {
     throw new Error('Unsupported or incomplete backup manifest.');
   }

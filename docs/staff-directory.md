@@ -63,7 +63,7 @@ Migration `008-staff-directory` adds `StaffMembers`, with a foreign key to Rooms
 
 Staff mutations share the room transaction lock with room archival and record attributed `staff.create` / `staff.update` audit events. An audit-write failure rolls back the mutation.
 
-This story does not add staff attendance, shift schedules, payroll, employment documents or account linking. It does not alter saved meal plans or their manually entered staff counts. A current staff roster is not a count of staff eating a particular meal. Other dashboard metrics remain under SKAO-28.
+SKAO-55 extends the directory with [employee documents and expiration reminders](employee-documents.md). Staff attendance/time-clock and payroll are planned separately in SKAO-106. Staff records do not automatically link to login accounts. Saved meal plans and their manually entered staff counts are unchanged; a staff roster is not a count of staff eating a particular meal. Other dashboard metrics remain under SKAO-28.
 
 Regression coverage is provided in `server/tests/staff.test.js`, `server/tests/staff.postgres.test.js`, `client/src/pages/Staff.test.tsx` and `client/tests/browser/staff-directory.spec.ts`. Use the shared [backup, migration and automated checks procedure](update-checks.md).
 

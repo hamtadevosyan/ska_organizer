@@ -37,7 +37,7 @@ async function pg(command, args, name = database) {
     child.once('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(command + ' failed. Source data and existing databases were preserved.')); });
   });
 }
-async function fingerprint(client, manifestFormat = 3) {
+async function fingerprint(client, manifestFormat = 4) {
   const rows = (await client.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename COLLATE \"C\"")).rows;
   const names = rows.map((row) => row.tablename);
   if (format.requiredForFormat(manifestFormat).some((name) => !names.includes(name))) throw new Error('Migrate the organizer database before creating a pilot backup.');
@@ -49,7 +49,8 @@ async function fingerprint(client, manifestFormat = 3) {
     // File rows can contain several megabytes of BYTEA; use the stable primary
     // key instead of sorting full file contents, and hold just one row at a time.
     const fileRows = (name === 'ChildDocumentRevisions' && manifestFormat >= 2) ||
-      (name === 'RegistrationFormRevisions' && manifestFormat >= 3);
+      (name === 'RegistrationFormRevisions' && manifestFormat >= 3) ||
+      (name === 'StaffDocumentRevisions' && manifestFormat >= 4);
     const order = fileRows ? 't."id" COLLATE "C"' : 'to_jsonb(t)::text COLLATE "C"';
     await client.query(`DECLARE pilot_rows NO SCROLL CURSOR FOR SELECT to_jsonb(t)::text AS value FROM public.${quote(name)} t ORDER BY ${order}`);
     const digest = format.rowDigest();
@@ -103,7 +104,7 @@ async function backup() {
     await pg('pg_restore', ['--list', dump]);
     const tables = await fingerprint(client);
     await client.query('COMMIT');
-    const manifest = { format: 3, name, release, createdAt: new Date().toISOString(), postgresMajor: 17,
+    const manifest = { format: 4, name, release, createdAt: new Date().toISOString(), postgresMajor: 17,
       sourceDatabase: database, sha256: await sha256(dump), tables, coverage: format.coverageResult(tables) };
     await fs.chmod(dump, 0o600);
     await writeJson(path.join(directory, 'manifest.json'), manifest);

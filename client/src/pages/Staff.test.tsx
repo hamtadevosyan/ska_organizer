@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import axios from 'axios';
+import { MemoryRouter } from 'react-router-dom';
 import Staff from './Staff';
 import { SignedIn } from '../tests/authFixture';
 import { testAccount } from '../tests/authAccount';
@@ -16,7 +17,7 @@ const person: StaffMember = { id: 'staff-one', name: 'Synthetic Teacher', role: 
 let people: StaffMember[];
 let rooms: Room[];
 const response = (data: unknown) => ({ data: { data } });
-const renderStaff = () => render(<SignedIn><Staff /></SignedIn>);
+const renderStaff = () => render(<MemoryRouter><SignedIn><Staff /></SignedIn></MemoryRouter>);
 const edit = async () => fireEvent.click(await screen.findByRole('button', { name: 'Edit Synthetic Teacher' }));
 
 beforeEach(() => {
@@ -26,6 +27,7 @@ beforeEach(() => {
   // Route-based mocks keep room lookups from consuming staff responses.
   vi.mocked(axios.get).mockImplementation(async (url, config) => {
     if (url.endsWith('/rooms')) return response(rooms);
+    if (url.endsWith('/staff-compliance')) return { data: { items: [], totals: {}, warningDays: 40, today: '2026-10-09', timeZone: 'America/Los_Angeles', configured: true, requiredTotal: 1, activeStaffTotal: people.length } };
     if (url.endsWith('/staff')) {
       const params = config?.params as { active: string; q?: string; roomId?: string; page: number; pageSize: number };
       const matches = people.filter((item) => (params.active === 'all' || item.active === (params.active === 'true')) &&
@@ -151,11 +153,13 @@ test('a conflict retains typed edits until the user explicitly reloads the lates
 });
 
 test.each(['editor', 'viewer'] as const)('%s can read the directory without staff management controls', async (role) => {
-  render(<SignedIn account={{ ...testAccount, role }}><Staff /></SignedIn>);
+  render(<MemoryRouter><SignedIn account={{ ...testAccount, role }}><Staff /></SignedIn></MemoryRouter>);
   await screen.findByRole('rowheader', { name: person.name });
   expect(screen.queryByRole('button', { name: 'Add staff' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^Edit / })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^Deactivate / })).not.toBeInTheDocument();
+  if (role === 'editor') expect(screen.getByRole('button', { name: 'Documents & training for Synthetic Teacher' })).toBeInTheDocument();
+  else expect(screen.queryByRole('button', { name: 'Documents & training for Synthetic Teacher' })).not.toBeInTheDocument();
 });
 
 test('a late list response cannot replace the selected status filter results', async () => {
@@ -202,4 +206,29 @@ test('failed directory loads expose retry controls and recover to actual counts'
   fireEvent.click(screen.getByRole('button', { name: 'Refresh staff' }));
   await screen.findByRole('rowheader', { name: person.name });
   expect(screen.getByText(/1 active staff across all rooms/)).toBeInTheDocument();
+});
+
+test('facility reminder links open the selected profile while staying on the Staff page', async () => {
+  people.push({ ...person, id: 'staff-two', name: 'Another Teacher', roomId: null, room: null });
+  const get = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((url, config) => {
+    if (url.endsWith('/staff-compliance')) return Promise.resolve({ data: { items: people.map(item => ({ staffId: item.id, employeeName: item.name, requirementId: 'training', requirementTitle: 'Required training', status: 'missing', expiresOn: null, daysRemaining: null })), totals: { missing: 2 }, warningDays: 40, today: '2026-10-09', timeZone: 'America/Los_Angeles', configured: true, requiredTotal: 1, activeStaffTotal: 2 } });
+    if (url.endsWith('/staff-compliance/settings')) return Promise.resolve({ data: { warningDays: 40, version: 1 } });
+    if (url.endsWith('/documents/checklist')) return Promise.resolve({ data: { items: [], requiredTotal: 0, requiredComplete: 0, complete: false, percentage: 0 } });
+    if (url.endsWith('/documents')) return Promise.resolve({ data: { items: [], total: 0 } });
+    return get(url, config);
+  });
+  renderStaff();
+  fireEvent.click(await screen.findByRole('link', { name: 'Synthetic Teacher · Required training' }));
+  await screen.findByRole('heading', { name: 'Synthetic Teacher · Documents & training' });
+  fireEvent.click(screen.getByRole('link', { name: 'Another Teacher · Required training' }));
+  await screen.findByRole('heading', { name: 'Another Teacher · Documents & training' });
+  expect(screen.queryByRole('heading', { name: 'Synthetic Teacher · Documents & training' })).not.toBeInTheDocument();
+});
+
+test('a viewer cannot open document details through a Staff URL parameter', async () => {
+  render(<MemoryRouter initialEntries={['/staff?employee=staff-one']}><SignedIn account={{ ...testAccount, role: 'viewer' }}><Staff /></SignedIn></MemoryRouter>);
+  await screen.findByRole('rowheader', { name: person.name });
+  expect(screen.queryByRole('region', { name: 'Staff documents and training' })).not.toBeInTheDocument();
+  expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.includes('/documents') || url.endsWith('/staff-one'))).toBe(false);
 });

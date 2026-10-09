@@ -1,14 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
+import { useLocation } from 'react-router-dom';
 import { Plus, Users } from 'lucide-react';
 import { useAuth } from '../auth/context';
-import { authError } from '../auth/transport';
+import { authError, onSessionExpired } from '../auth/transport';
 import { getStaff, saveStaff } from '../api/staff';
 import type { StaffDetails, StaffFilters, StaffMember } from '../api/staff';
 import { useRooms } from '../components/rooms/useRooms';
 import { RoomSelect } from '../components/rooms/RoomSelect';
 import { useStaff } from '../components/staff/useStaff';
+import { StaffDocuments } from '../components/staff/StaffDocuments';
+import { StaffComplianceAlerts } from '../components/staff/StaffComplianceAlerts';
+import type { DocumentWork } from '../api/staffDocuments';
 
 const empty: StaffDetails = { name: '', role: '', active: true, roomId: null };
 const initialFilters: StaffFilters = { q: '', active: 'true', roomId: '', page: 1 };
@@ -17,7 +21,9 @@ const buttonClass = 'rounded-lg border bg-white px-4 py-2 disabled:opacity-50';
 
 export default function Staff() {
   const { account } = useAuth();
+  const location = useLocation();
   const admin = account?.role === 'admin';
+  const canSeeCompliance = admin || account?.role === 'editor';
   const roomState = useRooms();
   const [filters, setFilters] = useState(initialFilters);
   const [search, setSearch] = useState('');
@@ -31,6 +37,9 @@ export default function Staff() {
   const [fields, setFields] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState(false);
   const [message, setMessage] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState<StaffMember | null>(null);
+  const [documentWork, setDocumentWork] = useState<DocumentWork>({ dirty: false, busy: false });
+  const reportDocumentWork = useCallback((work: DocumentWork) => setDocumentWork(work), []);
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   useEffect(() => {
@@ -38,6 +47,19 @@ export default function Staff() {
       setFilters((current) => ({ ...current, page: pages }));
     }
   }, [loading, data, filters.page, pages]);
+  useEffect(() => {
+    const employeeId = new URLSearchParams(location.search).get('employee');
+    if (!canSeeCompliance || !employeeId) return;
+    let cancelled = false;
+    void getStaff(employeeId).then(person => { if (!cancelled) setSelectedEmployee(person); })
+      .catch(failure => { if (!cancelled) setError(authError(failure, 'Could not open this staff member. Choose them in the directory.')); });
+    return () => { cancelled = true; };
+  }, [canSeeCompliance, location.search]);
+  useEffect(() => onSessionExpired(() => { setSelectedEmployee(null); setDocumentWork({ dirty: false, busy: false }); }), []);
+  function openDocuments(person: StaffMember | null) {
+    if (documentWork.busy || documentWork.dirty && !window.confirm('Discard the unsaved staff document changes?')) return;
+    setSelectedEmployee(person); setDocumentWork({ dirty: false, busy: false });
+  }
 
   function close() { setFormOpen(false); setEditing(null); setError(''); setFields({}); setConflict(false); }
   function open(person: StaffMember | null) {
@@ -118,6 +140,11 @@ export default function Staff() {
     {roomState.error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{roomState.error} Use Refresh staff to reload room choices.</p>}
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{error}</p>}
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-800">{message}</p>}
+    <StaffComplianceAlerts expanded />
+    {canSeeCompliance && selectedEmployee && <div className="min-w-0 space-y-3">
+      <div className="flex justify-end"><button type="button" disabled={documentWork.busy} onClick={() => openDocuments(null)} className="ska-button">Close staff documents</button></div>
+      <StaffDocuments staffId={selectedEmployee.id} employeeName={selectedEmployee.name} onWorkChange={reportDocumentWork} />
+    </div>}
 
     {admin && formOpen && <form aria-label="Staff details" onSubmit={(event) => void submit(event)} noValidate className="rounded-2xl border bg-white p-6 shadow-sm">
       <fieldset disabled={busy} className="space-y-4"><h2 className="text-xl font-bold">{editing ? 'Edit staff' : 'Create staff record'}</h2>
@@ -165,13 +192,14 @@ export default function Staff() {
         <p className="mt-2 text-slate-600">Try All statuses or reset the filters.{admin ? ' Use Add staff to create a record.' : ''}</p>
       </div> : <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
         <table role="table" className="ska-record-table w-full text-left"><caption className="sr-only">Staff directory</caption>
-          <thead role="rowgroup" className="bg-slate-50 text-sm text-slate-600"><tr role="row"><th role="columnheader" scope="col" className="p-4">Name</th><th role="columnheader" scope="col" className="p-4">Job role</th><th role="columnheader" scope="col" className="p-4">Room</th><th role="columnheader" scope="col" className="p-4">Status</th>{admin && <th role="columnheader" scope="col" className="p-4">Actions</th>}</tr></thead>
+          <thead role="rowgroup" className="bg-slate-50 text-sm text-slate-600"><tr role="row"><th role="columnheader" scope="col" className="p-4">Name</th><th role="columnheader" scope="col" className="p-4">Job role</th><th role="columnheader" scope="col" className="p-4">Room</th><th role="columnheader" scope="col" className="p-4">Status</th>{canSeeCompliance && <th role="columnheader" scope="col" className="p-4">Actions</th>}</tr></thead>
           <tbody role="rowgroup">{data.items.map((person) => <tr role="row" key={person.id} className="border-t">
             <th role="rowheader" scope="row" className="p-4 font-semibold">{person.name}</th><td role="cell" data-label="Job role" className="p-4">{person.role}</td>
             <td role="cell" data-label="Room" className="p-4">{person.room ? person.room.name + (person.room.active ? '' : ' (archived)') : person.roomId ? 'Room unavailable' : 'Unassigned'}</td>
             <td role="cell" data-label="Status" className="p-4"><span className={'rounded-full px-3 py-1 text-xs font-semibold ' + (person.active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600')}>{person.active ? 'Active' : 'Inactive'}</span></td>
-            {admin && <td role="cell" className="ska-record-actions p-4"><div className="ska-table-actions"><button disabled={busy || formOpen} aria-label={'Edit ' + person.name} onClick={() => open(person)} className="font-semibold text-emerald-800 disabled:opacity-50">Edit</button>
-              {person.active && <button disabled={busy || formOpen} aria-label={'Deactivate ' + person.name} onClick={() => void deactivate(person)} className="text-slate-600 disabled:opacity-50">Deactivate</button>}</div></td>}
+            {canSeeCompliance && <td role="cell" className="ska-record-actions p-4"><div className="ska-table-actions">{admin && <><button disabled={busy || formOpen} aria-label={'Edit ' + person.name} onClick={() => open(person)} className="font-semibold text-emerald-800 disabled:opacity-50">Edit</button>
+              {person.active && <button disabled={busy || formOpen} aria-label={'Deactivate ' + person.name} onClick={() => void deactivate(person)} className="text-slate-600 disabled:opacity-50">Deactivate</button>}</>}
+              <button type="button" disabled={busy || documentWork.busy} aria-label={'Documents & training for ' + person.name} onClick={() => openDocuments(person)} className="font-semibold text-violet-800 disabled:opacity-50">Documents &amp; training</button></div></td>}
           </tr>)}</tbody>
         </table>
       </div>}

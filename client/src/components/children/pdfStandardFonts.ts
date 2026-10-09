@@ -26,12 +26,18 @@ const fonts = new Map([
 // path, remote resource or authenticated endpoint reaches fetch.
 export class LocalPdfFontFactory {
   private cache = new Map<string, Promise<Uint8Array>>();
+  private signal?: AbortSignal;
+  // PDF.js constructs this factory with resource URLs. Ignore those options;
+  // only our local analysis wrapper supplies an actual cancellation signal.
+  constructor(options?: unknown) {
+    this.signal = typeof AbortSignal !== 'undefined' && options instanceof AbortSignal ? options : undefined;
+  }
   async fetch({ kind, filename }: { kind: string; filename: string }): Promise<Uint8Array> {
     const url = kind === 'standardFontDataUrl' && fonts.get(filename);
     if (!url || new URL(url, window.location.href).origin !== window.location.origin) throw new Error('Unsupported PDF font resource.');
     let result = this.cache.get(filename);
     if (!result) {
-      result = globalThis.fetch(url, { mode: 'same-origin', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }).then(async response => {
+      result = globalThis.fetch(url, { mode: 'same-origin', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', ...(this.signal ? { signal: this.signal } : {}) }).then(async response => {
         if (!response.ok) throw new Error('PDF font is unavailable.');
         const bytes = new Uint8Array(await response.arrayBuffer());
         if (!bytes.length || bytes.length > 256 * 1024) throw new Error('Invalid PDF font resource.');

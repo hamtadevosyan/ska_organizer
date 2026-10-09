@@ -7,10 +7,11 @@ function manifest(version) {
     tables: format.requiredForFormat(version).map((name) => ({ name, count: 1, columns: [], sha256: 'c'.repeat(64) })) };
 }
 
-test('current backups require blank forms and file revisions while older backups stay restorable', () => {
+test('current backups require staff files and warning settings while older backups stay restorable', () => {
   expect(() => format.validateManifest(manifest(1))).not.toThrow();
   expect(() => format.validateManifest(manifest(2))).not.toThrow();
   expect(() => format.validateManifest(manifest(3))).not.toThrow();
+  expect(() => format.validateManifest(manifest(4))).not.toThrow();
   expect(manifest(1).tables.map(({ name }) => name)).not.toContain('ChildDocuments');
   expect(manifest(2).tables.map(({ name }) => name)).not.toContain('RegistrationForms');
   for (const missingName of ['ChildDocuments', 'ChildDocumentRevisions', 'RegistrationForms', 'RegistrationFormRevisions']) {
@@ -23,7 +24,15 @@ test('current backups require blank forms and file revisions while older backups
     incomplete.tables = incomplete.tables.filter(({ name }) => name !== missingName);
     expect(() => format.validateManifest(incomplete)).toThrow('missing required');
   }
-  expect(() => format.validateManifest({ ...manifest(3), format: 4 })).toThrow('Unsupported');
+  for (const missingName of ['StaffDocuments', 'StaffDocumentRevisions', 'StaffDocumentSettings']) {
+    const incomplete = manifest(4);
+    incomplete.tables = incomplete.tables.filter(({ name }) => name !== missingName);
+    expect(() => format.validateManifest(incomplete)).toThrow('missing required');
+  }
+  expect(() => format.validateManifest({ ...manifest(4), format: 5 })).toThrow('Unsupported');
+  expect(format.coverageResult(manifest(3).tables).staffDocuments).toBe(false);
+  expect(format.coverageResult(manifest(4).tables).staffDocuments).toBe(true);
+  expect(format.coverageResult(manifest(4).tables).staffDocumentSettings).toBe(true);
   expect(format.coverageResult(manifest(1).tables).documents).toBe(false);
   expect(format.coverageResult(manifest(2).tables).documents).toBe(true);
   expect(format.coverageResult(manifest(2).tables.map((table) => table.name === 'ChildDocumentRevisions'
@@ -34,7 +43,7 @@ test('current backups require blank forms and file revisions while older backups
     ? { ...table, count: 0 } : table)).registrationForms).toBe(false);
 });
 
-const fileTables = ['ChildDocumentRevisions', 'RegistrationFormRevisions'];
+const fileTables = ['ChildDocumentRevisions', 'RegistrationFormRevisions', 'StaffDocumentRevisions'];
 function fixtureClient(version, extraTables = []) {
   let table; let finished;
   return { query: jest.fn(async (sql, values) => {
@@ -51,8 +60,8 @@ function fixtureClient(version, extraTables = []) {
   }) };
 }
 
-test('both file fingerprints read one revision at a time and hash the complete binary content', async () => {
-  const client = fixtureClient(3);
+test('all file fingerprints read one revision at a time and hash the complete binary content', async () => {
+  const client = fixtureClient(4);
   const result = await fingerprint(client);
   const commands = client.query.mock.calls.map(([sql]) => sql);
   for (const name of fileTables) {
@@ -68,8 +77,18 @@ test('both file fingerprints read one revision at a time and hash the complete b
   }
 });
 
-test('current backup creation rejects a database without migrated blank form tables', async () => {
+test('current backup creation rejects a database without migrated staff document tables', async () => {
   await expect(fingerprint(fixtureClient(2))).rejects.toThrow('Migrate the organizer database');
+  await expect(fingerprint(fixtureClient(3))).rejects.toThrow('Migrate the organizer database');
+});
+
+test('format three verification preserves its old file ordering even if staff tables are present', async () => {
+  const client = fixtureClient(3, ['StaffDocuments', 'StaffDocumentRevisions', 'StaffDocumentSettings']);
+  const result = await fingerprint(client, 3);
+  expect(result).toHaveLength(format.requiredForFormat(3).length + 3);
+  const commands = client.query.mock.calls.map(([sql]) => sql);
+  expect(commands.find((sql) => sql.includes('FROM public."StaffDocumentRevisions"'))).toContain('ORDER BY to_jsonb(t)::text COLLATE "C"');
+  expect(commands.find((sql) => sql.includes('FROM public."RegistrationFormRevisions"'))).toContain('ORDER BY t."id" COLLATE "C"');
 });
 
 test('format two restores retain document ordering and do not require blank form tables', async () => {

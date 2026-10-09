@@ -86,7 +86,12 @@ test('API, credentials, writes, other origins and unknown/query asset URLs never
   await sw.lifecycle('install');
   const before = sw.reads(), fetches = sw.calls.length;
   const paths = ['/api', '/api/auth/session', '/api/children', '/api/attendance/daily?room=private-id',
-    '/api/staff', '/api/reports/export.csv', '/api/inventory', '/api/health',
+    '/api/staff', '/api/staff/synthetic-employee/documents', '/api/staff/synthetic-employee/documents/checklist',
+    '/api/staff/synthetic-employee/documents/synthetic-document',
+    '/api/staff/synthetic-employee/documents/synthetic-document/revisions/synthetic-revision/content',
+    '/api/staff/synthetic-employee/documents/synthetic-document/revisions/synthetic-revision/content?download=1',
+    '/api/staff-compliance', '/api/staff-compliance?staffId=synthetic-employee', '/api/staff-compliance/settings',
+    '/api/reports/export.csv', '/api/inventory', '/api/health',
     '/api/ready', '/assets/private.json', 'https://elsewhere.test/assets/private.js', manifest[0].url + '?private=value'];
   for (const path of paths) {
     assert.equal(sw.dispatch(path).response, undefined, path);

@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { authenticatedApi } from './auth-helpers';
 
+// These form checks do not sign out or revoke sessions. Reuse the valid
+// fixture session and reserve disposable logins for authentication scenarios.
 for (const width of [390, 1280]) {
   test(`room create and edit validate ages at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 850 });
-    await authenticatedApi(page, { freshSession: true });
+    await authenticatedApi(page);
     await page.goto('/rooms');
     await page.getByRole('button', { name: 'Add room', exact: true }).click();
     const name = 'Synthetic age check ' + width + '-' + Date.now();
