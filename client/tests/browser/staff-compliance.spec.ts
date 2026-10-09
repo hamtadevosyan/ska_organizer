@@ -197,9 +197,19 @@ test('editors see minimal renewal reminders while viewers and both roles cannot 
         const headers = { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken };
         const privateRequests: string[] = [];
         other.on('request', request => { if (/\/api\/(?:registration-forms|staff\/[^/]+\/documents)/.test(new URL(request.url()).pathname)) privateRequests.push(request.url()); });
-        await other.goto('/staff');
+        await other.goto('/dashboard');
+        await other.getByRole('navigation', { name: 'Mobile navigation', exact: true }).getByRole('button', { name: 'More', exact: true }).click();
+        await other.getByRole('dialog', { name: 'More', exact: true }).getByRole('link', { name: 'Staff', exact: true }).click();
         await other.getByRole('searchbox', { name: 'Search staff', exact: true }).fill(name);
         await other.getByRole('button', { name: 'Search', exact: true }).click();
+        await other.getByRole('button', { name: 'View details for ' + name, exact: true }).click();
+        const profile = other.getByRole('dialog', { name: 'Staff details', exact: true });
+        await expect(profile).toContainText(name);
+        await expect(profile).toContainText('Teacher');
+        await expect(profile.locator('input, select, textarea')).toHaveCount(0);
+        await expect(profile).not.toContainText('Synthetic private');
+        await expect(profile).not.toContainText(title);
+        await profile.getByRole('button', { name: 'Close staff details', exact: true }).click();
         const action = other.getByRole('button', { name: 'Documents & training for ' + name, exact: true });
         if (role === 'editor') {
           await expect(action).toBeVisible();
