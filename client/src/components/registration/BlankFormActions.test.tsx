@@ -6,10 +6,8 @@ import type { RegistrationForm } from '../../api/registrationForms';
 import type { DocumentRevision } from '../../api/childDocuments';
 
 const sessionExpired = vi.hoisted(() => new Set<() => void>());
-const pdfjs = vi.hoisted(() => ({ getDocument: vi.fn(), GlobalWorkerOptions: { workerSrc: '' }, AnnotationMode: { ENABLE: 1 } }));
 vi.mock('../../auth/transport', () => ({ authError: (_error: unknown, fallback: string) => fallback, onSessionExpired: (callback: () => void) => { sessionExpired.add(callback); return () => sessionExpired.delete(callback); } }));
 vi.mock('../children/PdfDocumentPreview', () => ({ default: ({ blob }: { blob: Blob }) => <canvas role="img" aria-label="Local PDF blank page" data-blob-type={blob.type} /> }));
-vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => pdfjs);
 vi.mock('../../api/registrationForms', async importOriginal => {
   const actual = await importOriginal<typeof import('../../api/registrationForms')>();
   return { ...actual, getRegistrationForm: vi.fn(), getRegistrationFormContent: vi.fn() };
@@ -40,7 +38,7 @@ afterEach(() => {
   if (savedCanShare) Object.defineProperty(navigator, 'canShare', savedCanShare); else Reflect.deleteProperty(navigator, 'canShare');
   vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
-function click(action: 'Preview' | 'Download' | 'Print' | 'Share', title = form.title) { fireEvent.click(screen.getByRole('button', { name: action + ' blank ' + title })); }
+function click(action: 'Preview' | 'Download' | 'Share / Print', title = form.title) { fireEvent.click(screen.getByRole('button', { name: action + ' blank ' + title })); }
 
 test('current blank downloads use only the catalog title and release the temporary URL', async () => {
   vi.useFakeTimers();
@@ -55,42 +53,108 @@ test('current blank downloads use only the catalog title and release the tempora
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:blank-1'); shown.unmount();
 });
 
-test('native sharing includes a blank File and catalog title without child profile metadata', async () => {
-  const share = vi.fn().mockResolvedValue(undefined); const canShare = vi.fn().mockReturnValue(true);
+function nativeSharing(share = vi.fn().mockResolvedValue(undefined), canShare = vi.fn().mockReturnValue(true)) {
   Object.defineProperty(navigator, 'share', { configurable: true, value: share });
   Object.defineProperty(navigator, 'canShare', { configurable: true, value: canShare });
+  return { share, canShare };
+}
+function fileText(file: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsText(file);
+  });
+}
+async function prepareShare() {
+  click('Share / Print');
+  return screen.findByRole('region', { name: 'Share or print blank form' });
+}
+
+test('blank forms have three primary actions and prepare before opening a native share menu', async () => {
+  let finish: (blob: Blob) => void = () => {};
+  vi.mocked(api.getRegistrationFormContent).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const { share } = nativeSharing();
+  render(<BlankFormActions form={form} revision={revision} />);
+  expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
+    'Preview blank ' + form.title, 'Download blank ' + form.title, 'Share / Print blank ' + form.title,
+  ]);
+  click('Share / Print');
+  await waitFor(() => expect(api.getRegistrationFormContent).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button', { name: 'Share / Print blank ' + form.title })).toBeDisabled();
+  expect(screen.queryByRole('region', { name: 'Share or print blank form' })).not.toBeInTheDocument();
+  expect(share).not.toHaveBeenCalled();
+  await act(async () => finish(new Blob(['original blank PDF'], { type: 'application/pdf' })));
+  expect(screen.getByRole('region', { name: 'Share or print blank form' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Open share menu' })).toBeEnabled();
+  expect(share).not.toHaveBeenCalled();
+  expect(document.querySelector('iframe, object, embed')).toBeNull();
+});
+
+test('the final native share click synchronously shares the original blank file without child metadata or a URL', async () => {
+  const { share, canShare } = nativeSharing();
+  const original = new Blob(['original blank PDF bytes'], { type: 'application/pdf' });
+  vi.mocked(api.getRegistrationFormContent).mockResolvedValue(original);
   render(<><p>Child Synthetic Private Name</p><BlankFormActions form={form} revision={revision} /></>);
-  click('Share'); await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+  await prepareShare();
+  expect(share).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
+  // Assert before yielding: mobile browsers require this call in the user's activation.
+  expect(share).toHaveBeenCalledTimes(1);
   const payload = share.mock.calls[0][0] as { files: File[]; title: string };
   expect(Object.keys(payload).sort()).toEqual(['files', 'title']);
   expect(payload.title).toBe('Blank ' + form.title);
   expect(payload.files).toHaveLength(1); expect(payload.files[0]).toBeInstanceOf(File);
   expect(payload.files[0].name).toBe('blank-Consent  permission.pdf'); expect(payload.files[0].type).toBe('application/pdf');
-  expect(payload.files[0].size).toBeGreaterThan(0);
+  expect(await fileText(payload.files[0])).toBe('original blank PDF bytes');
   expect(canShare).toHaveBeenCalledWith({ files: payload.files });
-  expect(downloadClicks).toHaveLength(0); expect(api.getRegistrationForm).not.toHaveBeenCalled();
+  expect(downloadClicks).toHaveLength(0); expect(URL.createObjectURL).not.toHaveBeenCalled();
+  expect(api.getRegistrationForm).not.toHaveBeenCalled();
+  expect(api.getRegistrationFormContent).toHaveBeenCalledWith(form.id, revision.id, true, expect.any(AbortSignal));
 });
 
-test('unavailable sharing downloads the same blank file for manual sharing', async () => {
+test.each(['no share', 'no canShare', 'unsupported files', 'canShare throws'] as const)('unsupported native sharing offers an explicit file download: %s', async mode => {
+  const { share, canShare } = nativeSharing();
+  if (mode === 'no share') Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+  if (mode === 'no canShare') Object.defineProperty(navigator, 'canShare', { configurable: true, value: undefined });
+  if (mode === 'unsupported files') canShare.mockReturnValue(false);
+  if (mode === 'canShare throws') canShare.mockImplementation(() => { throw new Error('Unsupported files'); });
+  vi.mocked(api.getRegistrationFormContent).mockResolvedValue(new Blob(['original blank image'], { type: 'image/png' }));
   const shown = render(<BlankFormActions form={form} revision={imageRevision} />);
-  click('Share'); await screen.findByText('The blank form was downloaded for you to share.');
+  await prepareShare();
+  expect(downloadClicks).toHaveLength(0); expect(share).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Open share menu' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Download to share or print' }));
+  expect(await screen.findByText('The blank form was downloaded. Open the file to share or print it.')).toBeInTheDocument();
   expect(downloadClicks).toEqual([{ href: 'blob:blank-1', name: 'blank-Consent  permission.png' }]);
+  const downloaded = vi.mocked(URL.createObjectURL).mock.calls[0][0] as File;
+  expect(downloaded).toBeInstanceOf(File); expect(downloaded.type).toBe('image/png');
+  expect(await fileText(downloaded)).toBe('original blank image');
   expect(api.getRegistrationFormContent).toHaveBeenCalledWith(form.id, imageRevision.id, true, expect.any(AbortSignal));
   shown.unmount(); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:blank-1');
 });
 
-test('rejected native sharing falls back to download while cancellation creates no download', async () => {
-  const share = vi.fn().mockRejectedValueOnce(new Error('Unsupported'));
-  Object.defineProperty(navigator, 'share', { configurable: true, value: share });
-  Object.defineProperty(navigator, 'canShare', { configurable: true, value: vi.fn().mockReturnValue(true) });
-  const shown = render(<BlankFormActions form={form} revision={revision} />);
-  click('Share'); await screen.findByText('Sharing is unavailable here. The blank form was downloaded for you to share.');
-  expect(downloadClicks).toHaveLength(1); shown.unmount(); downloadClicks = [];
-  share.mockRejectedValueOnce(new DOMException('Cancelled', 'AbortError'));
+test('canceling the native menu keeps the prepared file available to retry without a download', async () => {
+  const { share } = nativeSharing(vi.fn().mockRejectedValueOnce(new DOMException('Cancelled', 'AbortError')).mockResolvedValue(undefined));
   render(<BlankFormActions form={form} revision={revision} />);
-  click('Share'); await waitFor(() => expect(share).toHaveBeenCalledTimes(2));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Share blank ' + form.title })).toBeEnabled());
-  expect(downloadClicks).toHaveLength(0); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await prepareShare();
+  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Open share menu' })).toBeEnabled());
+  expect(screen.getByRole('region', { name: 'Share or print blank form' })).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(downloadClicks).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
+  expect(share).toHaveBeenCalledTimes(2);
+  expect(share.mock.calls[1][0].files[0]).toBe(share.mock.calls[0][0].files[0]);
+  expect(api.getRegistrationFormContent).toHaveBeenCalledTimes(1);
+  await act(async () => {}); expect(downloadClicks).toHaveLength(0);
+});
+
+test('a native sharing failure explains retry or download and does not automatically download', async () => {
+  const { share } = nativeSharing(vi.fn().mockRejectedValue(new Error('Unsupported')));
+  render(<BlankFormActions form={form} revision={revision} />);
+  await prepareShare();
+  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not open the share menu. Try again, or download the blank form to share or print it.');
+  expect(share).toHaveBeenCalledTimes(1); expect(downloadClicks).toHaveLength(0);
+  expect(screen.getByRole('button', { name: 'Open share menu' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Download blank ' + form.title })).toBeEnabled();
 });
 
 test('PDF previews use a local renderer without mounting a private file URL', async () => {
@@ -136,72 +200,6 @@ test('current actions require a refreshed catalog when the latest revision chang
   await screen.findByText('The blank form changed. Refresh the checklist and try again.');
   expect(api.getRegistrationFormContent).not.toHaveBeenCalled();
   expect(downloadClicks).toHaveLength(0); expect(URL.createObjectURL).not.toHaveBeenCalled();
-});
-
-test('printing a blank image uses an isolated frame containing only its pixels', async () => {
-  const print = vi.fn(); const focus = vi.fn();
-  const realAppend = Node.prototype.appendChild;
-  let frame: HTMLIFrameElement | null = null;
-  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
-    const appended = realAppend.call(this, node) as T;
-    if (node instanceof HTMLIFrameElement) {
-      frame = node;
-      const target = node.contentDocument!;
-      Object.defineProperty(Object.getPrototypeOf(target.createElement('img')), 'decode', { configurable: true, value: vi.fn().mockResolvedValue(undefined) });
-      Object.defineProperty(node.contentWindow!, 'print', { configurable: true, value: print });
-      Object.defineProperty(node.contentWindow!, 'focus', { configurable: true, value: focus });
-    }
-    return appended;
-  });
-  vi.mocked(api.getRegistrationFormContent).mockResolvedValue(new Blob(['synthetic image pixels'], { type: 'image/png' }));
-  render(<><p>Child Synthetic Private Name</p><BlankFormActions form={form} revision={imageRevision} /></>);
-  click('Print'); await screen.findByRole('region', { name: 'Blank form ready to print' });
-  expect(print).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Open print dialog' }));
-  expect(print).toHaveBeenCalledTimes(1);
-  const printedFrame = frame as HTMLIFrameElement | null;
-  expect(printedFrame).not.toBeNull();
-  expect(printedFrame!.getAttribute('sandbox')).toBe('allow-same-origin allow-modals');
-  const printBody = printedFrame!.contentDocument!.body;
-  expect(printBody.children).toHaveLength(1); expect(printBody.firstElementChild!.tagName).toBe('IMG');
-  expect(printBody.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/));
-  expect(printBody.textContent).not.toContain('Synthetic Private Name');
-  expect(printBody.querySelector('script, input, object, embed')).toBeNull();
-  expect(focus).toHaveBeenCalledTimes(1);
-  expect(api.getRegistrationFormContent).toHaveBeenCalledWith(form.id, imageRevision.id, false, expect.any(AbortSignal));
-  printedFrame!.contentWindow!.dispatchEvent(new Event('afterprint'));
-  // Keep the prepared pixels available when a browser closes or cancels its
-  // dialog asynchronously; remove them on explicit close.
-  expect(printedFrame!.isConnected).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Close print preview' }));
-  expect(document.querySelector('iframe')).toBeNull();
-});
-
-test('a cumulative PDF print limit stops before rendering excessive pages and keeps download available', async () => {
-  const originalBlob = Blob;
-  vi.stubGlobal('Blob', class extends originalBlob { async arrayBuffer() { return new ArrayBuffer(1); } });
-  const toDataURL = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,cGl4ZWxz');
-  const draw = vi.fn(() => ({ promise: Promise.resolve() })); const clear = vi.fn();
-  const getPage = vi.fn().mockResolvedValue({ getViewport: ({ scale }: { scale: number }) => ({ width: 2048 * scale, height: 2048 * scale }), render: draw, cleanup: clear });
-  const destroy = vi.fn().mockResolvedValue(undefined);
-  pdfjs.getDocument.mockReturnValue({ promise: Promise.resolve({ numPages: 9, getPage }), destroy });
-  const print = vi.fn();
-  const realAppend = Node.prototype.appendChild;
-  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
-    const appended = realAppend.call(this, node) as T;
-    if (node instanceof HTMLIFrameElement) Object.defineProperty(node.contentWindow!, 'print', { configurable: true, value: print });
-    return appended;
-  });
-  render(<BlankFormActions form={form} revision={revision} />);
-  click('Print');
-  await screen.findByText('This blank form is too large to print here. Download the blank form to print all its pages.');
-  expect(getPage).toHaveBeenCalledTimes(9);
-  expect(draw).toHaveBeenCalledTimes(8); expect(toDataURL).toHaveBeenCalledTimes(8);
-  expect(clear).toHaveBeenCalledTimes(9); expect(destroy).toHaveBeenCalledTimes(1);
-  expect(draw).toHaveBeenCalledWith(expect.objectContaining({ annotationMode: pdfjs.AnnotationMode.ENABLE, background: '#ffffff' }));
-  expect(print).not.toHaveBeenCalled(); expect(document.querySelector('iframe')).toBeNull();
-  expect(screen.getByRole('button', { name: 'Download blank ' + form.title })).toBeEnabled();
-  click('Download'); await waitFor(() => expect(downloadClicks).toHaveLength(1));
 });
 
 test('changing form identity aborts a pending preview and prevents the old blank content from appearing', async () => {
@@ -250,46 +248,65 @@ test('unmount and session expiry abort pending content and ignore late responses
 });
 
 
-test('printing waits for decoded pages and session expiry removes prepared pixels', async () => {
-  const print = vi.fn();
-  let finishDecode: () => void = () => {};
-  const decode = vi.fn(() => new Promise<void>(resolve => { finishDecode = resolve; }));
-  const realAppend = Node.prototype.appendChild;
-  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
-    const appended = realAppend.call(this, node) as T;
-    if (node instanceof HTMLIFrameElement) {
-      Object.defineProperty(Object.getPrototypeOf(node.contentDocument!.createElement('img')), 'decode', { configurable: true, value: decode });
-      Object.defineProperty(node.contentWindow!, 'print', { configurable: true, value: print });
-    }
-    return appended;
-  });
-  vi.mocked(api.getRegistrationFormContent).mockResolvedValue(new Blob(['synthetic image pixels'], { type: 'image/png' }));
-  render(<BlankFormActions form={form} revision={imageRevision} />);
-  click('Print'); await waitFor(() => expect(decode).toHaveBeenCalledTimes(1));
-  expect(screen.queryByRole('button', { name: 'Open print dialog' })).not.toBeInTheDocument();
-  expect(print).not.toHaveBeenCalled();
-  await act(async () => finishDecode());
-  expect(await screen.findByRole('button', { name: 'Open print dialog' })).toBeEnabled();
-  act(() => { for (const callback of sessionExpired) callback(); });
-  expect(document.querySelector('iframe')).toBeNull();
-  expect(screen.queryByRole('region', { name: 'Blank form ready to print' })).not.toBeInTheDocument();
-  expect(print).not.toHaveBeenCalled();
+test.each(['form', 'revision'] as const)('changing the %s clears the ready file and ignores a late preparation', async changed => {
+  const { share } = nativeSharing();
+  const shown = render(<BlankFormActions form={form} revision={revision} />);
+  await prepareShare();
+  const nextRevision = { ...revision, id: 'revision-3', revision: 3 };
+  const nextForm = changed === 'form' ? { ...form, id: 'form-2', title: 'Another blank form' } : { ...form, currentRevisionId: nextRevision.id };
+  shown.rerender(<BlankFormActions form={nextForm} revision={changed === 'revision' ? nextRevision : revision} />);
+  expect(screen.queryByRole('region', { name: 'Share or print blank form' })).not.toBeInTheDocument();
+  let finish: (blob: Blob) => void = () => {};
+  vi.mocked(api.getRegistrationFormContent).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  click('Share / Print', nextForm.title);
+  await waitFor(() => expect(api.getRegistrationFormContent).toHaveBeenCalledTimes(2));
+  const signal = vi.mocked(api.getRegistrationFormContent).mock.calls[1][3];
+  shown.rerender(<BlankFormActions form={form} revision={revision} />);
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(new Blob(['stale blank PDF'], { type: 'application/pdf' })));
+  expect(screen.queryByRole('region', { name: 'Share or print blank form' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Share / Print blank ' + form.title })).toBeEnabled();
+  expect(share).not.toHaveBeenCalled(); expect(downloadClicks).toHaveLength(0);
 });
 
-test('an expired session cannot expose pages whose decode finishes late', async () => {
-  let finishDecode: () => void = () => {};
-  const decode = vi.fn(() => new Promise<void>(resolve => { finishDecode = resolve; }));
-  const realAppend = Node.prototype.appendChild;
-  vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function <T extends Node>(this: Node, node: T): T {
-    const appended = realAppend.call(this, node) as T;
-    if (node instanceof HTMLIFrameElement) Object.defineProperty(Object.getPrototypeOf(node.contentDocument!.createElement('img')), 'decode', { configurable: true, value: decode });
-    return appended;
-  });
-  vi.mocked(api.getRegistrationFormContent).mockResolvedValue(new Blob(['synthetic image pixels'], { type: 'image/png' }));
-  render(<BlankFormActions form={form} revision={imageRevision} />);
-  click('Print'); await waitFor(() => expect(decode).toHaveBeenCalledTimes(1));
+test.each(['unmount', 'expiry'] as const)('%s during preparation aborts the fetch and cannot expose the late file', async stopped => {
+  let finish: (blob: Blob) => void = () => {};
+  vi.mocked(api.getRegistrationFormContent).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const { share } = nativeSharing();
+  const shown = render(<BlankFormActions form={form} revision={revision} />);
+  click('Share / Print'); await waitFor(() => expect(api.getRegistrationFormContent).toHaveBeenCalledTimes(1));
+  const signal = vi.mocked(api.getRegistrationFormContent).mock.calls[0][3];
+  if (stopped === 'unmount') shown.unmount();
+  else act(() => { for (const callback of sessionExpired) callback(); });
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(new Blob(['late blank PDF'], { type: 'application/pdf' })));
+  expect(screen.queryByRole('region', { name: 'Share or print blank form' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Share / Print blank ' + form.title })).not.toBeInTheDocument();
+  expect(share).not.toHaveBeenCalled(); expect(downloadClicks).toHaveLength(0); expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+
+test('session expiry clears the prepared file without sharing or downloading it', async () => {
+  const { share } = nativeSharing();
+  render(<BlankFormActions form={form} revision={revision} />);
+  await prepareShare();
   act(() => { for (const callback of sessionExpired) callback(); });
-  await act(async () => finishDecode());
-  expect(document.querySelector('iframe')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Open print dialog' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Share or print blank form' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Open share menu' })).not.toBeInTheDocument();
+  expect(share).not.toHaveBeenCalled(); expect(downloadClicks).toHaveLength(0);
+});
+
+test.each(['resolves', 'rejects'] as const)('a native share that %s after session expiry cannot reactivate the file or download', async outcome => {
+  let finish: () => void = () => {};
+  const { share } = nativeSharing(vi.fn().mockImplementation(() => new Promise<void>((resolve, reject) => {
+    finish = outcome === 'resolves' ? resolve : () => reject(new Error('Native menu failed'));
+  })));
+  render(<BlankFormActions form={form} revision={revision} />);
+  await prepareShare();
+  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
+  expect(share).toHaveBeenCalledTimes(1);
+  act(() => { for (const callback of sessionExpired) callback(); });
+  await act(async () => finish());
+  expect(screen.queryByRole('region', { name: 'Share or print blank form' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Share / Print blank ' + form.title })).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(downloadClicks).toHaveLength(0); expect(URL.createObjectURL).not.toHaveBeenCalled();
 });

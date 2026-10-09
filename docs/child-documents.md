@@ -136,9 +136,9 @@ requires reviewed current copies for every active required form; optional forms 
 not block it. Empty catalogs do not report completion. Packet completion is separate
 from active enrollment/attendance, so existing enrollment is not changed by migration.
 
-Print rasterizes only the selected blank template into a sandboxed local print frame. After all pages finish loading, choose **Open print dialog** in the ready preview; this call happens directly from the tap. The prepared pages remain available if the browser dialog is cancelled. Close the print preview to remove them. Changing the form/version, leaving the component or session expiry also clears the pixels.
-Sharing passes only blank file bytes to a user-initiated device share sheet, with
-download fallback. There is no parent account, messaging service or remote file URL.
+Blank templates have a single **Share / Print** action. It prepares the original file bytes, then an explicit **Open share menu** tap opens the device menu. Users choose the available sharing or printing action. If the browser cannot share files, **Download to share or print** saves the same original file for the user to open. Cancelling the native menu does not automatically download or export anything. Form/title/revision changes, leaving the component and session expiry clear the prepared file. There is no app-managed print frame, parent account, messaging service or remote file URL.
+
+Remaining PDF upload compatibility failures are tracked in [SKAO-105](https://ska-organizer.atlassian.net/browse/SKAO-105). They are a known limitation accepted separately from completing SKAO-47; the current validator is not represented as universally compatible.
 Staff verify filled fields/signatures; the system does not infer them or monitor laws.
 
 Migration018 stores RegistrationForms, RegistrationFormRevisions and child review

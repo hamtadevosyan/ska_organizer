@@ -1,4 +1,6 @@
-# SKAO-47 PDF uploads and blank-form printing
+# SKAO-47 earlier PDF compatibility follow-up
+
+The app-managed print workflow described in this earlier bundle has been superseded by the combined Share / Print action. Use [SKAO-47_SHARE_PRINT_START_HERE.md](SKAO-47_SHARE_PRINT_START_HERE.md) for the final workflow. Remaining PDF upload failures are deferred to [SKAO-105](https://ska-organizer.atlassian.net/browse/SKAO-105).
 
 Apply this follow-up after the SKAO-47 template-groups update. Keep the browser-session follow-up if you already applied it. This patch does not replace that fix.
 
@@ -17,18 +19,13 @@ The PDF upload validator now reads PDF whitespace, comments, escaped names and n
 
 This is bounded basic file-integrity validation, not a full PDF parser or malware scanner. File-size limits, exact cross-reference offsets, incomplete-file rejection and document permissions remain in place. It does not enable PDF scripts or send files to an external service.
 
-Print blank form now prepares all pages, then shows a ready preview. Tap **Open print dialog** to choose your printer. The print call runs directly from that tap, after the pages have loaded. Only the selected blank form's page images are printed; the surrounding child profile and checklist are excluded. Tap **Close print preview** when finished. Prepared pages also clear on form/version changes, leaving the component or session expiry.
+## Current share and print workflow
 
-## Test on your device
+Choose **Share / Print**, wait for the blank file to be ready, then tap **Open share menu**. Choose an available sharing or printing action in your device's menu. On browsers without file sharing, choose **Download to share or print**, then open the downloaded file.
 
-1. Upload one of the PDFs that previously failed. Preview it and download it; check that its pages and any completed fields/signatures are preserved.
-2. Open a blank template and choose **Print blank form**. Wait for **Ready to print**, then tap **Open print dialog**.
-3. Try both a one-page form and a multi-page form. Check that all pages appear in the printer preview and that no child's profile information is included.
-4. Cancel the system print dialog, then try again from the ready preview. Close the preview when finished.
+The original blank file is passed to the device; there is no raster print frame. The user chooses the destination. Actual native menu actions, including Print, depend on the device and installed applications.
 
-The automated browser check verifies real file fetching, PDF rendering, all decoded pages, a live user gesture at the print call and session-expiry cleanup. Headless Chromium cannot verify your iOS printer sheet or physical printer. If the dialog does not open, the app keeps Download blank form available.
-
-No original failing user PDF was supplied. This patch fixes seven reproduced compatibility cases; it cannot yet confirm the cause for each of your files. If one still fails, provide its original blank PDF or download link for a targeted reproduction.
+Some PDFs still fail to upload. That remaining problem is explicitly deferred to SKAO-105; this earlier compatibility fix did not solve every real-file failure. Further PDF validation work is outside the accepted completion scope of SKAO-47.
 
 Review, test, commit, push and merge from Ubuntu using your usual workflow. After merging, update the Pi checkout and run:
 
