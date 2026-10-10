@@ -216,6 +216,39 @@ exports.listChildDocumentRevisions = (documentId, { page = 1, pageSize = 20 } = 
 });
 exports.countChildDocumentRevisions = (documentId) => model('ChildDocumentRevision').count({ where: { documentId }, transaction: transactionContext.getStore() });
 
+const staffRevisionMetadataColumns = [...revisionMetadataColumns, 'title', 'category', 'documentDate', 'notes',
+  'issuer', 'reference', 'issuedOn', 'expiresOn', 'nonExpiring', 'warningDays', 'registrationFormId', 'registrationFormRevisionId'];
+exports.createStaffDocument = (values) => create('StaffDocument', values);
+exports.updateStaffDocument = (id, values) => update('StaffDocument', id, values);
+exports.getStaffDocument = async (id, staffId) => (await list('StaffDocument', { where: { id, staffId }, limit: 1 }))[0] || null;
+exports.listStaffDocuments = (staffId, { page = 1, pageSize = 20 } = {}) => list('StaffDocument', {
+  where: { staffId }, order: [['updatedAt', 'DESC'], ['id', 'ASC']], limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countStaffDocuments = (staffId) => model('StaffDocument').count({ where: { staffId }, transaction: transactionContext.getStore() });
+exports.listAllStaffDocuments = (staffId) => list('StaffDocument', { where: { staffId }, order: [['updatedAt', 'DESC'], ['id', 'ASC']] });
+exports.createStaffDocumentRevision = (values) => transact(async (transaction) => {
+  await model('StaffDocumentRevision').create(values, { transaction });
+  return exports.getStaffDocumentRevision(values.documentId, values.id);
+});
+exports.getStaffDocumentRevision = async (documentId, id) => (await list('StaffDocumentRevision', {
+  where: { documentId, id }, attributes: staffRevisionMetadataColumns, limit: 1,
+}))[0] || null;
+exports.getStaffDocumentContent = async (documentId, id) => (await list('StaffDocumentRevision', {
+  where: { documentId, id }, attributes: [...staffRevisionMetadataColumns, 'content'], limit: 1,
+}))[0] || null;
+exports.getStaffDocumentRevisionByRequest = async (requestScope, requestId) => (await list('StaffDocumentRevision', {
+  where: { requestScope, requestId }, attributes: [...staffRevisionMetadataColumns, 'requestId', 'requestScope', 'requestHash'], limit: 1,
+}))[0] || null;
+exports.listStaffDocumentRevisions = (documentId, { page = 1, pageSize = 20 } = {}) => list('StaffDocumentRevision', {
+  where: { documentId }, attributes: staffRevisionMetadataColumns, order: [['revision', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countStaffDocumentRevisions = (documentId) => model('StaffDocumentRevision').count({ where: { documentId }, transaction: transactionContext.getStore() });
+exports.getStaffDocumentSettings = async () => await get('StaffDocumentSettings', 'current') || { id: 'current', warningDays: 40, version: 1 };
+exports.saveStaffDocumentSettings = (values) => transact(async (transaction) => {
+  await model('StaffDocumentSettings').upsert({ ...values, id: 'current' }, { transaction });
+  return exports.getStaffDocumentSettings();
+});
+
 const formRevisionMetadataColumns = ['id', 'formId', 'revision', 'filename', 'contentType', 'byteLength', 'sha256',
   'uploadedAt', 'actorId', 'uploadedBy', 'changeNote'];
 exports.createRegistrationForm = (values) => create('RegistrationForm', values);
@@ -270,6 +303,7 @@ exports.listStaff = ({ page = 1, pageSize = 50, ...filters } = {}) => list('Staf
 });
 exports.countStaff = (filters) => model('StaffMember').count({ where: staffWhere(filters), transaction: transactionContext.getStore() });
 exports.getStaffById = (id) => get('StaffMember', id);
+exports.listAllStaff = () => list('StaffMember', { order: [['name', 'ASC'], ['id', 'ASC']] });
 exports.createStaff = (payload) => create('StaffMember', payload);
 exports.updateStaff = (id, changes) => update('StaffMember', id, changes);
 

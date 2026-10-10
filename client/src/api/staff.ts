@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../lib/api';
+import { notifyStaffComplianceChanged } from './staffComplianceEvents';
 
 export type StaffMember = {
   id: string; name: string; role: string; active: boolean; roomId: string | null;
@@ -23,5 +24,6 @@ export async function saveStaff(previous: StaffMember | null, details: Partial<S
   const response = previous
     ? await axios.put<{ data: StaffMember }>(staffUrl + '/' + encodeURIComponent(previous.id), { ...details, version: previous.version })
     : await axios.post<{ data: StaffMember }>(staffUrl, details);
+  notifyStaffComplianceChanged();
   return response.data.data;
 }

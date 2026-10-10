@@ -167,6 +167,29 @@ test('failed sign-ins are limited per account without disclosing account existen
   expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
 });
 
+test('twenty successful sign-ins from one IP exhaust its budget across valid accounts', async () => {
+  // databaseSetup already made one real administrator sign-in from this IP.
+  // Include that attempt instead of resetting or bypassing the real limiter.
+  const before = await db.listAudit();
+  expect(before.filter(event => event.action === 'session.sign_in')).toHaveLength(1);
+  await create('viewer', 'rate-viewer');
+  for (let attempt = 2; attempt <= 20; attempt++) {
+    const viewer = attempt % 2 === 0;
+    await login(viewer ? 'rate-viewer' : 'test-admin', viewer ? tempPassword : fixture.password);
+  }
+  // Both usernames had successful logins. Their account counters clear, but
+  // the direct-IP budget must still reject a valid twenty-first sign-in.
+  const denied = await request(app).post('/api/auth/login').set('Origin', origin)
+    .send({ username: 'test-admin', password: fixture.password });
+  expect(denied.status).toBe(429);
+  expect(denied.body.error.code).toBe('RATE_LIMITED');
+  expect(Number(denied.headers['retry-after'])).toBeGreaterThan(0);
+  expect(denied.headers['set-cookie']).toBeUndefined();
+  expect((await db.listAudit()).filter(event => event.action === 'session.sign_in')).toHaveLength(20);
+  // Throttling a new login must not revoke the existing valid fixture session.
+  expect((await api(admin(), 'get', '/api/auth/session')).status).toBe(200);
+}, 120000); // Keep real password verification affordable on slower Pi hardware.
+
 test('successful changes record actor and timestamp without secrets; rejected changes do not produce success records', async () => {
   const created = await api(admin(), 'post', '/api/meals', { name: 'Audit example', type: 'breakfast' });
   expect(created.status).toBe(201);

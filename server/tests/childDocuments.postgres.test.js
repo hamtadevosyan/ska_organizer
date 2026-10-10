@@ -10,6 +10,7 @@ const { context } = require('./databaseSetup');
 const db = require('../services/dbAdapter');
 const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
+const { saveStaffDocuments, staffDocumentSnapshot } = require('./helpers/staffDocumentStorage');
 
 const hash = (content) => createHash('sha256').update(content).digest('hex');
 function image(red) {
@@ -55,6 +56,7 @@ async function seed() {
   });
   expect(reviewed.status).toBe(200);
   expect((await request(app).put('/api/children/' + child.id + '/enrollment').send({ active: false })).status).toBe(200);
+  await saveStaffDocuments(request.credentials().account);
   return { child, document: data(reviewed).document, original, revised, form, blankOriginal, blankRevised };
 }
 
@@ -93,7 +95,7 @@ async function snapshot(childId, documentId) {
   const child = await db.getChildById(childId);
   return { detail, content, childId: child.id, enrollmentActive: child.active,
     registrationForm: { detail: formDetail, metadata: formMetadata, revisions: formRevisions, content: formContent },
-    checklist: data(checklistResponse) };
+    checklist: data(checklistResponse), staffDocuments: await staffDocumentSnapshot() };
 }
 
 test('document and blank form bytes, revision histories, mappings, reviews and ended enrollment survive reconnecting', async () => {

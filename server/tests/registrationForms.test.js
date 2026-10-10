@@ -615,3 +615,110 @@ test('invalid groups are rejected and a facility-only catalog cannot declare a c
   const record = await child();
   expect((await request(app).get(documentUrl(record.id) + '/checklist')).body).toMatchObject({ items: [], complete: false, percentage: 0 });
 });
+
+test('an employee training requirement can exist without a fake blank file and gains its first real version later', async () => {
+  const saved = await createForm({ audience: 'employee', title: 'Synthetic CPR certificate', expirationRequired: true, file: undefined });
+  expect(saved).toMatchObject({ revision: null, replayed: false, form: { audience: 'employee', expirationRequired: true, currentRevisionId: null, templateRevision: 0 } });
+  expect(await formDetails(saved.form.id)).toEqual({ form: saved.form, revisions: [], total: 0 });
+  expect((await request(app).get(formUrl())).body.items).toEqual([saved.form]);
+  const basic = await child();
+  expect((await checklist(basic.id)).items).toEqual([]);
+  const revised = await reviseForm(saved.form);
+  expect(revised).toMatchObject({ form: { expirationRequired: true, version: 2, templateRevision: 1, currentRevisionId: revised.revision.id }, revision: { revision: 1 } });
+  expect((await formDetails(saved.form.id)).total).toBe(1);
+  expect((await binary(contentUrl(saved.form.id, revised.revision.id))).body).toEqual(fixtures.png);
+});
+
+test.each(['child', 'facility'])('%s templates still require blank files and cannot require employee expiration dates', async audience => {
+  for (const changes of [{ file: undefined }, { expirationRequired: true }, { file: undefined, expirationRequired: true }]) {
+    const response = await request(app).post(formUrl()).send(formPayload({ audience, ...changes }));
+    expect(response.status).toBe(400);
+  }
+  const saved = await createForm({ audience, expirationRequired: false });
+  expect(saved.form.expirationRequired).toBe(false);
+  expect((await request(app).put(formUrl(saved.form.id)).send(formEdit(saved.form, { expirationRequired: true }))).status).toBe(400);
+  expect((await formDetails(saved.form.id)).form).toEqual(saved.form);
+});
+
+test.each([null, 0, 1, 'true', 'false', [], {}])('expiration policy must be an actual boolean (%p)', async expirationRequired => {
+  expect((await request(app).post(formUrl()).send(formPayload({ audience: 'employee', expirationRequired, file: undefined }))).status).toBe(400);
+  const saved = await createForm({ audience: 'employee', file: undefined });
+  expect((await request(app).put(formUrl(saved.form.id)).send(formEdit(saved.form, { expirationRequired }))).status).toBe(400);
+  expect((await formDetails(saved.form.id)).form.expirationRequired).toBe(false);
+});
+
+test('omitted expiration policy defaults to false at creation and preserves the saved policy on edit', async () => {
+  const saved = await createForm({ audience: 'employee', file: undefined });
+  expect(saved.form.expirationRequired).toBe(false);
+  const changed = await updateForm(saved.form, { expirationRequired: true });
+  expect(changed.expirationRequired).toBe(true);
+  const unchanged = await updateForm(changed, { instructions: 'Synthetic renewal reminder' });
+  expect(unchanged.expirationRequired).toBe(true);
+  const cleared = await updateForm(unchanged, { expirationRequired: false });
+  expect(cleared.expirationRequired).toBe(false);
+});
+
+test('metadata-only employee creation retries are scoped, idempotent and reject conflicting or changed requests', async () => {
+  const payload = formPayload({ audience: 'employee', expirationRequired: true, file: undefined });
+  const [first, simultaneous] = await Promise.all([request(app).post(formUrl()).send(payload), request(app).post(formUrl()).send(payload)]);
+  expect(first.status).toBe(201); expect(simultaneous.status).toBe(201);
+  expect(first.body.form.id).toBe(simultaneous.body.form.id);
+  expect([first.body.replayed, simultaneous.body.replayed].sort()).toEqual([false, true]);
+  expect(await auditEvents()).toHaveLength(1);
+  expect((await request(app).post(formUrl()).send({ ...payload, title: 'Different certificate' })).status).toBe(409);
+  expect((await request(app).post(formUrl()).send({ ...payload, file: file() })).status).toBe(409);
+  const secondAdmin = await actor('admin', 'none');
+  const other = await api(secondAdmin, 'post', formUrl(), payload);
+  expect(other.status).toBe(201); expect(other.body.form.id).not.toBe(first.body.form.id);
+  await updateForm(first.body.form, { instructions: 'Changed after initial save' });
+  expect((await request(app).post(formUrl()).send(payload)).status).toBe(409);
+  expect((await request(app).get(formUrl())).body.items).toHaveLength(2);
+});
+
+test('a file creation request cannot be reused for a metadata-only requirement', async () => {
+  const payload = formPayload({ audience: 'employee' });
+  expect((await request(app).post(formUrl()).send(payload)).status).toBe(201);
+  const { file: _file, ...noFile } = payload;
+  expect((await request(app).post(formUrl()).send(noFile)).status).toBe(409);
+  expect((await request(app).get(formUrl())).body.items).toHaveLength(1);
+});
+
+test('legacy file upload replay retains the pre-expiration metadata hash', async () => {
+  const payload = formPayload({ audience: 'employee' });
+  const first = await request(app).post(formUrl()).send(payload);
+  expect(first.status).toBe(201);
+  const scope = createHash('sha256').update(JSON.stringify([request.credentials().account.id, 'registration-form-create'])).digest('hex');
+  const old = await db.getRegistrationFormRevisionByRequest(scope, payload.requestId);
+  const oldValues = { ...metadata, audience: 'employee' };
+  // Match field insertion order used by the pre-expiration service.
+  const legacyValues = { title: oldValues.title, audience: oldValues.audience, instructions: oldValues.instructions, category: oldValues.category, required: oldValues.required };
+  const legacyHash = createHash('sha256').update(JSON.stringify([legacyValues, file().name, file().contentType, digest(fixtures.pdf)])).digest('hex');
+  expect(old.requestHash).toBe(legacyHash);
+  const retry = await request(app).post(formUrl()).send(payload);
+  expect(retry.status).toBe(201); expect(retry.body.replayed).toBe(true); expect(retry.body.revision.id).toBe(first.body.revision.id);
+});
+
+test('metadata-only requirement creation obeys catalog limits and audit rollback without storing partial requirements', async () => {
+  const audit = jest.spyOn(db, 'appendAudit').mockRejectedValueOnce(new Error('Synthetic private requirement detail'));
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    expect((await request(app).post(formUrl()).send(formPayload({ audience: 'employee', file: undefined }))).status).toBe(500);
+    expect((await request(app).get(formUrl())).body.items).toEqual([]);
+    expect(await auditEvents()).toEqual([]);
+  } finally { audit.mockRestore(); log.mockRestore(); }
+  const count = jest.spyOn(db, 'countRegistrationForms').mockResolvedValueOnce(100);
+  try {
+    const limited = await request(app).post(formUrl()).send(formPayload({ audience: 'employee', file: undefined }));
+    expect(limited.status).toBe(409); expect(limited.body.error.code).toBe('REGISTRATION_FORM_LIMIT');
+    expect((await request(app).get(formUrl())).body.items).toEqual([]);
+  } finally { count.mockRestore(); }
+});
+
+test('employee requirements remain administrator-only including metadata-only creation', async () => {
+  const saved = await createForm({ audience: 'employee', expirationRequired: true, file: undefined });
+  for (const role of ['editor', 'viewer']) {
+    const credentials = await actor(role, 'edit');
+    expect((await api(credentials, 'get', formUrl(saved.form.id))).status).toBe(403);
+    expect((await api(credentials, 'post', formUrl(), formPayload({ audience: 'employee', file: undefined }))).status).toBe(403);
+  }
+});

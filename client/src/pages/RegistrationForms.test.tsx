@@ -1,4 +1,6 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render as renderComponent, screen, waitFor, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, test, vi } from 'vitest';
 import RegistrationForms from './RegistrationForms';
 import { SignedIn } from '../tests/authFixture';
@@ -23,6 +25,9 @@ vi.mock('../api/childDocuments', async importOriginal => {
 const template: RegistrationForm = { id: 'form-1', title: 'Blank consent', instructions: 'Complete and return the consent form.', category: 'consent', required: true, active: true, version: 2, currentRevisionId: 'revision-2', templateRevision: 2, updatedAt: '2026-10-01T10:00:00Z' };
 const revision: DocumentRevision = { id: 'revision-2', revision: 2, filename: 'blank-consent.pdf', contentType: 'application/pdf', byteLength: 21, sha256: 'synthetic', uploadedAt: '2026-10-01T10:00:00Z', uploadedBy: 'test-admin', changeNote: 'Updated instructions', current: true };
 const oldRevision: DocumentRevision = { ...revision, id: 'revision-1', revision: 1, filename: 'original-blank-consent.pdf', changeNote: null, current: false };
+function render(ui: ReactElement, initialEntries = ['/registration-forms']) {
+  return renderComponent(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
+}
 
 beforeEach(() => {
   vi.clearAllMocks(); sessionExpired.clear();
@@ -38,7 +43,7 @@ async function selectTemplate() {
   fireEvent.click(await screen.findByRole('button', { name: /Blank consent.*Consent form.*Active/ }));
   await screen.findByRole('region', { name: 'Selected registration template' });
 }
-function upload(file = new File(['%PDF-1.7 synthetic'], 'new-blank.pdf', { type: 'application/pdf' })) { fireEvent.change(screen.getByLabelText('Upload a blank form'), { target: { files: [file] } }); }
+function upload(file = new File(['%PDF-1.7 synthetic'], 'new-blank.pdf', { type: 'application/pdf' })) { fireEvent.change(screen.getByLabelText(/Upload a blank form/), { target: { files: [file] } }); }
 function newForm() {
   fireEvent.click(screen.getByRole('button', { name: 'Add blank form' }));
   fireEvent.change(screen.getByLabelText('Form title'), { target: { value: 'New blank contract' } });
@@ -102,7 +107,7 @@ test('a failed new template upload preserves metadata, file and request ID for r
   const requestId = vi.mocked(api.addRegistrationForm).mock.calls[0][2]; expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
   fireEvent.click(screen.getByRole('button', { name: 'Save blank form' }));
   await screen.findByText('Blank form template added.');
-  expect(api.addRegistrationForm).toHaveBeenLastCalledWith({ title: 'New blank contract', instructions: 'Return this blank contract after completion.', category: 'contract', audience: 'child', required: true }, expect.objectContaining({ name: 'new-blank.pdf' }), requestId, expect.any(AbortSignal));
+  expect(api.addRegistrationForm).toHaveBeenLastCalledWith({ title: 'New blank contract', instructions: 'Return this blank contract after completion.', category: 'contract', audience: 'child', required: true, expirationRequired: false }, expect.objectContaining({ name: 'new-blank.pdf' }), requestId, expect.any(AbortSignal));
   await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false));
 });
 
@@ -123,7 +128,7 @@ test('metadata edits preserve the file history and use the saved optimistic vers
   fireEvent.change(screen.getByLabelText('Form title'), { target: { value: 'Updated blank consent' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save template details' }));
   await screen.findByText('Template details saved.');
-  expect(api.updateRegistrationForm).toHaveBeenCalledWith(template, { title: 'Updated blank consent', audience: 'child', category: 'consent', instructions: template.instructions, required: true, active: true }, expect.any(AbortSignal));
+  expect(api.updateRegistrationForm).toHaveBeenCalledWith(template, { title: 'Updated blank consent', audience: 'child', category: 'consent', instructions: template.instructions, required: true, expirationRequired: false, active: true }, expect.any(AbortSignal));
   expect(documents.readDocumentFile).not.toHaveBeenCalled(); expect(api.reviseRegistrationForm).not.toHaveBeenCalled();
 });
 
@@ -242,6 +247,129 @@ test('new employee templates preserve their group and catalog filters separate f
   expect(screen.queryByRole('button', { name: /Employee onboarding/ })).not.toBeInTheDocument();
   newForm();
   fireEvent.change(screen.getByLabelText(/Template for/), { target: { value: 'employee' } });
-  upload(); fireEvent.click(screen.getByRole('button', { name: 'Save blank form' }));
+  upload(); fireEvent.click(screen.getByRole('button', { name: 'Save employee requirement' }));
   await waitFor(() => expect(api.addRegistrationForm).toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee' }), expect.anything(), expect.any(String), expect.any(AbortSignal)));
+});
+
+test('employee training requirements save without blank files and retain their request ID on retry', async () => {
+  const requirement: RegistrationForm = { ...template, id: 'employee-cpr', audience: 'employee', title: 'CPR training', currentRevisionId: null, templateRevision: 0, expirationRequired: true };
+  vi.mocked(api.addRegistrationForm).mockRejectedValueOnce(new Error('Disconnected')).mockResolvedValueOnce({ form: requirement, revision: null });
+  render(<SignedIn><RegistrationForms /></SignedIn>); newForm();
+  fireEvent.change(screen.getByLabelText('Form title'), { target: { value: requirement.title } });
+  fireEvent.change(screen.getByLabelText(/Template for/), { target: { value: 'employee' } });
+  expect(screen.getByText(/A blank file is optional/)).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('Expiration date required'));
+  fireEvent.click(screen.getByLabelText('Required for every active employee'));
+  fireEvent.click(screen.getByRole('button', { name: 'Save employee requirement' }));
+  await screen.findByText(/Your draft and file are still here/);
+  const requestId = vi.mocked(api.addRegistrationForm).mock.calls[0][2];
+  expect(api.addRegistrationForm).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'CPR training', audience: 'employee', expirationRequired: true, required: true }), undefined, requestId, expect.any(AbortSignal));
+  expect(documents.readDocumentFile).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Expiration date required')).toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: 'Save employee requirement' }));
+  await screen.findByText('Employee requirement added.');
+  expect(api.addRegistrationForm).toHaveBeenLastCalledWith(expect.objectContaining({ audience: 'employee', expirationRequired: true }), undefined, requestId, expect.any(AbortSignal));
+});
+
+test('switching away from employee clears the expiration flag and child templates require a blank file', async () => {
+  render(<SignedIn><RegistrationForms /></SignedIn>); newForm();
+  fireEvent.change(screen.getByLabelText(/Template for/), { target: { value: 'employee' } });
+  fireEvent.click(screen.getByLabelText('Expiration date required'));
+  fireEvent.change(screen.getByLabelText(/Template for/), { target: { value: 'child' } });
+  expect(screen.queryByLabelText('Expiration date required')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save blank form' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Choose a PDF, JPG or PNG blank form first.');
+  expect(api.addRegistrationForm).not.toHaveBeenCalled();
+  upload(); fireEvent.click(screen.getByRole('button', { name: 'Save blank form' }));
+  await screen.findByText('Blank form template added.');
+  expect(api.addRegistrationForm).toHaveBeenCalledWith(expect.objectContaining({ audience: 'child', expirationRequired: false }), expect.anything(), expect.any(String), expect.any(AbortSignal));
+});
+
+test('metadata-only requirements show no blank file actions and can acquire a first version', async () => {
+  const requirement: RegistrationForm = { ...template, id: 'employee-cpr', audience: 'employee', title: 'CPR training', currentRevisionId: null, templateRevision: 0, expirationRequired: true };
+  vi.mocked(api.listRegistrationForms).mockResolvedValue({ items: [requirement] });
+  vi.mocked(api.getRegistrationForm).mockResolvedValue({ form: requirement, revisions: [], total: 0 });
+  render(<SignedIn><RegistrationForms /></SignedIn>);
+  fireEvent.click(await screen.findByRole('button', { name: /CPR training.*No blank file.*Expiration date required/ }));
+  await screen.findByText('This employee requirement has no blank file. Upload a blank version if one becomes available.');
+  expect(screen.queryByRole('button', { name: /Blank file actions/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('list', { name: 'Current blank template version' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Upload new blank version' })); upload();
+  fireEvent.click(screen.getByRole('button', { name: 'Save new blank version' }));
+  await screen.findByText('New blank form version saved. Earlier versions are kept.');
+  expect(api.reviseRegistrationForm).toHaveBeenCalledWith(requirement, expect.objectContaining({ name: 'new-blank.pdf' }), '', expect.any(String), expect.any(AbortSignal));
+});
+
+test('editing an employee requirement retains its expiration policy and removes an optional selected blank file', async () => {
+  const requirement: RegistrationForm = { ...template, audience: 'employee', expirationRequired: true };
+  vi.mocked(api.listRegistrationForms).mockResolvedValue({ items: [requirement] });
+  vi.mocked(api.getRegistrationForm).mockResolvedValue({ form: requirement, revisions: [revision, oldRevision], total: 2 });
+  render(<SignedIn><RegistrationForms /></SignedIn>); await selectTemplate();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit template details' }));
+  expect(screen.getByLabelText('Expiration date required')).toBeChecked();
+  fireEvent.change(screen.getByLabelText('Instructions (optional)'), { target: { value: 'Renew CPR before expiration.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save template details' }));
+  await screen.findByText('Template details saved.');
+  expect(api.updateRegistrationForm).toHaveBeenCalledWith(requirement, expect.objectContaining({ expirationRequired: true }), expect.any(AbortSignal));
+  newForm(); fireEvent.change(screen.getByLabelText(/Template for/), { target: { value: 'employee' } }); upload();
+  fireEvent.click(screen.getByRole('button', { name: 'Remove selected blank file' }));
+  expect(screen.queryByText('Selected blank file: new-blank.pdf')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save employee requirement' }));
+  await screen.findByText('Employee requirement added.');
+  expect(api.addRegistrationForm).toHaveBeenCalledWith(expect.objectContaining({ audience: 'employee', expirationRequired: false }), undefined, expect.any(String), expect.any(AbortSignal));
+});
+
+test('the employee shortcut requires only a name and defaults to required without a file', async () => {
+  const requirement: RegistrationForm = { ...template, id: 'employee-cpr', audience: 'employee', title: 'CPR certification', currentRevisionId: null, templateRevision: 0 };
+  vi.mocked(api.addRegistrationForm).mockResolvedValue({ form: requirement, revision: null });
+  vi.mocked(api.getRegistrationForm).mockResolvedValue({ form: requirement, revisions: [], total: 0 });
+  render(<SignedIn><RegistrationForms /></SignedIn>);
+  fireEvent.click(screen.getByRole('button', { name: 'Add employee requirement' }));
+  const form = screen.getByRole('form', { name: 'Add employee requirement' });
+  expect(within(form).getByLabelText(/Template for/)).toHaveValue('employee');
+  expect(within(form).getByLabelText('Required for every active employee')).toBeChecked();
+  expect(within(form).getByLabelText('Upload a blank form (optional)')).not.toBeRequired();
+  expect(within(form).getByText(/No blank template is needed/)).toBeInTheDocument();
+  fireEvent.change(within(form).getByLabelText('Certificate or document name'), { target: { value: ' CPR certification ' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'Save employee requirement' }));
+  await screen.findByText('Employee requirement added.');
+  expect(api.addRegistrationForm).toHaveBeenCalledWith({ title: 'CPR certification', instructions: '', category: 'other', audience: 'employee', required: true, expirationRequired: false }, undefined, expect.any(String), expect.any(AbortSignal));
+  expect(documents.readDocumentFile).not.toHaveBeenCalled();
+  expect(screen.queryByRole('form', { name: 'Add employee requirement' })).not.toBeInTheDocument();
+  await screen.findByText('This employee requirement has no blank file. Upload a blank version if one becomes available.');
+});
+
+test('the staff shortcut opens the required employee draft once and its presets are not unsaved changes', async () => {
+  const report = vi.fn();
+  render(<SignedIn><UnsavedChangesContext.Provider value={report}><RegistrationForms /></UnsavedChangesContext.Provider></SignedIn>, ['/registration-forms?employee-requirement=new']);
+  expect(screen.getByRole('form', { name: 'Add employee requirement' })).toBeInTheDocument();
+  expect(screen.getByLabelText(/Template for/)).toHaveValue('employee');
+  expect(screen.getByLabelText('Required for every active employee')).toBeChecked();
+  expect(screen.getByLabelText('Filter templates')).toHaveValue('employee');
+  await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel template changes' }));
+  expect(window.confirm).not.toHaveBeenCalled();
+  expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh templates' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh templates' }));
+  await waitFor(() => expect(api.listRegistrationForms).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole('form')).not.toBeInTheDocument();
+});
+
+test('switching from a changed employee draft to a blank form respects discard confirmation', async () => {
+  const report = vi.fn();
+  render(<SignedIn><UnsavedChangesContext.Provider value={report}><RegistrationForms /></UnsavedChangesContext.Provider></SignedIn>);
+  fireEvent.click(screen.getByRole('button', { name: 'Add employee requirement' }));
+  fireEvent.change(screen.getByLabelText('Certificate or document name'), { target: { value: 'CPR certification' } });
+  await waitFor(() => expect(report).toHaveBeenLastCalledWith(true, false));
+  vi.mocked(window.confirm).mockReturnValue(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Add blank form' }));
+  expect(screen.getByLabelText('Certificate or document name')).toHaveValue('CPR certification');
+  expect(api.addRegistrationForm).not.toHaveBeenCalled();
+  vi.mocked(window.confirm).mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Add blank form' }));
+  expect(screen.getByLabelText('Form title')).toHaveValue('');
+  expect(screen.getByLabelText(/Template for/)).toHaveValue('child');
+  expect(screen.getByLabelText('Required for this group')).not.toBeChecked();
+  await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false));
 });

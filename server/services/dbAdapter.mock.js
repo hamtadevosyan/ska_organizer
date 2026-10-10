@@ -8,6 +8,7 @@ const mock = {
   rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
+  staffDocuments: [], staffDocumentRevisions: [], staffDocumentSettings: null,
   attendance: [], attendanceCorrections: [],
   activities: [],
   meals: [
@@ -123,6 +124,7 @@ module.exports = {
   listStaff: async ({ page = 1, pageSize = 50, ...filters } = {}) => structuredClone(filteredStaff(filters).slice((page - 1) * pageSize, page * pageSize)),
   countStaff: async (filters) => filteredStaff(filters).length,
   getStaffById: async (id) => structuredClone(mock.staff.find((person) => person.id === id) || null),
+  listAllStaff: async () => structuredClone(filteredStaff()),
   createStaff: async (payload) => {
     const person = { id: mock.uuid(), active: true, roomId: null, version: 1, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...payload };
     mock.staff.push(person);
@@ -182,6 +184,7 @@ module.exports = {
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
     mock.registrationForms = []; mock.registrationFormRevisions = [];
+    mock.staffDocuments = []; mock.staffDocumentRevisions = []; mock.staffDocumentSettings = null;
     mock.attendance = [];
     mock.attendanceCorrections = [];
     mock.activities = [];
@@ -562,7 +565,7 @@ Object.assign(module.exports, {
     .filter((row) => row.documentId === documentId).sort((a, b) => b.revision - a.revision)
     .slice((page - 1) * pageSize, page * pageSize).map(documentRevisionMetadata)),
   countChildDocumentRevisions: async (documentId) => mock.childDocumentRevisions.filter((row) => row.documentId === documentId).length,
-  createRegistrationForm: async (values) => insert('registrationForms', { audience: 'child', required: false, active: true,
+  createRegistrationForm: async (values) => insert('registrationForms', { audience: 'child', required: false, expirationRequired: false, active: true,
     instructions: '', createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
   updateRegistrationForm: async (id, values) => edit('registrationForms', id, { ...values, updatedAt: mock.nowIso() }),
   getRegistrationForm: async (id) => find('registrationForms', id),
@@ -585,4 +588,41 @@ Object.assign(module.exports, {
     .filter((row) => row.formId === formId).sort((a, b) => b.revision - a.revision)
     .slice((page - 1) * pageSize, page * pageSize).map(documentRevisionMetadata)),
   countRegistrationFormRevisions: async (formId) => mock.registrationFormRevisions.filter((row) => row.formId === formId).length,
+});
+
+const staffDocumentDefaults = () => ({ documentDate: null, notes: '', issuer: '', reference: '', issuedOn: null,
+  expiresOn: null, nonExpiring: false, warningDays: null, registrationFormId: null, registrationFormRevisionId: null });
+Object.assign(module.exports, {
+  createStaffDocument: async (values) => insert('staffDocuments', { ...staffDocumentDefaults(),
+    reviewedRevisionId: null, reviewedBy: null, reviewedAt: null, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
+  updateStaffDocument: async (id, values) => edit('staffDocuments', id, { ...values, updatedAt: mock.nowIso() }),
+  getStaffDocument: async (id, staffId) => copy(mock.staffDocuments.find((row) => row.id === id && row.staffId === staffId) || null),
+  listStaffDocuments: async (staffId, { page = 1, pageSize = 20 } = {}) => copy(mock.staffDocuments
+    .filter((row) => row.staffId === staffId).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt) || a.id.localeCompare(b.id))
+    .slice((page - 1) * pageSize, page * pageSize)),
+  countStaffDocuments: async (staffId) => mock.staffDocuments.filter((row) => row.staffId === staffId).length,
+  listAllStaffDocuments: async (staffId) => copy(mock.staffDocuments.filter((row) => row.staffId === staffId)
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt) || a.id.localeCompare(b.id))),
+  createStaffDocumentRevision: async (values) => {
+    const row = { ...staffDocumentDefaults(), ...values };
+    mock.staffDocumentRevisions.push(copy(row)); return copy(documentRevisionMetadata(row));
+  },
+  getStaffDocumentRevision: async (documentId, revisionId) => copy(documentRevisionMetadata(mock.staffDocumentRevisions
+    .find((row) => row.documentId === documentId && row.id === revisionId))),
+  getStaffDocumentContent: async (documentId, revisionId) => copy(mock.staffDocumentRevisions
+    .find((row) => row.documentId === documentId && row.id === revisionId) || null),
+  getStaffDocumentRevisionByRequest: async (requestScope, requestId) => {
+    const row = mock.staffDocumentRevisions.find((item) => item.requestScope === requestScope && item.requestId === requestId);
+    if (!row) return null;
+    const { content: _content, ...metadata } = row; return copy(metadata);
+  },
+  listStaffDocumentRevisions: async (documentId, { page = 1, pageSize = 20 } = {}) => copy(mock.staffDocumentRevisions
+    .filter((row) => row.documentId === documentId).sort((a, b) => b.revision - a.revision)
+    .slice((page - 1) * pageSize, page * pageSize).map(documentRevisionMetadata)),
+  countStaffDocumentRevisions: async (documentId) => mock.staffDocumentRevisions.filter((row) => row.documentId === documentId).length,
+  getStaffDocumentSettings: async () => copy(mock.staffDocumentSettings || { id: 'current', warningDays: 40, version: 1 }),
+  saveStaffDocumentSettings: async (values) => {
+    mock.staffDocumentSettings = { ...(mock.staffDocumentSettings || { id: 'current', warningDays: 40, version: 1 }), ...copy(values), id: 'current' };
+    return copy(mock.staffDocumentSettings);
+  },
 });

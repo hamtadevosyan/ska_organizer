@@ -14,6 +14,9 @@ test('a new Node process returns the same IDs, recipes, saved menu and shelf ari
   expect(reopened.shopping[0]).toMatchObject({ required: 125, inStorage: 20, toBuy: 105 });
   expect(reopened.datedShopping.items[0]).toMatchObject({ quantity: 15, inStorage: 2, toBuy: 13 });
   expect(reopened.datedPlans[1]).toMatchObject({ childrenCount: 8, staffCount: 1 });
+  expect(reopened.staffDocuments.revisions).toHaveLength(3);
+  expect(reopened.staffDocuments.document).toMatchObject({ expiresOn: '2028-10-01', warningDays: 30 });
+  expect(reopened.staffDocuments.settings).toMatchObject({ warningDays: 30, version: 2 });
 });
 
 test('migrations and explicit seeds preserve existing records when repeated', async () => {

@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { api, authenticatedApi } from './auth-helpers';
 
+// Navigation checks keep their sessions valid; share the real fixture login
+// instead of spending another IP-limited attempt for each viewport.
 for (const width of [390, 1280]) {
   test(`unfinished activity is protected by phone/desktop navigation at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 850 });
-    await authenticatedApi(page, { freshSession: true });
+    await authenticatedApi(page);
     await page.goto('/dashboard');
     await page.getByRole('link', { name: 'Activities', exact: true }).filter({ visible: true }).click();
     await page.locator('summary').filter({ hasText: /^Saved activities/ }).click();
@@ -31,7 +33,7 @@ for (const width of [390, 1280]) {
   });
   test(`unsaved week survives navigation cancellation and failed save at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 850 });
-    const http = await authenticatedApi(page, { freshSession: true });
+    const http = await authenticatedApi(page);
     const suffix = Date.now().toString();
     const roomResponse = await http.post(api + '/rooms', { data: { name: 'Navigation room ' + suffix,
       ageMinMonths: 0, ageMaxMonths: 216, capacity: 10 } });

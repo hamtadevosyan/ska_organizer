@@ -6,6 +6,7 @@ import { API_BASE_URL } from '../lib/api';
 import { authError } from '../auth/transport';
 import type { DashboardMetrics, Section } from '../api/dashboard';
 import learningIllustration from '../assets/brand/learning-world-v5.png';
+import { StaffComplianceAlerts } from '../components/staff/StaffComplianceAlerts';
 import './dashboard.css';
 
 const displayDate = (date: string) => new Intl.DateTimeFormat(undefined, {
@@ -79,6 +80,7 @@ export default function Dashboard() {
         <small>{action.note}</small>
       </Link>)}
     </nav>
+    <StaffComplianceAlerts />
     {loading && <p role="status" className="ska-loading"><RefreshCw size={22} aria-hidden="true" />Loading your day…</p>}
     {error && <div className="ska-alert is-error"><SectionError message={error} name="dashboard" retry={retry} /></div>}
     <div className="home-grid">

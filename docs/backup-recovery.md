@@ -99,6 +99,16 @@ records. `registrationForms: true` means both template tables contained records.
 Format 1/2 manifests retain their original requirements and fingerprint order;
 backups predating the catalog correctly report `registrationForms: false`.
 
+Format 4 manifests also require `StaffDocuments`, `StaffDocumentRevisions` and
+`StaffDocumentSettings`. Their fingerprints include original certificate bytes,
+every revision's dates and template mapping, manual reviews, per-certificate
+warning overrides and the facility warning setting. `staffDocuments: true`
+means both staff file tables contained records; `staffDocumentSettings: true`
+means a persisted facility setting was included. Employee requirements without
+a blank template still live in `RegistrationForms` and are backed up normally.
+Format 1/2/3 backups retain their original requirements and ordering; archives
+predating staff document support correctly report the new coverage flags false.
+
 ## Apply a tested update
 
 First complete all Ubuntu and CI checks for the proposed commit. Arrange a short

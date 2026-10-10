@@ -21,6 +21,8 @@ const childDocuments = require('./routes/childDocuments');
 childDocuments.mountUploads(app);
 const registrationForms = require('./routes/registrationForms');
 registrationForms.mountUploads(app);
+const staffDocuments = require('./routes/staffDocuments');
+staffDocuments.mountUploads(app);
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);
@@ -28,6 +30,7 @@ app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api', requireSession, requireOperationalAccess);
 app.use('/api/registration-forms', registrationForms.router);
+app.use('/api/staff-compliance', staffDocuments.compliance);
 
 // Dashboard route
 app.use('/api/dashboard', require('./routes/dashboard'));
@@ -45,6 +48,7 @@ app.use('/api/children/:childId/documents', childDocuments.router);
 app.use('/api/children', require('./routes/children'));
 // Rooms route
 app.use('/api/rooms', require('./routes/rooms'));
+app.use('/api/staff/:staffId/documents', staffDocuments.router);
 app.use('/api/staff', require('./routes/staff'));
 // Menu route
 app.use("/api/menu", require("./routes/menu"));
