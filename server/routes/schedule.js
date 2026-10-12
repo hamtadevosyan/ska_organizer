@@ -9,6 +9,11 @@ router.get('/plan', async (req, res, next) => {
 router.post('/plan/preview', async (req, res, next) => {
   try { res.json({ data: await plans.preview(req.body) }); } catch (error) { next(error); }
 });
+// Generation returns a reviewable draft only. The normal operational access
+// guard restricts this action to editors/admins; Save remains a separate action.
+router.post('/plan/generate', async (req, res, next) => {
+  try { res.json({ data: await plans.generate(req.body) }); } catch (error) { next(error); }
+});
 router.post('/plan', audited('schedule.save_week', async (req, res, next) => {
   try { res.json({ data: await plans.save(req.body) }); } catch (error) { next(error); }
 }));

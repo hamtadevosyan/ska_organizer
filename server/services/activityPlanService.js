@@ -5,6 +5,7 @@ const { problem, validateWeekStart } = require('./planValidation');
 const { dateOnly } = require('./roomValidation');
 const v = require('./activityValidation');
 const { amount, decimal, requestId } = require('./inventoryValidation');
+const generation = require('./activityPlanGeneration');
 
 const lock = (fn) => db.withRoomLock(() => db.withInventoryLock(fn));
 const legacyKey = (entry) => entry.date + ':' + entry.timeBlock;
@@ -147,6 +148,57 @@ exports.preview = (payload) => lock(async () => {
   if (payload.version !== undefined) v.version(payload.version, previous.version, 'week');
   const entries = await resolve(room, previous, entryValues(payload.entries, payload.weekStart));
   return { materials: await materials(entries) };
+});
+exports.generate = (payload) => lock(async () => {
+  v.object(payload, ['roomId', 'weekStart', 'version', 'entries', 'slots', 'replaceEntryIds', 'allowRepeats', 'excludeActivityIds']);
+  const room = await requireRoom(payload.roomId, { active: true }); validateWeekStart(payload.weekStart);
+  if (![room.ageMinMonths, room.ageMaxMonths].every((value) => Number.isInteger(value) && value >= 0 && value <= 216) || room.ageMaxMonths <= room.ageMinMonths) {
+    throw problem('Configure this room\'s full age range before generating activities.', 409);
+  }
+  const previous = await stored(room.id, payload.weekStart);
+  v.version(payload.version, previous.version, 'week');
+  if (payload.allowRepeats !== undefined && typeof payload.allowRepeats !== 'boolean') throw problem('Choose whether activity repeats are allowed.');
+  const selectedSlots = generation.slots(payload.slots, payload.weekStart);
+  const replaceEntryIds = new Set(generation.identifiers(payload.replaceEntryIds, 'replacement'));
+  const excludeActivityIds = generation.identifiers(payload.excludeActivityIds, 'excluded activity');
+  if (!Array.isArray(payload.entries) || payload.entries.length > 1000) throw problem('Supply up to 1,000 existing draft entries for generation.');
+  const normalized = entryValues(payload.entries, payload.weekStart);
+  for (const id of replaceEntryIds) if (!normalized.some((entry) => entry.id === id)) throw problem('Choose replacements from the current draft.');
+  const resolved = await resolve(room, previous, normalized);
+  const values = new Map(normalized.map((entry) => [entry.id, entry]));
+  const legacyValues = new Map(normalized.filter((entry) => !entry.id).map((entry) => [legacyKey(entry), entry]));
+  const draft = resolved.map((entry) => {
+    const choices = values.get(entry.id) || legacyValues.get(legacyKey(entry));
+    return { ...entry, ...(choices?.useLatest ? { useLatest: true } : {}),
+      ...(choices?.activityVersion != null ? { activityVersion: choices.activityVersion } : {}),
+      ...(choices?.copyFrom ? { copyFrom: choices.copyFrom } : {}) };
+  });
+  let retained = draft.filter((entry) => !replaceEntryIds.has(entry.id));
+  const [catalog, history] = await Promise.all([db.listActivities(), db.listActivityUseBefore(room.id, payload.weekStart)]);
+  const proposed = generation.generate({ room, catalog, history, entries: retained, selectedSlots,
+    allowRepeats: payload.allowRepeats === true, excludeActivityIds });
+  if (replaceEntryIds.size && proposed.unfilledSlots.length) {
+    // Partial replacement must not erase routines merely because the catalog
+    // cannot fill a slot. Restore all selected originals, keeping only safe,
+    // non-repeating suggestions that can coexist with the restored draft.
+    const restored = draft.filter((entry) => replaceEntryIds.has(entry.id));
+    retained = draft;
+    const removed = new Set(proposed.generated.filter((entry) => restored.some((original) => generation.overlaps(entry, original) ||
+      payload.allowRepeats !== true && entry.activityId === original.activityId)).map((entry) => entry.id));
+    for (const mapping of proposed.generatedSlots.filter((value) => removed.has(value.entryId))) {
+      const slot = selectedSlots.find((value) => value.id === mapping.slotId);
+      proposed.unfilledSlots.push({ ...slot, reason: 'The existing activities were kept because replacements were incomplete. This suggestion conflicts with a retained activity.' });
+    }
+    proposed.generated = proposed.generated.filter((entry) => !removed.has(entry.id));
+    proposed.generatedSlots = proposed.generatedSlots.filter((value) => !removed.has(value.entryId));
+    proposed.warnings.push('Some replacement slots could not be filled. All existing activities selected for replacement were kept. Review the remaining suggestions before applying them.');
+  }
+  const entries = [...retained, ...proposed.generated].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  const materialChecks = await materials(entries);
+  if (materialChecks.length) proposed.warnings.push('Material checks cover this room only. Other rooms may need the same stock.');
+  if (materialChecks.some((item) => item.issue || amount(item.shortage) > 0n)) proposed.warnings.push('This draft needs unavailable materials or has changed inventory units. Review the material checks before saving.');
+  return { entries, generatedIds: proposed.generated.map((entry) => entry.id), generatedSlots: proposed.generatedSlots,
+    unfilledSlots: proposed.unfilledSlots, materials: materialChecks, warnings: proposed.warnings };
 });
 exports.save = (payload) => lock(async () => {
   v.object(payload, ['roomId', 'weekStart', 'entries', 'version', 'requestId']);

@@ -8,7 +8,7 @@ import UnsavedChangesProvider from '../components/UnsavedChangesProvider';
 import Activities from './Activities';
 import { SignedIn } from '../tests/authFixture';
 import { testAccount } from '../tests/authAccount';
-import type { Activity, ActivityPlan, Entry } from '../api/activities';
+import type { Activity, ActivityPlan, Entry, GenerationSlot } from '../api/activities';
 import type { Room } from '../api/rooms';
 
 const { transferableAbortController } = await vi.importActual<{ transferableAbortController: () => AbortController }>('node:util');
@@ -619,4 +619,51 @@ test('unsaved chooser search and time changes remain guarded through navigation 
   fireEvent.click(within(form).getByRole('button', { name: 'Add to day' }));
   expect(selected(1, 'Tuesday')).toHaveTextContent('09:30–09:50');
   expect(screen.queryByRole('group', { name: 'Monday activity 1' })).not.toBeInTheDocument();
+});
+
+test('generation adds only an editable draft, retains existing entries, and Undo generation restores them', async () => {
+  navigationDom(); render(<SignedIn><Activities /></SignedIn>); await chooseRoom(); add();
+  const previousPost = vi.mocked(axios.post).getMockImplementation()!;
+  vi.mocked(axios.post).mockImplementation(async (url, payload, config) => {
+    if (!url.endsWith('/generate')) return previousPost(url, payload, config);
+    const values = payload as { entries: Entry[]; slots: GenerationSlot[] };
+    const slot = values.slots[0];
+    const generated: Entry = { id: 'generated-real-draft', activityId: art.id, activity: art, date: slot.date,
+      startTime: slot.startTime, endTime: '09:20', timeBlock: null, useLatest: true };
+    return response({ entries: [...values.entries.map(value => ({ ...value, activity: art })), generated], generatedIds: [generated.id],
+      generatedSlots: [{ slotId: slot.id, entryId: generated.id }], unfilledSlots: [], materials: [], warnings: [] });
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Generate week' }));
+  expect(screen.getByRole('combobox', { name: 'Room' })).toBeDisabled();
+  expect(screen.getByLabelText('Week starting Monday')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Add activity' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save week' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Preview generated week' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Use generated plan' })).toBeEnabled());
+  expect(screen.queryByRole('group', { name: 'Monday activity 2' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Use generated plan' }));
+  expect(selected(1)).toHaveTextContent('08:00–08:20'); expect(selected(2)).toHaveTextContent('09:00–09:20');
+  expect(screen.getByText('Unsaved changes', { exact: true })).toBeInTheDocument();
+  expect(vi.mocked(axios.post).mock.calls.some(([url]) => url.endsWith('/plan'))).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Undo generation' }));
+  expect(selected()).toHaveTextContent('08:00–08:20'); expect(screen.queryByRole('group', { name: 'Monday activity 2' })).not.toBeInTheDocument();
+});
+
+test('generation settings protect navigation and cancel clears only the form guard', async () => {
+  navigationApp(); await chooseRoom();
+  fireEvent.click(screen.getByRole('button', { name: 'Generate week' }));
+  fireEvent.change(screen.getByLabelText('Window 1 start'), { target: { value: '10:00' } });
+  fireEvent.change(screen.getByLabelText('Window 1 finish by'), { target: { value: '10:30' } });
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+  await screen.findByRole('dialog', { name: 'Leave your unsaved work?' });
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  expect(screen.getByLabelText('Window 1 start')).toHaveValue('10:00');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Home' })); await screen.findByRole('heading', { name: 'Destination' });
+  expect(vi.mocked(axios.post).mock.calls.some(([url]) => url.endsWith('/generate'))).toBe(false);
+});
+
+test('viewers have no generation action', async () => {
+  navigationApp('viewer'); await chooseRoom();
+  expect(screen.queryByRole('button', { name: 'Generate week' })).not.toBeInTheDocument();
 });

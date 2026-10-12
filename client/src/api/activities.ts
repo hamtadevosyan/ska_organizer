@@ -12,6 +12,9 @@ export type Entry = { id: string; date: string; startTime: string | null; endTim
   timeBlock: string | null; activityId: string; activity: Activity | null; useLatest?: boolean; copyFrom?: CopySource };
 export type MaterialCheck = { itemId: string; name: string; location: string; unit: string; needed: string; available: string; shortage: string; issue: string | null };
 export type ActivityPlan = { roomId: string; weekStart: string; version: number; savedAt: string | null; entries: Entry[]; materials: MaterialCheck[] };
+export type GenerationSlot = { id: string; date: string; startTime: string; endTime: string };
+export type ActivityGeneration = { entries: Entry[]; generatedIds: string[]; generatedSlots: { slotId: string; entryId: string }[];
+  unfilledSlots: (GenerationSlot & { reason: string })[]; materials: MaterialCheck[]; warnings: string[] };
 export const activitiesUrl = API_BASE_URL + '/api/activity';
 export const activityPlanUrl = API_BASE_URL + '/api/schedule/plan';
 export const legacyLabel = (block: string | null) => ({ morning: 'Morning', midday: 'Midday', afternoon: 'Afternoon' } as Record<string, string>)[block || ''] || 'Earlier schedule';
