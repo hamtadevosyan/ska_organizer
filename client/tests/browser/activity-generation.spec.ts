@@ -13,12 +13,22 @@ async function data<T>(response: APIResponse, status = 200): Promise<T> {
 async function seed(http: Http, count = 5) {
   const suffix = randomUUID().slice(0, 8);
   const room = await data<Room>(await http.post(api + '/rooms', { data: { name: 'Generation room ' + suffix, ageMinMonths: 24, ageMaxMonths: 60, capacity: 12 } }), 201);
+  // All browser files share one fixture server. Other tests can leave global
+  // activities suitable for this room. Keep those as explicit Sunday routines
+  // so repeat avoidance has a deterministic weekday pool without deleting,
+  // reassigning or mocking the shared catalog.
+  const existingCatalog = await data<Activity[]>(await http.get(api + '/activity'));
+  const preserved = existingCatalog.filter(activity => !activity.roomId && (activity.ageMinMonths == null ||
+    (activity.ageMinMonths <= room.ageMinMonths! && activity.ageMaxMonths! >= room.ageMaxMonths!))).map(activity => ({
+    id: randomUUID(), date: '2026-10-18', startTime: '08:00', endTime: '08:20',
+    activityId: activity.id, activityVersion: activity.version,
+  }));
   const stock = await data<{ id: string; quantity: string }>(await http.post(api + '/inventory', { data: { name: 'Generation paper ' + suffix, category: 'Art', location: 'Class cupboard', unit: 'count', openingQuantity: '4', reorderThreshold: '0', reason: 'Synthetic stock', requestId: randomUUID() } }), 201);
   const routine = await data<Activity>(await http.post(api + '/activity', { data: { name: 'Arrival routine ' + suffix, description: 'Keep this fixed routine.', durationMinutes: 15, ageMinMonths: 24, ageMaxMonths: 60, roomId: room.id, materials: [] } }), 201);
   const activities: Activity[] = [];
   for (let index = 0; index < count; index++) activities.push(await data<Activity>(await http.post(api + '/activity', { data: { name: `Generation choice ${index + 1} ${suffix}`, description: 'Synthetic local activity.', durationMinutes: 20, ageMinMonths: 18, ageMaxMonths: 72, roomId: room.id, materials: [{ itemId: stock.id, quantity: '2', unit: 'count', reusable: false }] } }), 201));
   await data<Activity>(await http.post(api + '/activity', { data: { name: 'Unsuitable narrow age ' + suffix, description: '', durationMinutes: 20, ageMinMonths: 24, ageMaxMonths: 36, roomId: room.id, materials: [] } }), 201);
-  const saved = await data<ActivityPlan>(await http.post(api + '/schedule/plan', { data: { roomId: room.id, weekStart: week, version: 0, requestId: randomUUID(), entries: [{ id: randomUUID(), date: week, startTime: '08:00', endTime: '08:15', activityId: routine.id }] } }));
+  const saved = await data<ActivityPlan>(await http.post(api + '/schedule/plan', { data: { roomId: room.id, weekStart: week, version: 0, requestId: randomUUID(), entries: [{ id: randomUUID(), date: week, startTime: '08:00', endTime: '08:15', activityId: routine.id }, ...preserved] } }));
   return { room, stock, routine, activities, saved };
 }
 const getPlan = (http: Http, room: Room) => http.get(`${api}/schedule/plan?roomId=${room.id}&weekStart=${week}`).then(response => data<ActivityPlan>(response));
@@ -53,7 +63,7 @@ for (const width of [320, 390, 1280]) {
     const http = await authenticatedApi(page); const setup = await seed(http); await open(page, setup.room);
     let dialog = await preview(page);
     await expect(dialog.getByRole('combobox', { name: /^Suggested activity \d+$/ })).toHaveCount(5);
-    await expect(dialog).toContainText('To get: 6'); await fits(page, dialog);
+    await expect(dialog.getByRole('region', { name: 'Change preview', exact: true }).getByRole('listitem').filter({ hasText: 'Generation paper ' })).toContainText('To get: 6'); await fits(page, dialog);
     if (width === 390) await page.screenshot({ path: test.info().outputPath('generation-mobile-preview.png') });
     expect(await getPlan(http, setup.room)).toEqual(setup.saved);
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -71,9 +81,11 @@ for (const width of [320, 390, 1280]) {
     const result = page.waitForResponse(res => res.url() === api + '/schedule/plan' && res.request().method() === 'POST');
     await page.getByRole('button', { name: 'Save week', exact: true }).click(); expect((await result).status()).toBe(200);
     await expect(page.getByRole('button', { name: 'Save week', exact: true })).toBeDisabled();
-    const saved = await getPlan(http, setup.room); expect(saved.version).toBe(2); expect(saved.entries).toHaveLength(6);
-    expect(saved.entries.find(e => e.id === setup.saved.entries[0].id)).toEqual(setup.saved.entries[0]);
-    expect(new Set(saved.entries.map(e => e.activityId)).size).toBe(6); expect(new Set(saved.entries.map(e => e.id)).size).toBe(6);
+    const saved = await getPlan(http, setup.room); expect(saved.version).toBe(2); expect(saved.entries).toHaveLength(setup.saved.entries.length + 5);
+    for (const original of setup.saved.entries) expect(saved.entries.find(e => e.id === original.id)).toEqual(original);
+    expect(new Set(saved.entries.map(e => e.activityId)).size).toBe(saved.entries.length); expect(new Set(saved.entries.map(e => e.id)).size).toBe(saved.entries.length);
+    const generated = saved.entries.filter(e => !setup.saved.entries.some(original => original.id === e.id));
+    expect(new Set(generated.map(e => e.activityId))).toEqual(new Set(setup.activities.map(activity => activity.id)));
     expect(saved.entries.find(e => e.date === week && e.activityId !== setup.routine.id)).toMatchObject({ startTime: '09:10', endTime: '09:30' });
     await page.getByRole('button', { name: 'Reload week', exact: true }).click();
     await expect(page.getByRole('group', { name: 'Monday activity 2', exact: true })).toContainText('09:10–09:30');
