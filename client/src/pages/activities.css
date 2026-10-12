@@ -7,6 +7,28 @@
 .planner-save-actions, .planner-browse, .planner-status-row, .planner-entry-top, .planner-entry-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .planner-status-row, .planner-browse, .planner-entry-top { justify-content: space-between; }
 .planner-reuse-actions, .planner-action-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.planner-generate-trigger { color: #62419a; border-color: #d8c5f0; background: linear-gradient(120deg, #f4ebff, #fff4df); }
+.planner-generation-intro { display: flex; gap: 14px; align-items: start; padding: 16px; border-radius: 18px; background: linear-gradient(120deg, #f3eaff, #edf6ff 65%, #fff3d7); color: #5f3b8b; }
+.planner-generation-intro svg { flex: 0 0 26px; margin-top: 4px; }
+.planner-generation-intro strong { font-size: 19px; }
+.planner-generation-days, .planner-generation-windows { min-width: 0; padding: 14px; border: 1px solid #ded6ef; border-radius: 16px; }
+.planner-generation-days { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.planner-generation :where(legend, h3) { font-weight: 750; color: #53427c; }
+.planner-generation-windows, .planner-generation-review { display: grid; min-width: 0; gap: 14px; }
+.planner-generation-window, .planner-generation-times { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 12px; }
+.planner-generation-window { padding: 14px 0; border-bottom: 1px solid #e4dfed; }
+.planner-generation-window > button, .planner-generation-window-error { grid-column: 1 / -1; }
+.planner-generation-window > button { justify-self: start; }
+.planner-generation-window-error { color: #a42d35; }
+.planner-generation-suggestion { min-width: 0; display: grid; gap: 12px; padding: 16px; border: 1px solid #dcd2ed; border-left: 5px solid #af8bdf; border-radius: 18px; background: #fcf9ff; }
+.planner-generation-suggestion:nth-of-type(3n + 2) { background: #f4faff; border-color: #d1e0f3; border-left-color: #82b0e7; }
+.planner-generation-suggestion:nth-of-type(3n) { background: #fffaf0; border-color: #ede0c3; border-left-color: #e5bf69; }
+.planner-generation-unfilled, .planner-generation-warnings { min-width: 0; padding: 16px; border: 1px solid #ead6a4; border-radius: 16px; background: #fff8e5; }
+.planner-generation-warnings { list-style: disc; padding-left: 32px; }
+.planner-generation-small { font-size: 13px; }
+.planner-generation-pending { display: grid; gap: 12px; padding: 16px; border-radius: 16px; background: #eff6ff; }
+.planner-generation fieldset:disabled { opacity: .7; }
+@media (max-width: 400px) { .planner-generation-window, .planner-generation-times { grid-template-columns: minmax(0, 1fr); } }
 .planner-reuse { display: grid; min-width: 0; gap: 16px; margin-top: 16px; color: #415671; line-height: 1.6; }
 .planner-reuse :where(p, li, strong, label) { overflow-wrap: anywhere; }
 .planner-reuse :where(input:not([type='checkbox'], [type='radio']), select) { width: 100%; min-width: 0; }

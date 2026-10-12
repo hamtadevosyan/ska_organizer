@@ -156,6 +156,14 @@ module.exports = {
   },
   countChildren: async (filters) => filteredChildren(filters).length,
   listScheduleEntries: async (roomId, weekStart) => structuredClone(mock.scheduleEntries.filter((row) => inScheduleWeek(row, roomId, weekStart))),
+  listActivityUseBefore: async (roomId, beforeDate) => {
+    const uses = new Map();
+    for (const entry of mock.scheduleEntries) if (entry.roomId === roomId && entry.date < beforeDate) {
+      const lastUsed = uses.get(entry.activityId);
+      if (!lastUsed || entry.date > lastUsed) uses.set(entry.activityId, entry.date);
+    }
+    return [...uses].map(([activityId, lastUsed]) => ({ activityId, lastUsed }));
+  },
   getScheduleEntryById: async (id) => structuredClone(mock.scheduleEntries.find((row) => row.id === id) || null),
   getScheduleWeek: async (roomId, weekStart) => structuredClone(mock.scheduleWeeks.find((row) => row.roomId === roomId && row.weekStart === weekStart) || null),
   saveScheduleWeek: async (values) => {

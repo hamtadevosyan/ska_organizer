@@ -343,6 +343,11 @@ const scheduleWhere = (roomId, weekStart) => {
 exports.listScheduleEntries = (roomId, weekStart) => list('ScheduleEntry', {
   where: scheduleWhere(roomId, weekStart), order: [['date', 'ASC'], ['startTime', 'ASC'], ['id', 'ASC']],
 });
+exports.listActivityUseBefore = (roomId, beforeDate) => model('ScheduleEntry').findAll({
+  attributes: ['activityId', [fn('MAX', col('date')), 'lastUsed']],
+  where: { roomId, date: { [Op.lt]: beforeDate } }, group: ['activityId'],
+  raw: true, transaction: transactionContext.getStore(),
+});
 exports.getScheduleEntryById = (id) => get('ScheduleEntry', id);
 exports.getScheduleWeek = async (roomId, weekStart) => (await list('ScheduleWeek', { where: { roomId, weekStart } }))[0] || null;
 // All schedule writes share the room lock with room/activity changes.

@@ -24,7 +24,7 @@ export function PlanActionPreview({ plan, entries, disabled, actionLabel, onAppl
   }, [entries, plan.roomId, plan.weekStart, plan.version, retry]);
   return <section className="planner-action-preview" aria-label="Change preview">
     <h3>Materials after this change</h3>
-    <p>For the whole destination week, using current stock. Copying, moving and saving use or reserve no stock.</p>
+    <p>For the whole destination week, using current stock. Changing and saving the plan use or reserve no stock.</p>
     {pending || !current ? <p role="status">Checking current stock and saved activities…</p> : current.error ? <p role="alert" className="ska-alert is-error">{current.error}</p>
       : !current.materials.length ? <p>No materials listed for this week.</p>
       : <ul className="planner-action-materials">{current.materials.map(item => <li key={item.itemId + ':' + item.unit}><strong>{item.name}</strong>

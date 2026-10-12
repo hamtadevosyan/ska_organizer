@@ -56,6 +56,66 @@ Earlier morning/midday/afternoon entries are preserved with **Time not set** and
 their original block label. No clock times are guessed. Enter their times when
 ready; untimed legacy entries may remain in an otherwise timed saved week.
 
+## Generate a week (SKAO-107)
+
+1. Choose an active room with a valid age range and the Monday of the week, then
+   choose **Generate week**. Finish any open activity form first.
+2. Choose **Working days** and one or more **Time windows**. Each selected day
+   gets one suggested activity per window. The activity starts at the window's
+   start and finishes within its **finish by** time; a shorter activity leaves
+   unused time. Monday–Friday and 09:00–09:30 are initial suggestions, not the
+   facility's configured opening hours. Saturday and Sunday can also be selected.
+3. Choose **Preview generated week**. Review and change each **Suggested
+   activity**, **Suggested start** and **Suggested end**. Expand **Instructions
+   and materials**, and review **Materials after this change** for the whole room
+   and week.
+4. Choose **Use generated plan** to put the reviewed result into the weekly
+   draft. It is still unsaved. Continue editing, choose **Undo generation** if
+   needed, or choose **Save week** to keep it.
+
+Suggestions use the saved activity library on this server. An activity must suit
+the room's complete age range and any room assignment, and have a valid usual
+duration. Generation favors variety and activities used less recently in this
+room before the selected week. It selects existing activities; it does not invent
+new instructions or require an AI model, external service or special hardware.
+Older activities without a duration are skipped with a warning; update their
+catalog details rather than relying on a guessed duration.
+
+Existing activities, including fixed routines, are kept by default. Open
+**Existing activities are kept** only if you intend to replace specific entries,
+select those entries and confirm the replacement before previewing. Other
+entries keep their IDs, times and saved details. A partially filled replacement
+keeps every selected existing entry; conflicting replacement suggestions are
+removed and explained. Untimed earlier activities occupy their whole day for
+generation overlap checks, so set their times or explicitly select replacements.
+
+Repeated activities are off by default, including activities already present in
+the draft. If there are too few suitable activities, a duration does not fit or
+a slot overlaps an existing entry, **Slots that need your choice** explains why.
+You can use the filled suggestions and add activities manually later. To try
+again, select the unfilled slots or **Try another activity for this slot**,
+optionally enable **Allow repeated activities when needed**, then choose
+**Regenerate selected slots**. Earlier choices in the other slots remain. A
+selected suggestion is excluded from its replacement attempt so that trying
+again does not silently return the same suggestion. If replacements cannot be
+completed safely, the previous suggestions remain.
+
+Material amounts follow the existing whole-activity rules below. Generation
+checks consumables and reusable equipment together with retained draft entries;
+it flags shortages, changed units and older material notes without inventory
+quantities. A shortage is a review warning, not a promise that supplies will be
+available. The estimate covers this room only. Nothing is consumed or reserved.
+To change an activity's material quantities, use **Saved activities**; after a
+catalog change, cancel and reopen generation to use its current details.
+
+**Change days and times** returns to the setup choices. **Stop generation**
+cancels an in-flight request and keeps the week and any earlier preview. **Cancel**
+does not apply suggestions. Failed requests keep your settings and earlier
+preview for retry; a failed material preview blocks **Use generated plan** until
+it succeeds. A changed saved week or activity revision is rejected rather than
+overwritten. Navigating away asks about unfinished generation work, and account
+changes clear it with the other drafts. Nothing is automatically saved.
+
 ## Add or change an activity
 
 Open **Saved activities → Create library activity** to manage the library separately.
@@ -132,6 +192,8 @@ retains earlier untimed blocks without changing their IDs or snapshots, and perm
 usual activity durations up to a full day (1,440 minutes). Apply this new migration
 even if 012 was already applied; never undo or edit an applied migration.
 SKAO-98 changes the client workflow only; it adds no migration or dependency.
+SKAO-107 adds local generation through the existing database and activity library;
+it adds no migration, dependency or system-settings change.
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -140,6 +202,7 @@ SKAO-98 changes the client workflow only; it adds no migration or dependency.
 | `PUT /api/activity/:id` | Edit with the current `version` |
 | `GET /api/schedule/plan?roomId=…&weekStart=YYYY-MM-DD` | Read a room/week; empty unsaved weeks have version 0 |
 | `POST /api/schedule/plan/preview` | Read-only material calculation using roomId, weekStart, entries and optional version |
+| `POST /api/schedule/plan/generate` | Read-only generation of a reviewable room/week draft from selected timed slots and the local catalog |
 | `POST /api/schedule/plan` | Atomic audited save using roomId, weekStart, version, requestId and entries |
 
 Each timed entry contains `id`, `date`, `startTime`, `endTime` and `activityId`.
@@ -155,6 +218,25 @@ explicitly select a catalog revision; a concurrent catalog change is rejected.
 Requests never supply trusted snapshot names, actor identity or timestamps.
 Materials contain `itemId`, `quantity`, `unit` and `reusable`; names and locations
 come from Inventory.
+
+`POST /api/schedule/plan/generate` accepts `roomId`, Monday `weekStart`, the current
+saved-week `version`, `entries` containing the current draft, and `slots`.
+Each slot contains a unique `id`, `date`, `startTime` and latest `endTime` within
+that week. There must be 1–140 slots; start is HH:MM and only end permits 24:00.
+The draft may contain up to 1,000 existing entries. Optional `replaceEntryIds`
+must identify entries in that draft; optional `allowRepeats` is a boolean and
+defaults to false. Optional `excludeActivityIds` supports replacing selected
+suggestions with a different activity. Unknown fields and stale versions are
+rejected. This editor/admin action requires the normal session and CSRF checks.
+
+The response is wrapped in `data` and contains `entries` (retained and generated
+entries), `generatedIds`, `generatedSlots` mapping each `slotId` to its `entryId`,
+`unfilledSlots` with their original slot fields and an explanatory `reason`,
+`materials`, and `warnings`. Generated entries receive unique IDs and explicit
+catalog revision selection. Existing snapshots and copy provenance are resolved
+through the same validation as preview/save. Generation never writes a schedule,
+catalog activity, audit save or stock movement. Clients recheck a changed preview
+through `/plan/preview` and use the normal versioned `/plan` save afterward.
 
 The older array week endpoints remain readable. Their writes default to version
 0 and cannot overwrite an existing versioned week without supplying its current
@@ -181,6 +263,12 @@ Create an activity requiring 6 consumable items when stock is 10; scheduling it 
 should show Needed 12 and To get 2. Reusable amounts should add during overlaps but
 be reusable afterward. Inventory should remain 10 throughout. Also check catalog
 edits and explicit updates, archived rooms, a read-only account and a two-tab conflict.
+For generation, choose several working days and windows, edit a suggestion's
+activity and times, review material totals, then apply and undo without saving.
+Apply again, save and reload to check persistence. Check an insufficient library,
+repeats, retrying only selected slots, a retained fixed routine, incomplete
+replacement, cancellation, failed preview and a two-tab saved-week conflict.
+Check the same workflow at phone widths and confirm inventory counts never change.
 
 ## Unsaved work when navigating (SKAO-97)
 

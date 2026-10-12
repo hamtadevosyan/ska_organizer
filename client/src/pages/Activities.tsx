@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { CalendarDays, CheckCircle2, Copy, Library, Plus, Printer, Undo2 } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Copy, Library, Plus, Printer, Sparkles, Undo2 } from 'lucide-react';
 import { useAuth } from '../auth/context';
 import { RoomSelect } from '../components/rooms/RoomSelect';
 import { useRooms } from '../components/rooms/useRooms';
@@ -10,6 +10,7 @@ import { ActivityDay } from '../components/activities/ActivityDay';
 import { ActivityPrint } from '../components/activities/ActivityPrint';
 import { ActivityReuse } from '../components/activities/ActivityReuse';
 import { ActivityMove } from '../components/activities/ActivityMove';
+import { ActivityGenerate } from '../components/activities/ActivityGenerate';
 import { dayLabel, entryProblem, suitable, weekDates, materialUnitLabel } from '../api/activities';
 import type { Activity, Entry } from '../api/activities';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
@@ -24,6 +25,8 @@ export default function Activities() {
   const [composer, setComposer] = useState<{ entry?: Entry } | null>(null);
   const [reuse, setReuse] = useState<'day' | 'week' | null>(null);
   const [moving, setMoving] = useState<Entry | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generationDirty, setGenerationDirty] = useState(false);
   const [formDirty, setFormDirty] = useState(false);
   const [composerDirty, setComposerDirty] = useState(false);
   const [activitySaving, setActivitySaving] = useState(false);
@@ -41,9 +44,9 @@ export default function Activities() {
   }, [composer]);
   const reportUnsaved = useUnsavedChanges();
   useLayoutEffect(() => {
-    reportUnsaved(editable && (planner.dirty || formDirty || composerDirty), planner.saving || activitySaving);
+    reportUnsaved(editable && (planner.dirty || formDirty || composerDirty || generationDirty), planner.saving || activitySaving);
     return () => reportUnsaved(false, false);
-  }, [reportUnsaved, editable, planner.dirty, formDirty, composerDirty, planner.saving, activitySaving]);
+  }, [reportUnsaved, editable, planner.dirty, formDirty, composerDirty, generationDirty, planner.saving, activitySaving]);
   const room = rooms.rooms.find(value => value.id === planner.roomId);
   const ready = !!planner.plan && planner.plan.roomId === planner.roomId && planner.plan.weekStart === planner.weekStart;
   const allDates = ready ? weekDates(planner.weekStart) : [];
@@ -59,7 +62,8 @@ export default function Activities() {
     : planner.catalogBusy ? 'Loading activities. Please wait.'
     : planner.catalogError ? 'Activities could not load. Use Refresh activities to retry.' : '';
   const locked = !!disabledReason;
-  const focusedForm = !!composer || !!catalogForm || !!reuse || !!moving;
+  const focusedForm = !!composer || !!catalogForm || !!reuse || !!moving || generating;
+  function closeGeneration() { setGenerating(false); setGenerationDirty(false); }
   function closeComposer() { restoreFocus.current = true; setComposer(null); setComposerDirty(false); }
   function closeCatalogForm() { setCatalogForm(null); setFormDirty(false); }
   function chooseDay(index: number) { if (!planner.saving && !activitySaving) setDayIndex(index); }
@@ -76,7 +80,7 @@ export default function Activities() {
       </section>
       {(rooms.error || planner.catalogError || planner.error) && <div className="planner-errors">
         {rooms.error && <p role="alert" className="ska-alert is-error">{rooms.error} <button className="ska-button" onClick={() => void rooms.refresh()}>Retry rooms</button></p>}
-        {planner.catalogError && <p role="alert" className="ska-alert is-error">{planner.catalogError} <button className="ska-button" onClick={planner.refreshCatalog}>Refresh activities</button></p>}
+        {planner.catalogError && <p role="alert" className="ska-alert is-error">{planner.catalogError} <button className="ska-button" disabled={focusedForm} onClick={planner.refreshCatalog}>Refresh activities</button></p>}
         {planner.error && <p role="alert" className="ska-alert is-error">{planner.error} <button className="ska-button" disabled={planner.saving || focusedForm} onClick={() => { planner.reloadWeek(); void rooms.refresh(); }}>Reload week</button></p>}
       </div>}
       {planner.notice && <p role="status" className="planner-notice">{planner.notice}</p>}
@@ -90,7 +94,8 @@ export default function Activities() {
         <div className="planner-browse"><div className="planner-view-switch" role="group" aria-label="Schedule view">
           <button aria-pressed={view === 'day'} disabled={planner.saving || activitySaving} onClick={() => setView('day')}>Day view</button>
           <button aria-pressed={view === 'week'} disabled={planner.saving || activitySaving} onClick={() => setView('week')}>Week view</button></div>
-          {editable && <div className="planner-reuse-actions"><button disabled={locked || focusedForm || incomplete} onClick={() => setReuse('day')} className="ska-button"><Copy size={17} aria-hidden="true" />Copy day</button>
+          {editable && <div className="planner-reuse-actions"><button disabled={locked || focusedForm || incomplete} onClick={() => setGenerating(true)} className="ska-button planner-generate-trigger"><Sparkles size={18} aria-hidden="true" />Generate week</button>
+            <button disabled={locked || focusedForm || incomplete} onClick={() => setReuse('day')} className="ska-button"><Copy size={17} aria-hidden="true" />Copy day</button>
             <button disabled={locked || focusedForm || incomplete} onClick={() => setReuse('week')} className="ska-button"><Copy size={17} aria-hidden="true" />Copy week</button>
             <button ref={addRef} aria-describedby={disabledReason ? 'planner-disabled-reason' : undefined} disabled={locked || focusedForm} onClick={() => { composerTrigger.current = addRef.current; setComposer({}); }} className="ska-button is-primary"><Plus size={19} aria-hidden="true" />Add activity</button></div>}</div>
         <nav aria-label="Schedule day" className="planner-days">{allDates.map((date, index) => <button key={date} aria-label={dayLabel(date)} aria-pressed={dayIndex === index} disabled={planner.saving || activitySaving} onClick={() => chooseDay(index)}>
@@ -135,6 +140,8 @@ export default function Activities() {
         onCancel={() => setReuse(null)} onApply={entries => { planner.applyDraftChange(entries, 'Undo copy'); setReuse(null); }} />}
       {ready && room && moving && <ActivityMove plan={planner.plan!} entry={moving} entries={planner.entries} dates={allDates} roomName={room.name}
         onCancel={() => setMoving(null)} onApply={entries => { planner.applyDraftChange(entries, 'Undo move'); setMoving(null); }} />}
+      {ready && room && generating && <ActivityGenerate plan={planner.plan!} entries={planner.entries} room={room} catalog={planner.catalog} onDirtyChange={setGenerationDirty}
+        onCancel={closeGeneration} onApply={entries => { planner.applyDraftChange(entries, 'Undo generation'); closeGeneration(); }} />}
     </div>
     {ready && <ActivityPrint roomName={room?.name || 'Room'} weekStart={planner.weekStart} dates={allDates} entries={planner.entries} draft={planner.dirty || !planner.plan?.savedAt} />}
   </div>;
