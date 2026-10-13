@@ -72,7 +72,7 @@ const convertToUS = (
   return { value: String(safeQuantity), unit: sourceUnit };
 };
 
-const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWrite?: boolean; active?: boolean; onEditRecipe?: (id: string) => void }) => {
+const MealPlanner = ({ active = true, onEditRecipe, onOpenMealSetup, canWrite = false }: { canWrite?: boolean; active?: boolean; onEditRecipe?: (id: string) => void; onOpenMealSetup?: () => void }) => {
   const planner = useWeeklyPlan(active);
   const { entry, update, isBusy, actionLoading, ready, printReady, historical } = planner;
   const { week: weeklyMenu, childrenCount, staffCount, dailyChildrenCounts = {} } = entry.draft;
@@ -181,11 +181,34 @@ const MealPlanner = ({ active = true, onEditRecipe, canWrite = false }: { canWri
         </button>
         <p className="text-xs text-gray-500">Choose any date; the plan starts on that week’s Monday.</p>
       </section>
+      {(actionLoading === 'generate' || actionLoading === 'import') && <div role="status" className="print:hidden rounded-xl border bg-white p-4 text-sm">
+        <p>Generating a menu. Your previous menu stays unchanged until generation finishes.</p>
+        <button type="button" onClick={() => planner.cancelGeneration()} className="mt-2 font-semibold text-emerald-700 underline">Cancel generation</button>
+      </div>}
+      {(entry.generationError || entry.generationIssues.length > 0) && <div role={entry.generationError ? 'alert' : 'status'}
+        className="print:hidden rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
+        <h3 className="font-bold">{entry.generationError ? 'Menu generation could not finish' : 'Some recipes were skipped'}</h3>
+        {entry.generationError && <p className="mt-2">{entry.generationError}</p>}
+        {entry.generationIssues.length > 0 && <ul className="mt-2 space-y-2">{entry.generationIssues.map((issue, index) => <li key={index}>
+          {issue.mealName && <strong>{issue.mealName}: </strong>}{issue.message}{' '}
+          {issue.mealId && onEditRecipe && <button type="button" disabled={isBusy} className="font-semibold underline"
+            onClick={() => onEditRecipe(issue.mealId!)}>Edit recipe for {issue.mealName}</button>}
+        </li>)}</ul>}
+        <div className="mt-3 flex flex-wrap gap-3">
+          {canWrite && onOpenMealSetup && <button type="button" disabled={isBusy} onClick={onOpenMealSetup}
+            className="rounded-lg border border-amber-800 px-3 py-2 font-semibold">Open Meal Setup</button>}
+          {entry.generationError && <button type="button" disabled={isBusy || catalogLoading} onClick={() => void planner.retryGeneration()}
+            className="rounded-lg border border-amber-800 px-3 py-2 font-semibold">Retry generation</button>}
+        </div>
+        {entry.generationError && <p className="mt-2 text-slate-700">Your previous menu and counts are unchanged. {!canWrite && entry.generationIssues.length > 0
+          ? 'Ask an administrator or editor to complete missing recipes in Meal Setup.' : 'Nothing was saved.'}</p>}
+      </div>}
       {entry.loadError && <MessageBox message={entry.loadError} type="error" />}
       {planner.invalid && <MessageBox message={planner.invalid} type="error" />}
-      {entry.calculationError && <div className="print:hidden">
+      {entry.calculationError && <div role="alert" className="print:hidden">
+        <h3 className="font-bold">Shopping list could not update</h3>
         <MessageBox message={entry.calculationError} type="error" />
-        <button type="button" onClick={planner.recalculate} className="mt-2 font-semibold text-emerald-700">Retry calculation</button>
+        <button type="button" disabled={isBusy} onClick={planner.recalculate} className="mt-2 font-semibold text-emerald-700">Retry calculation</button>
       </div>}
       {entry.draft.version > 0 && <div className="print:hidden rounded-xl border bg-white p-4 text-sm">
         <p>Saved selections retain their original recipes. Use current recipes to review catalog corrections for this draft.</p>

@@ -13,12 +13,15 @@ protectedApp.post('/write', requireDocumentAccess(true), (req, res) => res.json(
 protectedApp.get('/stale', (req, res, next) => { req.account = { role: 'admin', mustChangePassword: false }; next(); },
   requireDocumentAccess(), (req, res) => res.json({ visible: true }));
 protectedApp.use((error, req, res, next) => res.status(error.status || 500).json({ error: { message: error.message, code: error.code } }));
-const api = (credentials, method, path, body = {}) => request(app)[method](path).set('Origin', fixture.origin)
+// Fail a stalled request before Jest ends its test and the next fixture clears
+// these tables. Password verification and permissions remain the real ones.
+const bounded = (operation) => operation.timeout({ response: 15000, deadline: 20000 });
+const api = (credentials, method, path, body = {}) => bounded(request(app)[method](path)).set('Origin', fixture.origin)
   .set('Cookie', credentials.cookie).set('X-CSRF-Token', credentials.csrf).send(body);
-const documents = (credentials, method, path) => request(protectedApp)[method](path).set('Origin', fixture.origin)
+const documents = (credentials, method, path) => bounded(request(protectedApp)[method](path)).set('Origin', fixture.origin)
   .set('Cookie', credentials.cookie).set('X-CSRF-Token', credentials.csrf).send({});
 async function signIn(username) {
-  const response = await request(app).post('/api/auth/login').set('Origin', fixture.origin).send({ username, password: fixture.password });
+  const response = await bounded(request(app).post('/api/auth/login')).set('Origin', fixture.origin).send({ username, password: fixture.password });
   expect(response.status).toBe(200);
   return { cookie: response.headers['set-cookie'][0].split(';')[0], csrf: response.body.csrfToken, account: response.body.account };
 }
@@ -40,16 +43,19 @@ test('administrators have full document access without a transferable grant', as
   expect((await documents(admin, 'post', '/write')).status).toBe(200);
 });
 
-test.each(['editor', 'viewer'])('%s cannot read or write documents with any legacy stored grant', async role => {
-  for (const access of [undefined, 'none', 'view', 'edit']) {
+// Each role/grant pair has its own reset and timeout. Four full sign-ins in a
+// single test could overrun the budget on a slow VM, leaving later iterations
+// alive while the next test starts resetting PostgreSQL.
+test.each(['editor', 'viewer'].flatMap(role => [undefined, 'none', 'view', 'edit'].map(access => ({ role, access }))))(
+  '$role cannot read or write documents with legacy stored grant $access', async ({ role, access }) => {
     const user = await actor(role, access);
+    if (access !== undefined) expect((await db.getAccount(user.account.id)).documentAccess).toBe(access);
     expect(user.account.documentAccess).toBe('none');
     expect((await api(user, 'get', '/api/children')).status).toBe(200);
     expect((await documents(user, 'get', '/read')).status).toBe(403);
     expect((await documents(user, 'post', '/write')).status).toBe(403);
     expect((await documents(user, 'get', '/stale')).status).toBe(403);
-  }
-});
+  });
 
 test('account creation and updates cannot grant documentation access to teachers or readers', async () => {
   const token = fixture.credentials().cookie.split('=')[1];

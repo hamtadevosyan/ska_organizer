@@ -10,7 +10,8 @@ async function initialize(app) {
   passwordHash ||= hashPassword(password);
   const account = await db.createAccount({ id: randomUUID(), username: 'test-admin', displayName: 'Test Administrator',
     passwordHash: await passwordHash, role: 'admin', disabled: false, mustChangePassword: false });
-  const response = await request(app).post('/api/auth/login').set('Origin', origin).send({ username: account.username, password });
+  const response = await request(app).post('/api/auth/login').timeout({ response: 15000, deadline: 20000 })
+    .set('Origin', origin).send({ username: account.username, password });
   if (response.status !== 200) throw new Error('Test administrator could not sign in.');
   credentials = { cookie: response.headers['set-cookie'][0].split(';')[0], csrf: response.body.csrfToken, account };
 }

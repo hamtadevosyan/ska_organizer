@@ -9,10 +9,19 @@ test('a new Node process returns the same IDs, recipes, saved menu and shelf ari
   const written = await runProcess('write');
   const reopened = await runProcess('read');
   expect(reopened).toEqual(written);
-  expect(reopened.recipe[0].quantity).toBe(1);
+  const eggs = reopened.ingredients.find((ingredient) => ingredient.name === 'Eggs');
+  expect(eggs).toBeDefined();
+  expect(reopened.recipe).toHaveLength(1);
+  expect(reopened.recipe.find((link) => link.ingredientId === eggs.id).quantity).toBe(1);
   // The undated compatibility API retains the old defaults. Dated plans use their saved counts.
-  expect(reopened.shopping[0]).toMatchObject({ required: 125, inStorage: 20, toBuy: 105 });
-  expect(reopened.datedShopping.items[0]).toMatchObject({ quantity: 15, inStorage: 2, toBuy: 13 });
+  // JSONB does not preserve menu object key order; identify stock by ingredient ID.
+  expect(reopened.shopping).toHaveLength(4);
+  expect(reopened.shopping.find((item) => item.ingredient.id === eggs.id)).toMatchObject({ required: 125, inStorage: 20, toBuy: 105 });
+  for (const item of reopened.shopping.filter((item) => item.ingredient.id !== eggs.id)) {
+    expect(item).toMatchObject({ required: 125, inStorage: 0, toBuy: 125 });
+  }
+  expect(reopened.datedShopping.items).toHaveLength(1);
+  expect(reopened.datedShopping.items.find((item) => item.ingredient.id === eggs.id)).toMatchObject({ quantity: 15, inStorage: 2, toBuy: 13 });
   expect(reopened.datedPlans[1]).toMatchObject({ childrenCount: 8, staffCount: 1 });
   expect(reopened.staffDocuments.revisions).toHaveLength(3);
   expect(reopened.staffDocuments.document).toMatchObject({ expiresOn: '2028-10-01', warningDays: 30 });

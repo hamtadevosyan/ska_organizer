@@ -28,7 +28,11 @@ for the initial environment configuration.
 1. Open **Meals → Planner** and select **Week starting Monday**. Selecting another
    weekday selects the Monday of that week.
 2. An existing saved plan loads automatically. For a new week, click **Generate
-   Menu**. Meals and their recipe ingredients must already exist in Meal Setup.
+   Menu**. Each period—Breakfast, Morning snack, Lunch and Afternoon snack—needs
+   at least one active meal with a complete recipe in Meal Setup. If setup is
+   incomplete, the planner names the missing periods and recipes, with **Open
+   Meal Setup** and **Retry generation**. Incomplete active recipes are skipped
+   when another complete option exists, and their repair guidance remains visible.
 3. Adjust meals and child/staff counts. Counts must be whole numbers, neither may
    be negative, and their total must exceed zero. The calculation reads linked
    food stock from Inventory across all storage locations.
@@ -46,9 +50,18 @@ reloading the browser asks about unsaved work. Save before navigating to another
 application page. **Reopen saved week** asks before discarding that week's draft;
 other weeks' drafts remain intact.
 
+Generating again asks before replacing an existing draft. The prior menu,
+headcounts, daily attendance overrides and shopping preview remain until the
+generation response succeeds. **Cancel generation** or a generation failure
+preserves that work. A successful replacement keeps the counts and daily
+overrides, creates an unsaved menu draft, and recalculates shopping using current
+recipes and Inventory. Review the calculation before saving; generation itself
+does not save or change stock.
+
 If you had a saved menu before calendar weeks were introduced, choose its intended
 week and click **Use earlier undated menu**. This creates an editable draft using
-the old menu, current Inventory and the old defaults of 20 children and 5 staff.
+the old menu and current Inventory, preserving the current draft’s child, staff
+and daily counts. A new untouched week starts with 20 children and 5 staff.
 Review counts and stock before saving. Its ingredients are captured from the
 current catalog because the old format did not store recipe history. The original
 undated records remain available and are never assigned a guessed date.
@@ -75,7 +88,12 @@ Saving and printing do not decrease or reserve stock. Record actual usage with *
 
 ## Errors and concurrent edits
 
-- **Calculation error:** correct invalid values or use **Retry calculation**.
+- **Menu generation could not finish:** repair the named periods or recipes in
+  **Meal Setup**, or use **Retry generation** after a temporary service failure.
+  The previous menu and counts remain unchanged.
+- **Shopping list could not update:** correct the reported quantities, recipe or
+  unit issue, or use **Retry calculation** after a temporary service failure.
+  The editable menu remains available. This is separate from menu generation.
 - **Save failure:** the prior saved snapshot remains intact and the editable draft
   stays on screen. Retry saving when the service is available.
 - **Calculation expired:** calculations expire after one hour or a server restart.
@@ -89,6 +107,18 @@ Saving and printing do not decrease or reserve stock. Record actual usage with *
 All success responses wrap the result in `{ "data": ... }`. Validation returns
 400, missing saved shopping returns 404, and expired/conflicting saves return
 409, with `{ "error": { "message": "..." } }`.
+
+`GET /api/menu/generate` reads the current catalog under its existing lock and
+returns `{ "data": { "week": [...] } }`, with optional `setupWarnings` for active
+recipes skipped because they are incomplete. It selects only active meals with
+active, valid recipe ingredients and positive quantities. When any of the four
+periods has no usable recipe, it returns 422 with error code
+`MENU_SETUP_REQUIRED`, `fields` keyed by meal type, and
+`details: { missingTypes, excludedMeals }`. Each missing period supplies `type`,
+`label` and `message`; each excluded meal supplies `mealId`, `mealName`, `type`
+and `reasons`. Generation neither saves a plan nor changes stock. The dated
+preview remains a separate validation step, including if recipes change after
+generation.
 
 | Request | Behavior |
 | --- | --- |

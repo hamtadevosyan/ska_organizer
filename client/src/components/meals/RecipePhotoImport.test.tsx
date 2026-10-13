@@ -19,7 +19,8 @@ test('offers separate camera and upload inputs, reviews OCR, confirms servings a
   expect(screen.getByLabelText('Recipe camera image')).toHaveAttribute('capture', 'environment');
   expect(screen.getByLabelText('Recipe image file')).not.toHaveAttribute('capture');
   select(); await screen.findByLabelText('Recipe meal name');
-  expect(screen.getByLabelText('Recipe meal name')).toHaveFocus();
+  // OCR completion renders the field before its focus effect runs.
+  await waitFor(() => expect(screen.getByLabelText('Recipe meal name')).toHaveFocus());
   expect(screen.getByLabelText('Recipe makes how many servings?')).toHaveValue(4);
   fireEvent.click(screen.getByRole('button', { name: 'Use recipe in meal draft' }));
   expect(onReady).not.toHaveBeenCalled();
