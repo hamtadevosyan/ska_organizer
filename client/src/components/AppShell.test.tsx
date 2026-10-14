@@ -65,7 +65,7 @@ test.each(['admin', 'editor', 'viewer'] as const)('More and desktop preserve %s 
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const more = within(screen.getByRole('navigation', { name: 'More navigation' }));
   expect(more.getAllByRole('link').map((link) => link.textContent)).toEqual([
-    'Children', 'Rooms & Classes', 'Inventory', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
+    'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
   ]);
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
 });

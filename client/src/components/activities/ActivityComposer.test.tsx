@@ -196,3 +196,62 @@ test('material quantities, duplicate choices and pending selections still preven
   await waitFor(() => expect(saveActivity).toHaveBeenCalledExactlyOnceWith(null, expect.objectContaining({
     materials: [expect.objectContaining({ itemId: 'paper', quantity: '2', reusable: false })] })));
 });
+
+const oldMaterials: Activity = { ...art, materialsNotes: 'Use colored paper and a classroom prop.',
+  materialsLinks: ['https://example.com/classroom-prop'],
+  materials: [{ itemId: 'paper', name: 'Colored paper', location: 'Art shelf', quantity: '2', unit: 'count', reusable: false }] };
+
+test('ordinary activity edits preserve old material hints even when quantified materials exist', async () => {
+  render(<ActivityForm activity={oldMaterials} onSaved={vi.fn()} onClose={vi.fn()} onBusyChange={vi.fn()} />);
+  fireEvent.click(screen.getByText('More details'));
+  const hints = screen.getByRole('region', { name: 'Old material notes and links' });
+  expect(within(hints).getByText(oldMaterials.materialsNotes!)).toBeInTheDocument();
+  expect(within(hints).getByText(oldMaterials.materialsLinks![0])).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Activity name'), { target: { value: 'Updated paint activity' } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save activity' })));
+  expect(saveActivity).toHaveBeenCalledExactlyOnceWith(oldMaterials, expect.objectContaining({ name: 'Updated paint activity', materials: oldMaterials.materials }));
+  const [, details] = vi.mocked(saveActivity).mock.calls[0];
+  expect(details).not.toHaveProperty('materialsNotes');
+  expect(details).not.toHaveProperty('materialsLinks');
+  expect(oldMaterials.materialsNotes).toBe('Use colored paper and a classroom prop.');
+});
+
+test('only an explicit clear sends empty old hints and leaves stock materials unchanged', async () => {
+  const onDirtyChange = vi.fn();
+  render(<ActivityForm activity={oldMaterials} onSaved={vi.fn()} onClose={vi.fn()} onBusyChange={vi.fn()} onDirtyChange={onDirtyChange} />);
+  fireEvent.click(screen.getByText('More details'));
+  const hints = screen.getByRole('region', { name: 'Old material notes and links' });
+  expect(within(hints).getByText(/Add every needed material/)).toBeInTheDocument();
+  fireEvent.click(within(hints).getByRole('button', { name: 'Clear old material notes and links' }));
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  expect(within(hints).getByRole('status')).toHaveTextContent('will be cleared when you save');
+  expect(saveActivity).not.toHaveBeenCalled();
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save activity' })));
+  expect(saveActivity).toHaveBeenCalledExactlyOnceWith(oldMaterials, expect.objectContaining({ materialsNotes: '', materialsLinks: [], materials: oldMaterials.materials }));
+});
+
+test('keeping old hints or discarding the draft does not clear saved details', async () => {
+  const onClose = vi.fn();
+  render(<ActivityForm activity={oldMaterials} onSaved={vi.fn()} onClose={onClose} onBusyChange={vi.fn()} />);
+  fireEvent.click(screen.getByText('More details'));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear old material notes and links' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Keep old notes and links' }));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save activity' })));
+  const [, details] = vi.mocked(saveActivity).mock.calls[0];
+  expect(details).not.toHaveProperty('materialsNotes');
+  expect(details).not.toHaveProperty('materialsLinks');
+  vi.mocked(saveActivity).mockClear();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear old material notes and links' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard activity' }));
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(saveActivity).not.toHaveBeenCalled();
+  expect(oldMaterials.materialsLinks).toEqual(['https://example.com/classroom-prop']);
+});
+
+test('a new activity keeps old-material actions out of its form', async () => {
+  render(<ActivityForm activity={null} onSaved={vi.fn()} onClose={vi.fn()} onBusyChange={vi.fn()} />);
+  await waitFor(() => expect(materialOptions).toHaveBeenCalled());
+  expect(screen.queryByRole('region', { name: 'Old material notes and links' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Clear old material notes and links' })).not.toBeInTheDocument();
+});

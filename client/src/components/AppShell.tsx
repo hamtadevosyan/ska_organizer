@@ -22,7 +22,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => { setPanel(null); }, [location.key]);
   useEffect(() => {
     const labels: Record<string, string> = { dashboard: 'Home', attendance: 'Attendance', activities: 'Activities', meals: 'Meals',
-      children: 'Children', rooms: 'Rooms & Classes', inventory: 'Inventory', staff: 'Staff', reports: 'Reports', accounts: 'Accounts' };
+      children: 'Children', rooms: 'Rooms & Classes', inventory: 'Inventory', purchasing: 'Purchasing', staff: 'Staff', reports: 'Reports', accounts: 'Accounts' };
     document.title = `Smart Kids Academy · ${labels[location.pathname.split('/')[1]] || 'Home'}`;
   }, [location.pathname]);
   useEffect(() => {

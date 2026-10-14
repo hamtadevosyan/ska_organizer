@@ -63,7 +63,9 @@ function activity(payload, previous) {
   });
   return { ...Object.fromEntries([...fields, ...legacy].filter((key) => value[key] !== undefined).map((key) => [key, value[key]])), version: (previous?.version || 0) + 1 };
 }
-const snapshot = (activity) => activity && Object.fromEntries(['id', ...fields, 'version'].map((key) => [key, activity[key] ?? null]));
+// Preserve unquantified material hints as well as linked materials. Purchasing
+// must surface these for review instead of treating an empty list as no demand.
+const snapshot = (activity) => activity && Object.fromEntries(['id', ...fields, 'materialsNotes', 'materialsLinks', 'version'].map((key) => [key, activity[key] ?? null]));
 function suitable(activity, room) {
   return (!activity.roomId || activity.roomId === room.id) && (activity.ageMinMonths === null || activity.ageMinMonths === undefined ||
     (room.ageMinMonths !== null && room.ageMaxMonths !== null && room.ageMinMonths >= activity.ageMinMonths && room.ageMaxMonths <= activity.ageMaxMonths));

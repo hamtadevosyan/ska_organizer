@@ -34,6 +34,12 @@ module.exports = (sequelize) => {
     snapshot: { type: DataTypes.JSONB, allowNull: false },
     savedAt: { type: DataTypes.DATE, allowNull: false },
   }, { timestamps: false });
+  const PurchasingList = sequelize.define('PurchasingList', {
+    weekStart: { type: DataTypes.DATEONLY, primaryKey: true },
+    version: { type: DataTypes.INTEGER, allowNull: false },
+    snapshot: { type: DataTypes.JSONB, allowNull: false },
+    savedAt: { type: DataTypes.DATE, allowNull: false },
+  }, { timestamps: false });
   // One atomic snapshot matches the existing shelf-check API.
   const ShelfCheck = sequelize.define('ShelfCheck', {
     id: { type: DataTypes.STRING, primaryKey: true },
@@ -240,7 +246,7 @@ module.exports = (sequelize) => {
     id: id(), actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64),
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
-  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, ShelfCheck, Child, Attendance, Activity,
+  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt,
     ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
 };

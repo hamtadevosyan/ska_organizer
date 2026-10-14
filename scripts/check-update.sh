@@ -46,10 +46,10 @@ postgres_tests=(npm run test:postgres)
 client_tests=(npm test)
 browser_tests=(npm run test:browser)
 if "$inventory_only"; then
-  server_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventoryGroups.test.js tests/inventoryStock.test.js tests/purchasing.test.js tests/weeklyPlans.test.js tests/catalogCorrections.test.js)
-  postgres_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventory.postgres.test.js tests/inventoryGroups.test.js tests/inventoryGroups.postgres.test.js tests/inventoryStock.test.js tests/purchasing.test.js tests/purchasing.postgres.test.js tests/weeklyPlans.test.js tests/catalogCorrections.test.js)
-  client_tests+=(-- src/pages/Inventory.test.tsx src/components/inventory/Purchasing.test.tsx src/components/meals/MealPlanner.test.tsx)
-  browser_tests+=(-- tests/browser/inventory.spec.ts tests/browser/purchasing.spec.ts tests/browser/weekly-plans.spec.ts tests/browser/catalog-corrections.spec.ts)
+  server_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventoryGroups.test.js tests/inventoryStock.test.js tests/purchasing.test.js tests/purchasingListCalculation.test.js tests/purchasingListApi.test.js tests/purchasingPersistence.test.js tests/weeklyPlans.test.js tests/catalogCorrections.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventory.postgres.test.js tests/inventoryGroups.test.js tests/inventoryGroups.postgres.test.js tests/inventoryStock.test.js tests/purchasing.test.js tests/purchasing.postgres.test.js tests/purchasingListCalculation.test.js tests/purchasingListApi.test.js tests/purchasingPersistence.test.js tests/purchasingLists.postgres.test.js tests/weeklyPlans.test.js tests/catalogCorrections.test.js)
+  client_tests+=(-- src/pages/Inventory.test.tsx src/pages/Purchasing.test.tsx src/components/inventory/Purchasing.test.tsx src/components/meals/MealPlanner.test.tsx)
+  browser_tests+=(-- tests/browser/inventory.spec.ts tests/browser/purchasing.spec.ts tests/browser/purchasing-list.spec.ts tests/browser/weekly-plans.spec.ts tests/browser/catalog-corrections.spec.ts)
 fi
 
 current_step='Preflight'

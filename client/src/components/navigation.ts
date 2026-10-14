@@ -1,4 +1,4 @@
-import { Building2, Boxes, ClipboardCheck, FileText, House, Palette, Users, Utensils } from 'lucide-react';
+import { Building2, Boxes, ClipboardCheck, FileText, House, Palette, ShoppingCart, Users, Utensils } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '../auth/context';
 
@@ -13,6 +13,7 @@ const navigation = {
   children: { to: '/children', label: 'Children', icon: Users },
   rooms: { to: '/rooms', label: 'Rooms & Classes', icon: Building2 },
   inventory: { to: '/inventory', label: 'Inventory', icon: Boxes },
+  purchasing: { to: '/purchasing', label: 'Purchasing', icon: ShoppingCart },
   staff: { to: '/staff', label: 'Staff', icon: Users },
   reports: { to: '/reports', label: 'Reports', icon: FileText },
   accounts: { to: '/accounts', label: 'Accounts', icon: Users, adminOnly: true },

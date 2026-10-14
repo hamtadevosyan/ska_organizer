@@ -1,0 +1,71 @@
+.purchasing-page { display: grid; gap: 1.5rem; min-width: 0; }
+.purchasing-page * { min-width: 0; }
+.purchasing-page p, .purchasing-page li, .purchasing-page h2, .purchasing-page h3, .purchasing-page label { overflow-wrap: anywhere; }
+.purchasing-intro { display: flex; align-items: flex-start; gap: 1rem; padding: 1.4rem; border-radius: 1.5rem; border: 1px solid #dcd2ff; background: linear-gradient(120deg, #f4edff, #eaf6ff 65%, #fff4cf); }
+.purchasing-intro h2 { font-size: 1.3rem; font-weight: 800; color: #393269; margin-bottom: .4rem; }
+.purchasing-intro p { color: #4f536f; }
+.purchasing-intro-icon { flex: 0 0 3rem; display: grid; place-items: center; height: 3rem; border-radius: 1rem; background: #7756cc; color: white; }
+.purchasing-panel, .purchasing-review { padding: 1.4rem; border: 1px solid #e1e5f1; border-radius: 1.5rem; background: #fff; }
+.purchasing-panel { display: grid; gap: 1rem; }
+.purchasing-page label { display: grid; gap: .4rem; font-weight: 600; color: #343b56; }
+.purchasing-page input:not([type=checkbox]) { width: 100%; max-width: 100%; min-height: 2.75rem; padding: .7rem .8rem; border: 1px solid #cdd5e5; border-radius: .8rem; background: white; color: #262b40; }
+.purchasing-page input:disabled { background: #f4f5fa; color: #555d73; }
+.purchasing-page input[aria-invalid=true] { border-color: #c93841; box-shadow: 0 0 0 1px #c93841; }
+.purchasing-page input[type=checkbox] { width: 1.2rem; height: 1.2rem; flex-shrink: 0; accent-color: #7553c9; }
+.purchasing-page .purchasing-check { display: flex; align-items: center; gap: .7rem; min-height: 2.75rem; font-weight: 500; }
+.purchasing-week { max-width: 22rem; }
+.purchasing-source-fields { display: grid; gap: .8rem; border: 0; padding: 0; }
+.purchasing-source-fields legend { font-size: 1.1rem; font-weight: 800; padding-bottom: .7rem; }
+.purchasing-source-fields h3, .purchasing-review h3 { font-size: 1.05rem; font-weight: 750; }
+.purchasing-small { font-size: .875rem; color: #5b657b; line-height: 1.55; }
+.purchasing-room-grid { display: grid; gap: .2rem 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.purchasing-page summary { min-height: 2.75rem; padding: .7rem 0; cursor: pointer; font-weight: 650; color: #5250a6; }
+.purchasing-target { margin-top: .7rem; padding: .8rem 1rem; border: 1px solid #e4def8; border-radius: 1rem; background: #fcfaff; display: grid; gap: .5rem; }
+.purchasing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
+.purchasing-actions .ska-button { max-width: 100%; white-space: normal; justify-content: center; }
+.purchasing-hint { padding: .7rem .85rem; margin-top: .5rem; border-radius: .7rem; background: #fff5d8; color: #77552b; font-size: .875rem; line-height: 1.55; }
+.purchasing-review-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: .9rem; }
+.purchasing-review h2 { font-size: 1.25rem; font-weight: 800; color: #343759; }
+.purchasing-badge { display: inline-block; padding: .25rem .65rem; border-radius: 1rem; background: #eee9ff; color: #5b419b; font-size: .8rem; font-weight: 750; margin: .6rem 0; }
+.purchasing-count { padding: .55rem .8rem; border-radius: .8rem; background: #eaf3ff; color: #295ba8; font-weight: 700; font-size: .9rem; }
+.purchasing-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr)); gap: 1rem; margin-top: 1.25rem; }
+.purchasing-card { align-self: start; padding: 1.1rem; border: 1px solid #dfe5f0; border-radius: 1.2rem; background: #fcfdff; }
+.purchasing-card.is-selected { border-color: #bac8f7; box-shadow: inset 0 3px 0 #8d72d9; }
+.purchasing-card-heading { display: flex; justify-content: space-between; gap: .8rem; }
+.purchasing-card-heading p { color: #67738b; font-size: .85rem; margin-top: .3rem; }
+.purchasing-unit { align-self: start; padding: .25rem .6rem; border-radius: .6rem; color: #59508c; background: #eeeafa; font-size: .8rem; }
+.purchasing-math { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem; margin: 1rem 0; }
+.purchasing-math div { border-radius: .6rem; padding: .6rem .35rem; text-align: center; background: #f0f3fa; }
+.purchasing-math div:last-child { background: #eaf1ff; color: #2c58a0; }
+.purchasing-math dt { font-size: .75rem; color: #68728a; }
+.purchasing-math dd { font-size: .92rem; font-weight: 800; margin-top: .3rem; overflow-wrap: anywhere; }
+.purchasing-line-controls { display: grid; gap: .6rem; }
+.purchasing-line-controls > label:first-child { font-size: .85rem; }
+.purchasing-source-list { list-style: none; display: grid; gap: .6rem; margin-bottom: .7rem; }
+.purchasing-source-list li { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: space-between; font-size: .85rem; }
+.purchasing-source-list em { flex-basis: 100%; color: #616a84; font-size: .8rem; }
+.purchasing-issues { background: #fff3df; border: 1px solid #efd6ac; padding: 1rem; border-radius: 1rem; margin-top: 1rem; color: #745026; }
+.purchasing-issues ul { margin: .7rem 0 0 1.2rem; list-style: disc; }
+.purchasing-issues li + li { margin-top: .8rem; }
+.purchasing-issues a { text-decoration: underline; display: inline-block; min-height: 2.75rem; padding-top: .6rem; }
+.purchasing-empty { padding: 1.5rem; text-align: center; color: #65718b; border-radius: 1rem; background: #f5f5fc; }
+.purchasing-footer { margin-top: 1.3rem; border-top: 1px solid #e5e9f2; padding-top: 1rem; }
+.purchasing-print-only { display: none; }
+@media (max-width: 420px) {
+  .purchasing-panel, .purchasing-review { padding: 1rem; }
+  .purchasing-intro { padding: 1rem; gap: .7rem; }
+  .purchasing-intro-icon { flex-basis: 2.4rem; height: 2.4rem; }
+  .purchasing-intro h2 { font-size: 1.1rem; }
+  .purchasing-actions > .ska-button { flex: 1 1 100%; }
+  .purchasing-card { padding: .8rem; }
+}
+@media print {
+  .purchasing-no-print, .purchasing-card:not(.is-selected) { display: none !important; }
+  .purchasing-print-only { display: block; font-weight: 700; margin: .5rem 0; }
+  .purchasing-page { gap: 0; color: black; }
+  .purchasing-review { border: 0; padding: 0; }
+  .purchasing-list { display: block; }
+  .purchasing-card { background: white; margin-bottom: 1rem; break-inside: avoid; box-shadow: none !important; border-color: #999 !important; }
+  .purchasing-card details:not([open]) > :not(summary) { display: block !important; }
+  .purchasing-card summary { display: none; }
+}

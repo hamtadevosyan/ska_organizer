@@ -22,6 +22,8 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, submi
   const [minAge, setMinAge] = useState(String(activity ? activity.ageMinMonths ?? '' : roomHasAges ? room.ageMinMonths : ''));
   const [maxAge, setMaxAge] = useState(String(activity ? activity.ageMaxMonths ?? '' : roomHasAges ? room.ageMaxMonths : ''));
   const [materials, setMaterials] = useState<Material[]>(activity?.materials || []);
+  const [clearOldMaterials, setClearOldMaterials] = useState(false);
+  const hasOldMaterials = !!(activity?.materialsNotes?.trim() || activity?.materialsLinks?.length);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [inventoryError, setInventoryError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -83,7 +85,8 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, submi
     if (itemId) { setDetailsOpen(true); setFields({ material: 'Click Add material for the selected item, or clear the selection before saving.' }); setError('Click Add material for the selected item, or clear the selection before saving.'); return; }
     const details: ActivityDetails = { name: name.trim(), durationMinutes: Number(duration), description: description.trim(),
       ageMinMonths: minAge === '' ? null : Number(minAge), ageMaxMonths: maxAge === '' ? null : Number(maxAge),
-      materials, roomId: activity?.roomId || null };
+      materials, roomId: activity?.roomId || null,
+      ...(clearOldMaterials ? { materialsNotes: '', materialsLinks: [] } : {}) };
     if (scheduleDate && room && !suitable(details, room)) {
       setDetailsOpen(true);
       setFields({ minAge: 'The activity must include the room’s age range.', maxAge: 'The activity must include the room’s age range.' });
@@ -132,6 +135,16 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, submi
                 <button type="button" onClick={addMaterial} disabled={!itemId || materials.length >= 30} className="rounded-lg border bg-white px-4 py-2 disabled:opacity-50">Add material</button>
               </>}
           </section>
+          {hasOldMaterials && <section aria-label="Old material notes and links" className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <h3 className="font-bold">Old material notes and links</h3>
+            <p className="text-sm text-slate-700">Add every needed material to the list above with its Inventory item and quantity before clearing these old notes and links. Purchasing cannot calculate amounts from these details.</p>
+            {activity?.materialsNotes?.trim() && <p className="whitespace-pre-wrap break-words text-sm">{activity.materialsNotes}</p>}
+            {!!activity?.materialsLinks?.length && <ul className="list-inside list-disc space-y-1 text-sm">{activity.materialsLinks.map((link, index) => <li key={index} className="break-all">{link}</li>)}</ul>}
+            {clearOldMaterials ? <>
+              <p role="status" className="text-sm font-semibold">These old notes and links will be cleared when you save. Your listed materials will stay.</p>
+              <button type="button" className="rounded-lg border bg-white px-4 py-2" onClick={() => { setClearOldMaterials(false); setChanged(true); setConfirmCancel(false); }}>Keep old notes and links</button>
+            </> : <button type="button" className="rounded-lg border bg-white px-4 py-2" onClick={() => { setClearOldMaterials(true); setChanged(true); setConfirmCancel(false); }}>Clear old material notes and links</button>}
+          </section>}
         </div>
       </details>
       {error && <p ref={errorRef} tabIndex={-1} role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{error}</p>}

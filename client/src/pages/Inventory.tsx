@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
-import { Plus, Package, FolderOpen, ArrowLeft, Utensils } from 'lucide-react';
+import { Plus, Package, FolderOpen, ArrowLeft, Utensils, ShoppingBasket } from 'lucide-react';
 import { API_BASE_URL } from '../lib/api';
 import { useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
@@ -157,6 +157,7 @@ export default function Inventory() {
     <header className="ska-page-head">
       <div><h1><span className="ska-heading-icon is-yellow"><Package size={24} aria-hidden="true" /></span>Inventory</h1><p className="mt-2 text-slate-600">See what you have. Add what you bought. Record what you used.</p></div>
       {!mode && !newGroup && <div className="ska-header-actions">
+        <a href="/purchasing" className="ska-button"><ShoppingBasket size={18} aria-hidden="true" />Purchasing list</a>
         {canWrite && <button disabled={busy || !!mode || newGroup || !groups.length} onClick={() => open('create')} className="ska-button is-primary"><Plus size={18} aria-hidden="true" />Add item</button>}
         <details className="relative"><summary className={button + ' min-h-11 cursor-pointer'}>More</summary><div className="absolute right-0 z-10 mt-2 grid w-52 gap-2 rounded-xl border bg-white p-3 shadow-lg">
           <button disabled={busy || loading || groupLoading || ingredientLoading || newGroup} onClick={() => void Promise.all([refresh(), refreshGroups(), ...(foodForm ? [loadIngredients()] : [])])} className={button}>Refresh inventory</button>

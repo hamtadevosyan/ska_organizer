@@ -20,6 +20,7 @@ const migrations = [
   { name: '018-registration-forms', ...require('./migrations/018-registration-forms') },
   { name: '019-template-audience', ...require('./migrations/019-template-audience') },
   { name: '020-staff-documents', ...require('./migrations/020-staff-documents') },
+  { name: '021-purchasing-lists', ...require('./migrations/021-purchasing-lists') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>
