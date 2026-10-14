@@ -5,6 +5,7 @@ const express = require("express");
 const router = express.Router();
 const menuController = require("../controllers/menuController");
 const plans = require('../controllers/weeklyPlanController');
+router.get('/headcounts', menuController.getHeadcounts);
 router.get('/plans/:weekStart', plans.get);
 router.post('/plans/:weekStart/preview', plans.preview);
 router.post('/plans/:weekStart/import-preview', plans.importLegacy);

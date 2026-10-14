@@ -13,7 +13,8 @@ test('a new Node process returns the same IDs, recipes, saved menu and shelf ari
   expect(eggs).toBeDefined();
   expect(reopened.recipe).toHaveLength(1);
   expect(reopened.recipe.find((link) => link.ingredientId === eggs.id).quantity).toBe(1);
-  // The undated compatibility API retains the old defaults. Dated plans use their saved counts.
+  expect(reopened.headcounts).toEqual({ childrenCount: 20, staffCount: 5 });
+  // The undated API reads the persisted fictional roster. Dated plans keep saved counts.
   // JSONB does not preserve menu object key order; identify stock by ingredient ID.
   expect(reopened.shopping).toHaveLength(4);
   expect(reopened.shopping.find((item) => item.ingredient.id === eggs.id)).toMatchObject({ required: 125, inStorage: 20, toBuy: 105 });

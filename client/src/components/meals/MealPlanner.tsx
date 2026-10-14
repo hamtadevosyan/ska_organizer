@@ -147,7 +147,7 @@ const MealPlanner = ({ active = true, onEditRecipe, onOpenMealSetup, canWrite = 
               label="Generate Menu"
               icon={<RefreshCw size={18} />}
               loading={actionLoading === 'generate'}
-              disabled={isBusy || catalogLoading}
+              disabled={isBusy || planner.rosterLoading || catalogLoading}
               onClick={generateMenu}
             />
             <ActionButton
@@ -197,14 +197,14 @@ const MealPlanner = ({ active = true, onEditRecipe, onOpenMealSetup, canWrite = 
         <div className="mt-3 flex flex-wrap gap-3">
           {canWrite && onOpenMealSetup && <button type="button" disabled={isBusy} onClick={onOpenMealSetup}
             className="rounded-lg border border-amber-800 px-3 py-2 font-semibold">Open Meal Setup</button>}
-          {entry.generationError && <button type="button" disabled={isBusy || catalogLoading} onClick={() => void planner.retryGeneration()}
+          {entry.generationError && <button type="button" disabled={isBusy || planner.rosterLoading || catalogLoading} onClick={() => void planner.retryGeneration()}
             className="rounded-lg border border-amber-800 px-3 py-2 font-semibold">Retry generation</button>}
         </div>
         {entry.generationError && <p className="mt-2 text-slate-700">Your previous menu and counts are unchanged. {!canWrite && entry.generationIssues.length > 0
           ? 'Ask an administrator or editor to complete missing recipes in Meal Setup.' : 'Nothing was saved.'}</p>}
       </div>}
       {entry.loadError && <MessageBox message={entry.loadError} type="error" />}
-      {planner.invalid && <MessageBox message={planner.invalid} type="error" />}
+      {entry.loaded && planner.invalid && <MessageBox message={planner.invalid} type="error" />}
       {entry.calculationError && <div role="alert" className="print:hidden">
         <h3 className="font-bold">Shopping list could not update</h3>
         <MessageBox message={entry.calculationError} type="error" />
@@ -255,6 +255,24 @@ const MealPlanner = ({ active = true, onEditRecipe, onOpenMealSetup, canWrite = 
         </div>
       </section>
 
+      <section className="print:hidden rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
+        <p>New weeks start with the number of actively enrolled children and active employees. You can enter planned counts instead.
+          Saved weeks keep the counts you reviewed; daily attendance counts are separate.</p>
+        <button type="button" disabled={isBusy || planner.rosterLoading} onClick={() => void planner.useCurrentRosterCounts()}
+          className="mt-3 rounded-xl border border-blue-700 bg-white px-4 py-2 font-semibold text-blue-800 disabled:opacity-50">
+          {planner.rosterLoading ? 'Reading current roster…' : 'Use current roster counts'}
+        </button>
+        {entry.loaded && entry.rosterEmpty && childrenCount === '0' && staffCount === '0' && <p className="mt-3 font-semibold">
+          Your active roster is empty. Add children and employees, or enter the planned counts before calculating and saving a menu.
+        </p>}
+        {entry.rosterError && <div role="alert" className="mt-3">
+          <p>{entry.rosterError}</p>
+          <p className="mt-1">Your menu, counts and saved week are unchanged.</p>
+          <button type="button" disabled={isBusy || planner.rosterLoading} onClick={() => void planner.useCurrentRosterCounts()}
+            className="mt-2 font-semibold text-blue-800 underline">Retry reading roster counts</button>
+        </div>}
+      </section>
+
       {active && canWrite && !isBusy && <AttendanceHeadcount key={planner.weekStart} disabled={isBusy}
         dates={weeklyMenu.map((day) => dateOfDay(planner.weekStart, day.day))}
         onApply={(date, count) => update((draft) => ({ dailyChildrenCounts: { ...draft.dailyChildrenCounts, [date]: String(count) } }))} />}
@@ -281,7 +299,7 @@ const MealPlanner = ({ active = true, onEditRecipe, onOpenMealSetup, canWrite = 
           {weeklyMenu.length === 0 ? (
             <div>
               <EmptyState title="No menu yet" description="Click Generate Menu to create this week’s plan." />
-              <button type="button" disabled={isBusy} onClick={() => { void planner.generate(true); }}
+              <button type="button" disabled={isBusy || planner.rosterLoading} onClick={() => { void planner.generate(true); }}
                 className="mt-4 text-sm font-semibold text-emerald-700 disabled:opacity-50">
                 Use earlier undated menu
               </button>

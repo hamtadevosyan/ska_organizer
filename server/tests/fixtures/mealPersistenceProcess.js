@@ -145,11 +145,15 @@ async function documentSnapshot() {
       }
       await saveDocuments();
       await saveStaffDocuments(await db.findAccount(identity.username));
+      // The legacy shelf calculation uses the actual synthetic roster after a restart.
+      await require('../helpers/mealRoster').addMealRoster(
+        20 - await db.countChildren({ active: true }), 5 - await db.countStaff({ active: true }));
     }
     const meals = await api('get', '/api/meals');
     const breakfast = meals.find((meal) => meal.type === 'breakfast');
     const snapshot = {
       meals, ingredients: await api('get', '/api/ingredients'),
+      headcounts: await api('get', '/api/menu/headcounts'),
       recipe: await api('get', `/api/meals/${breakfast.id}/ingredients`),
       menu: await api('get', '/api/menu/current'),
       shelf: await db.getShelf(),

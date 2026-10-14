@@ -2,9 +2,11 @@ const request = require('./helpers/authenticatedRequest');
 const app = require("../index");
 const db = require("../services/dbAdapter");
 const { addRecipeIngredient } = require('./helpers/recipeMeal');
+const { addMealRoster } = require('./helpers/mealRoster');
 
 describe("Meal Planner end-to-end API flow", () => {
   beforeEach(async () => {
+    await addMealRoster(20, 5);
     const oatmeal = await db.createMeal({
       name: "Oatmeal",
       type: "breakfast"

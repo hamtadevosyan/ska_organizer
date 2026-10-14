@@ -9,10 +9,10 @@ type Action = { kind: 'generate' | 'save' | 'import'; controller: AbortControlle
 type Entry = {
   draft: Draft; loaded: boolean; dirty: boolean; savedAt?: string;
   preview?: Plan; calculatedKey?: string; calculationError: string;
-  loadError: string; generationError: string; generationIssues: GenerationIssue[]; retryImport: boolean; message: string; messageType: 'success' | 'error' | 'info';
+  loadError: string; rosterError: string; rosterEmpty: boolean; generationError: string; generationIssues: GenerationIssue[]; retryImport: boolean; message: string; messageType: 'success' | 'error' | 'info';
 };
-const empty = (): Entry => ({ draft: { week: [], childrenCount: '20', staffCount: '5', inHouse: {}, version: 0 },
-  loaded: false, dirty: false, calculationError: '', loadError: '', generationError: '', generationIssues: [], retryImport: false, message: '', messageType: 'info' });
+const empty = (): Entry => ({ draft: { week: [], childrenCount: '', staffCount: '', inHouse: {}, version: 0 },
+  loaded: false, dirty: false, calculationError: '', loadError: '', rosterError: '', rosterEmpty: false, generationError: '', generationIssues: [], retryImport: false, message: '', messageType: 'info' });
 const errorMessage = (error: unknown, fallback: string): string => {
   if (axios.isAxiosError(error)) {
     const body = error.response?.data;
@@ -30,6 +30,14 @@ const generationIssues = (details: { missingTypes?: { message: string }[]; exclu
 const generatedWeekIsValid = (week: Draft['week']) => Array.isArray(week) && week.length === 5 &&
   ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].every((day, index) => week[index]?.day === day &&
     MEAL_TYPES.every((type) => typeof week[index]?.menu?.[type]?.id === 'string' && !!week[index].menu[type]?.id));
+type RosterCounts = { childrenCount: number; staffCount: number };
+const rosterCounts = (value: RosterCounts): RosterCounts => {
+  if (!value || ![value.childrenCount, value.staffCount].every((count) => Number.isSafeInteger(count) && count >= 0) ||
+      !Number.isSafeInteger(value.childrenCount + value.staffCount)) {
+    throw new Error('The roster counts could not be verified. Retry reading the current roster.');
+  }
+  return value;
+};
 const keyOf = (draft: Draft) => JSON.stringify(draft);
 const url = (week: string) => `${API_BASE_URL}/api/menu/plans/${week}`;
 const rememberedWeek = () => {
@@ -42,6 +50,8 @@ export function useWeeklyPlan(enabled = true) {
   const [weekStart, setWeekStart] = useState(rememberedWeek);
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [actionLoading, setActionLoading] = useState<'generate' | 'save' | 'import' | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const rosterRequest = useRef<{ controller: AbortController; revision: number } | null>(null);
   const [retry, setRetry] = useState(0);
   const [reload, setReload] = useState(0);
   const sequence = useRef(0);
@@ -56,15 +66,22 @@ export function useWeeklyPlan(enabled = true) {
   const invalid = validationError(entry.draft);
   const historical = !!entry.savedAt && !entry.dirty && !!entry.preview;
   const calculated = historical || entry.calculatedKey === inputKey;
-  const ready = !historical && enabled && entry.loaded && entry.draft.week.length > 0 && !invalid &&
+  const ready = !rosterLoading && !historical && enabled && entry.loaded && entry.draft.week.length > 0 && !invalid &&
     !entry.calculationError && entry.calculatedKey === inputKey && !!entry.preview?.previewToken;
-  const printReady = enabled && entry.loaded && !invalid && !entry.calculationError && calculated &&
+  const printReady = !rosterLoading && enabled && entry.loaded && !invalid && !entry.calculationError && calculated &&
     !!entry.preview && !entry.preview.warnings?.length && (historical || !!entry.preview.previewToken);
   const patch = useCallback((week: string, fn: (old: Entry) => Entry) => setEntries((old) => ({ ...old, [week]: fn(old[week] || empty()) })), []);
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; action.current?.controller.abort(); action.current = null; };
+    return () => { mounted.current = false; action.current?.controller.abort(); action.current = null;
+      rosterRequest.current?.controller.abort(); rosterRequest.current = null; };
+  }, []);
+
+  const cancelRosterRequest = useCallback(() => {
+    if (!rosterRequest.current) return;
+    rosterRequest.current.controller.abort(); rosterRequest.current = null;
+    if (mounted.current) setRosterLoading(false);
   }, []);
 
   const cancelGeneration = useCallback((showMessage = true) => {
@@ -79,12 +96,13 @@ export function useWeeklyPlan(enabled = true) {
   useEffect(() => {
     if (!enabled) {
       cancelGeneration();
+      cancelRosterRequest();
       draftRevision.current++;
       sequence.current++;
       setEntries((old) => Object.fromEntries(Object.entries(old).map(([week, value]) =>
         [week, { ...value, calculatedKey: undefined }])));
     }
-  }, [enabled, cancelGeneration]);
+  }, [enabled, cancelGeneration, cancelRosterRequest]);
 
   useEffect(() => {
     try { localStorage.setItem('skao.planner.week', weekStart); } catch { /* Optional preference. */ }
@@ -95,16 +113,35 @@ export function useWeeklyPlan(enabled = true) {
     if (!enabled || loaded) return;
     let active = true;
     const controller = new AbortController();
-    axios.get(url(weekStart), { signal: controller.signal }).then(({ data }) => {
-      if (!active) return;
-      const plan: Plan | null = data.data;
-      patch(weekStart, () => ({ ...empty(), loaded: true, ...(plan ? {
-        draft: fromPlan(plan), savedAt: plan.savedAt, preview: plan,
-        message: 'Your saved week is ready.', messageType: 'success' as const,
-      } : {}) }));
-    }).catch((error: unknown) => {
-      if (active) patch(weekStart, (old) => ({ ...old, loadError: errorMessage(error, 'Could not load this week. Retry before editing.') }));
-    });
+    const revision = draftRevision.current;
+    const applies = () => active && mounted.current && enabledRef.current && revision === draftRevision.current;
+    let loadingRoster = false;
+    const loadWeek = async () => {
+      try {
+        const { data } = await axios.get(url(weekStart), { signal: controller.signal });
+        if (!applies()) return;
+        const plan: Plan | null = data.data;
+        if (plan) {
+          patch(weekStart, () => ({ ...empty(), loaded: true, draft: fromPlan(plan), savedAt: plan.savedAt, preview: plan,
+            message: 'Your saved week is ready.', messageType: 'success' }));
+          return;
+        }
+        loadingRoster = true;
+        const rosterResponse = await axios.get(`${API_BASE_URL}/api/menu/headcounts`, { signal: controller.signal });
+        if (!applies()) return;
+        const counts = rosterCounts(rosterResponse.data.data);
+        patch(weekStart, () => ({ ...empty(), loaded: true, rosterEmpty: counts.childrenCount + counts.staffCount === 0,
+          draft: { ...empty().draft, childrenCount: String(counts.childrenCount), staffCount: String(counts.staffCount) },
+        }));
+      } catch (error: unknown) {
+        if (applies()) patch(weekStart, (old) => ({ ...old,
+          loadError: errorMessage(error, loadingRoster
+            ? 'Could not read the current roster counts. Retry loading this week before editing.'
+            : 'Could not load this week. Retry before editing.'),
+        }));
+      }
+    };
+    void loadWeek();
     return () => { active = false; controller.abort(); };
   }, [weekStart, loaded, reload, enabled, patch]);
 
@@ -145,17 +182,19 @@ export function useWeeklyPlan(enabled = true) {
   const update = (change: Partial<Draft> | ((draft: Draft) => Partial<Draft>)) => {
     if (action.current?.kind === 'save' || !enabledRef.current) return;
     cancelGeneration(false);
+    cancelRosterRequest();
     draftRevision.current++;
     sequence.current++;
     patch(weekStart, (old) => ({ ...old,
       draft: { ...old.draft, ...(typeof change === 'function' ? change(old.draft) : change) }, dirty: true, calculatedKey: undefined,
-      calculationError: '', generationError: '', generationIssues: [], message: '', messageType: 'info',
+      calculationError: '', rosterError: '', generationError: '', generationIssues: [], message: '', messageType: 'info',
     }));
   };
   const selectWeek = (date: string) => {
     const monday = mondayOf(date);
     if (!monday || monday === weekStart || action.current?.kind === 'save') return;
     cancelGeneration(false);
+    cancelRosterRequest();
     draftRevision.current++;
     sequence.current++;
     patch(monday, (old) => ({ ...old, calculatedKey: undefined }));
@@ -165,13 +204,50 @@ export function useWeeklyPlan(enabled = true) {
     if (action.current?.kind === 'save') return;
     if (entry.dirty && !window.confirm('Discard this week’s unsaved changes and reopen its saved version?')) return;
     cancelGeneration(false);
+    cancelRosterRequest();
     draftRevision.current++;
     sequence.current++;
     patch(weekStart, empty);
     setReload((value) => value + 1);
   };
+  const useCurrentRosterCounts = async () => {
+    if (!enabledRef.current || !entry.loaded || action.current || rosterRequest.current || renderedRevision !== draftRevision.current) return;
+    const current = { controller: new AbortController(), revision: draftRevision.current };
+    const draftKey = keyOf(entry.draft);
+    const applies = () => mounted.current && enabledRef.current && rosterRequest.current === current &&
+      current.revision === draftRevision.current;
+    rosterRequest.current = current;
+    setRosterLoading(true);
+    patch(weekStart, (old) => ({ ...old, rosterError: '' }));
+    try {
+      const { data } = await axios.get(`${API_BASE_URL}/api/menu/headcounts`, { signal: current.controller.signal });
+      if (!applies()) return;
+      const counts = rosterCounts(data.data);
+      draftRevision.current++;
+      sequence.current++;
+      patch(weekStart, (old) => keyOf(old.draft) !== draftKey ? old : ({ ...old,
+        draft: { ...old.draft, childrenCount: String(counts.childrenCount), staffCount: String(counts.staffCount) },
+        dirty: true, calculatedKey: undefined, calculationError: '', rosterError: '', rosterEmpty: counts.childrenCount + counts.staffCount === 0,
+        message: 'Current roster counts applied to this unsaved draft. Daily child counts are unchanged. Review before saving.',
+        messageType: 'info',
+      }));
+    } catch (error: unknown) {
+      if (applies()) patch(weekStart, (old) => ({ ...old,
+        rosterError: errorMessage(error, 'Could not read the current roster. Your previous counts are unchanged. Retry or enter planned counts.'),
+      }));
+    } finally {
+      if (rosterRequest.current === current) {
+        rosterRequest.current = null;
+        if (mounted.current) setRosterLoading(false);
+      }
+    }
+  };
   const generate = async (importLegacy = false) => {
-    if (!enabledRef.current || !entry.loaded || action.current || renderedRevision !== draftRevision.current) return;
+    if (!enabledRef.current || !entry.loaded || action.current || rosterRequest.current || renderedRevision !== draftRevision.current) return;
+    if (importLegacy && invalid) {
+      patch(weekStart, (old) => ({ ...old, generationError: `Enter planned counts before copying an earlier menu. ${invalid}`, generationIssues: [], retryImport: true }));
+      return;
+    }
     if (entry.draft.week.length && !window.confirm('Replace this week’s draft menu? Your saved version will remain until you save.')) return;
     const current: Action = { kind: importLegacy ? 'import' : 'generate', controller: new AbortController() };
     const draftKey = keyOf(entry.draft);
@@ -181,7 +257,9 @@ export function useWeeklyPlan(enabled = true) {
     patch(weekStart, (old) => ({ ...old, generationError: '', generationIssues: [], retryImport: importLegacy, message: '' }));
     try {
       const { data } = importLegacy
-        ? await axios.post(`${url(weekStart)}/import-preview`, undefined, { signal: current.controller.signal })
+        ? await axios.post(`${url(weekStart)}/import-preview`, {
+          childrenCount: Number(entry.draft.childrenCount), staffCount: Number(entry.draft.staffCount),
+        }, { signal: current.controller.signal })
         : await axios.get(`${API_BASE_URL}/api/menu/generate`, { signal: current.controller.signal });
       if (!applies()) return;
       if (importLegacy ? !Array.isArray(data.data?.week) || !data.data.week.length : !generatedWeekIsValid(data.data?.week)) throw new Error('The generated menu was incomplete. Your previous menu is unchanged. Try again or complete recipes in Meal Setup.');
@@ -207,7 +285,7 @@ export function useWeeklyPlan(enabled = true) {
     }
   };
   const save = async () => {
-    if (!enabledRef.current || !ready || action.current || renderedRevision !== draftRevision.current) return;
+    if (!enabledRef.current || !ready || action.current || rosterRequest.current || renderedRevision !== draftRevision.current) return;
     const current: Action = { kind: 'save', controller: new AbortController() };
     action.current = current;
     setActionLoading('save');
@@ -224,8 +302,8 @@ export function useWeeklyPlan(enabled = true) {
         messageType: 'error', ...(conflict ? { calculatedKey: undefined, calculationError: 'Recalculate to refresh an expired calculation, or reopen if this week was saved elsewhere.' } : {}) }));
     } finally { if (action.current === current) { action.current = null; if (mounted.current) setActionLoading(null); } }
   };
-  return { weekStart, selectWeek, reopen, entry, update, ready, printReady, historical, calculated, invalid, actionLoading,
+  return { weekStart, selectWeek, reopen, entry, update, useCurrentRosterCounts, rosterLoading, ready, printReady, historical, calculated, invalid, actionLoading,
     isBusy: actionLoading !== null || !entry.loaded, generate, save, cancelGeneration, retryGeneration: () => generate(entry.retryImport),
-    recalculate: () => { if (!enabledRef.current || action.current) return; draftRevision.current++; sequence.current++; patch(weekStart, (old) => ({ ...old, dirty: true, calculatedKey: undefined, calculationError: '', message: '' })); setRetry((n) => n + 1); },
+    recalculate: () => { if (!enabledRef.current || action.current) return; cancelRosterRequest(); draftRevision.current++; sequence.current++; patch(weekStart, (old) => ({ ...old, dirty: true, calculatedKey: undefined, calculationError: '', message: '' })); setRetry((n) => n + 1); },
   };
 }

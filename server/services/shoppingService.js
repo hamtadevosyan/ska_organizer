@@ -3,8 +3,8 @@
 const db = require("./dbAdapter");
 
 exports.generateShoppingList = async ({
-  childrenCount = 20,
-  staffCount = 5,
+  childrenCount,
+  staffCount,
   week: draftWeek
 } = {}) => {
   let week = draftWeek;
@@ -27,7 +27,7 @@ exports.generateShoppingList = async ({
     throw new Error("Menu week must be an array");
   }
 
-  require('./planValidation').validateCounts(childrenCount, staffCount);
+  ({ childrenCount, staffCount } = await require('./menuHeadcountService').resolveCounts({ childrenCount, staffCount }));
   const parsedChildrenCount = childrenCount;
   const parsedStaffCount = staffCount;
   const totalPeople = childrenCount + staffCount;

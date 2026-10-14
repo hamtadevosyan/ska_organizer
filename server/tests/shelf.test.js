@@ -2,11 +2,13 @@ const request = require('./helpers/authenticatedRequest');
 const app = require("../index");
 const db = require("../services/dbAdapter");
 const { addRecipeIngredient } = require('./helpers/recipeMeal');
+const { addMealRoster } = require('./helpers/mealRoster');
 
 describe("Shelf Check API", () => {
   let oats;
   let milk;
   beforeEach(async () => {
+    await addMealRoster(20, 5);
     const breakfast = await db.createMeal({ name: "Oatmeal", type: "breakfast" });
 
     // Catalog ordering and recipe ordering need not match. Keep the intended

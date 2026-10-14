@@ -48,10 +48,16 @@ test('save, reload, preserve drafts and reopen two independent weeks through rea
   await expect(page.getByLabel('Children', { exact: true })).toHaveValue('6');
   await page.getByLabel('Week starting Monday').fill('2026-09-14');
   await expect(generate).toBeEnabled();
+  // This workflow sets its own planned counts, even when the isolated roster
+  // is empty; a new week must not assume the previous 20/5 placeholder totals.
+  await page.getByLabel('Children', { exact: true }).fill('8');
+  await page.getByLabel('Staff', { exact: true }).fill('2');
   await generate.click();
   await expect(save).toBeEnabled();
   await save.click();
   await expect(page.getByText('Menu and shopping list saved.')).toBeVisible();
+  const secondPlan = (await (await request.get(`${api}/menu/plans/2026-09-14`)).json()).data;
+  expect(secondPlan).toMatchObject({ childrenCount: 8, staffCount: 2 });
   await page.getByLabel('Week starting Monday').fill('2026-09-07');
   await expect(page.getByLabel('Children', { exact: true })).toHaveValue('6');
   await page.getByRole('button', { name: 'Reopen saved week' }).click();

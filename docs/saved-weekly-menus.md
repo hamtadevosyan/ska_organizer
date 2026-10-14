@@ -33,7 +33,9 @@ for the initial environment configuration.
    incomplete, the planner names the missing periods and recipes, with **Open
    Meal Setup** and **Retry generation**. Incomplete active recipes are skipped
    when another complete option exists, and their repair guidance remains visible.
-3. Adjust meals and child/staff counts. Counts must be whole numbers, neither may
+3. New weeks start with the current totals of active enrolled children and active
+   staff-directory records. Inactive records and sign-in accounts are excluded.
+   Adjust meals and counts for the planned week. Counts must be whole numbers, neither may
    be negative, and their total must exceed zero. The calculation reads linked
    food stock from Inventory across all storage locations.
 4. Review the required, recorded-stock and to-buy quantities, then click **Save
@@ -61,8 +63,8 @@ does not save or change stock.
 If you had a saved menu before calendar weeks were introduced, choose its intended
 week and click **Use earlier undated menu**. This creates an editable draft using
 the old menu and current Inventory, preserving the current draft’s child, staff
-and daily counts. A new untouched week starts with 20 children and 5 staff.
-Review counts and stock before saving. Its ingredients are captured from the
+and daily counts. A new untouched week starts with current active child and staff
+roster totals. Review counts and stock before saving. Its ingredients are captured from the
 current catalog because the old format did not store recipe history. The original
 undated records remain available and are never assigned a guessed date.
 
@@ -73,6 +75,28 @@ recipe. **Use current recipes** explicitly adopts catalog corrections in a saved
 week’s draft; the saved week changes only after Save. A newly generated menu or
 new calendar week also uses current recipes. Conflicting units for the
 same ingredient are rejected instead of being added together.
+
+## Child and staff counts
+
+New weeks fetch counts from active enrollment and active employee records across
+all pages, including unassigned children and staff. The totals count people,
+not sign-in accounts. They are enrollment/staffing defaults for planning; they
+do not represent everyone currently checked in or guarantee future attendance.
+
+Saved weeks retain their saved counts. Manual edits, daily attendance overrides
+and generation retries preserve the draft's chosen counts. **Use current roster
+counts** explicitly refreshes the two weekly fields from the latest records.
+Review the resulting shopping calculation and save to update a saved week.
+Daily child overrides remain in place until you change or clear them.
+
+The existing **Review today’s attendance count** control lets you apply
+checked-in children to that date, rather than replacing the weekly enrollment default. Staff check-in
+is not implemented as part of this update.
+
+If roster counts cannot load, the planner provides retry guidance rather than
+substituting assumed values. A facility with no active records returns zero for
+both counts; add active records or enter planned counts with a positive total
+before calculating and saving.
 
 ## Inventory and saved shopping
 
@@ -122,12 +146,19 @@ generation.
 
 | Request | Behavior |
 | --- | --- |
+| `GET /api/menu/headcounts` | Current active child and staff totals; aggregate counts only |
 | `GET /api/menu/plans/:weekStart` | Complete saved snapshot, or `null` for a new week |
 | `POST /api/menu/plans/:weekStart/preview` | Read-only calculation; signed `previewToken` only when recipes are complete |
 | `PUT /api/menu/plans/:weekStart` | Atomically saves `{ "previewToken": "..." }` |
 | `GET /api/menu/plans/:weekStart/shopping` | Saved quantities and saved headcounts, independent of today's recipes |
 | `GET /api/shelf/final?weekStart=YYYY-MM-DD` | Same dated saved-shopping result |
 | `POST /api/menu/plans/:weekStart/import-preview` | Read-only import of the earlier undated menu into a new week's draft |
+
+Older undated shopping callers that omit a count use the current active roster
+for that field. Explicit counts, including zero with a positive combined total,
+are preserved. Legacy import accepts optional `childrenCount` and `staffCount`;
+the planner sends the counts the user selected. Dated preview continues to
+require explicit counts, and saved shopping uses its stored snapshot.
 
 `weekStart` must be a valid ISO date on a Monday. Preview input:
 

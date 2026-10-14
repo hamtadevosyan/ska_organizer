@@ -169,7 +169,9 @@ test('canceling a slow generation cannot replace a newer week or edited counts',
   await page.getByRole('button', { name: 'Cancel generation', exact: true }).click();
   await page.getByLabel('Children', { exact: true }).fill('9');
   await page.getByLabel('Week starting Monday', { exact: true }).fill('2026-12-14');
-  await expect(page.getByLabel('Children', { exact: true })).toHaveValue('20');
+  const roster = await data<{ childrenCount: number; staffCount: number }>(await http.get(api + '/menu/headcounts'));
+  await expect(page.getByLabel('Children', { exact: true })).toHaveValue(String(roster.childrenCount));
+  await expect(page.getByLabel('Staff', { exact: true })).toHaveValue(String(roster.staffCount));
   release();
   await expect(page.getByRole('combobox', { name: 'Breakfast', exact: true })).toHaveCount(0);
   await page.getByLabel('Week starting Monday', { exact: true }).fill(week);
