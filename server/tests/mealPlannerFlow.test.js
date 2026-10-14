@@ -1,16 +1,19 @@
 const request = require('./helpers/authenticatedRequest');
 const app = require("../index");
 const db = require("../services/dbAdapter");
+const { addRecipeIngredient } = require('./helpers/recipeMeal');
+const { addMealRoster } = require('./helpers/mealRoster');
 
 describe("Meal Planner end-to-end API flow", () => {
   beforeEach(async () => {
+    await addMealRoster(20, 5);
     const oatmeal = await db.createMeal({
       name: "Oatmeal",
       type: "breakfast"
     });
-    await db.createMeal({ name: "Banana", type: "snack" });
-    await db.createMeal({ name: "Chicken Rice", type: "lunch" });
-    await db.createMeal({ name: "Yogurt", type: "afternoonSnack" });
+    for (const [name, type] of [['Banana', 'snack'], ['Chicken Rice', 'lunch'], ['Yogurt', 'afternoonSnack']]) {
+      await addRecipeIngredient(await db.createMeal({ name, type }));
+    }
 
     const oats = await db.createIngredient({
       name: "Oats",

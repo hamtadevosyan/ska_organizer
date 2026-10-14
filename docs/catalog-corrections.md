@@ -79,6 +79,14 @@ that meal in Meal Setup. **Save Menu** and **Print List** stay disabled until th
 recipes are complete and calculation succeeds. The final printable table is also
 withheld, so a partial list is not presented as ready.
 
+**Generate Menu** requires one complete active recipe for each of Breakfast,
+Morning snack, Lunch and Afternoon snack. If a period has no usable recipe,
+**Menu generation could not finish** names it and provides **Open Meal Setup**
+and **Retry generation**. Repair the named meal or create a complete alternative.
+When another complete option exists, generation skips the incomplete active
+recipe and shows **Some recipes were skipped**, with its repair guidance. An
+unsuccessful generation attempt keeps the previous menu and counts.
+
 A previously saved week keeps its original recipes when reopened, including meals
 or ingredients archived later. To adopt catalog corrections for that week, click
 **Use current recipes**, review the new quantities and any warnings, then save.

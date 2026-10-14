@@ -35,3 +35,9 @@ exports.getCurrentMenu = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getHeadcounts = async (req, res, next) => {
+  try {
+    res.json({ data: await require('../services/menuHeadcountService').getCounts() });
+  } catch (error) { next(error); }
+};

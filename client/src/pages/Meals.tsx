@@ -40,6 +40,7 @@ const Meals = () => {
 
       {!canWrite && <p className="text-sm text-slate-600">Read-only access: you can review and print menus. Ask an editor to save changes or update recipes.</p>}
       <div hidden={activeTab !== 'planner'}><MealPlanner active={activeTab === 'planner'} canWrite={canWrite}
+        onOpenMealSetup={canWrite ? () => { setRecipeMealId(undefined); setActiveTab('setup'); } : undefined}
         onEditRecipe={canWrite ? (id) => { setRecipeMealId(id); setActiveTab('setup'); } : undefined} /></div>
       {canWrite && activeTab === 'setup' && <MealSetup initialMealId={recipeMealId} onBusyChange={setCatalogBusy} />}
     </div>

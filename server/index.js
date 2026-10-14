@@ -71,7 +71,9 @@ app.use((err, req, res, next) => {
   if (err.status === 401 && err.code !== 'INVALID_CREDENTIALS') clearCookie(res);
   if (err.retryAfter) res.set('Retry-After', String(err.retryAfter));
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: { message: 'Invalid JSON request.' } });
-  if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields, code: err.code } });
+  if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields, code: err.code,
+    // Only this known, catalog-only setup error exposes its structured guidance.
+    ...(err.code === 'MENU_SETUP_REQUIRED' && err.details ? { details: err.details } : {}) } });
   const unavailable = require('./services/availability').databaseUnavailable(err);
   // No raw path, SQL, error message, body, cookies, credentials or child names.
   console.error(JSON.stringify({ event: 'request_failed', requestId: req.requestId, method: req.method,

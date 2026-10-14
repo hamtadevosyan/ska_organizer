@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
 const db = require('../services/dbAdapter');
+const { addMealRoster } = require('./helpers/mealRoster');
 const A = '/api/menu/plans/2026-09-07';
 const B = '/api/menu/plans/2026-09-14';
 let meal, eggs, link, draft, stock;
@@ -112,7 +113,8 @@ test('rejects tampered, wrong-week and expired calculations', async () => {
   } finally { clock.mockRestore(); }
   expect(await api('get', A)).toBeNull();
 });
-test('imports the earlier undated menu into an explicit week without overwriting legacy data', async () => {
+test('imports the earlier undated menu using live roster counts without overwriting legacy data', async () => {
+  await addMealRoster(20, 5);
   await db.saveConfirmedMenu({ week: draft.week });
   await db.saveShelfCheck([{ ingredientId: eggs.id, quantity: 2 }]);
   const legacy = await db.getConfirmedMenu();

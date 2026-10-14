@@ -1,8 +1,9 @@
 import { SignedIn } from '../../tests/authFixture';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import MealPlanner from './MealPlanner';
+import { useWeeklyPlan } from './useWeeklyPlan';
 import Meals from '../../pages/Meals';
 import type { Meal, Plan } from './weeklyPlan';
 
@@ -107,6 +108,7 @@ beforeEach(() => {
     ? { data: { today: '2026-09-08', timeZone: 'America/Los_Angeles' } }
     : path.endsWith('/attendance/today-headcount')
       ? { data: { date: '2026-09-08', timeZone: 'America/Los_Angeles', takenAt: '2026-09-08T17:00:00Z', childrenCount: 2 } }
+      : path.endsWith('/api/menu/headcounts') ? response({ childrenCount: 7, staffCount: 2 })
       : path.endsWith('/api/meals') ? response([eggMeal, oats]) : response(savedPlan(path.endsWith(secondWeek) ? secondWeek : firstWeek)));
   vi.mocked(axios.post).mockImplementation(async (path, body) => {
     const draft = body as { childrenCount: number; staffCount: number; dailyChildrenCounts?: Record<string, number> };
@@ -363,4 +365,447 @@ it('refreshes a draft when returning from Inventory but keeps saved shopping unc
   recordedStock = 9; fireEvent(window, new StorageEvent('storage', { key: 'skao.inventory.changed', newValue: 'changed' })); await flush();
   expect(screen.getByLabelText('Eggs recorded stock')).toHaveTextContent('9 count');
   expect(axios.put).not.toHaveBeenCalled();
+});
+
+const generatedWeek = () => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map((day) => ({ day,
+  menu: { breakfast: oats, snack: { id: 'fruit', name: 'Fruit', type: 'snack' },
+    lunch: { id: 'soup', name: 'Soup', type: 'lunch' }, afternoonSnack: { id: 'yogurt', name: 'Yogurt', type: 'afternoonSnack' } } }));
+const generateButton = () => screen.getByRole('button', { name: 'Generate Menu' });
+const mockGeneration = (handler: () => Promise<ReturnType<typeof response>>) => {
+  const prior = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/api/menu/generate') ? handler() : prior(path, config));
+};
+
+describe('menu generation recovery', () => {
+  it('generates an editable draft with weekly and daily counts intact and saves only on request', async () => {
+    mockGeneration(async () => response({ week: generatedWeek() }));
+    render(<MealPlanner canWrite />); await flush();
+    input('Children', '8'); input('Staff', '2'); input('Children for Tuesday', '3'); await flush();
+    fireEvent.click(generateButton());
+    await act(async () => {});
+    expect(screen.getByLabelText('Children')).toHaveValue(8);
+    expect(screen.getByLabelText('Staff')).toHaveValue(2);
+    expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(3);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('oats');
+    expect(screen.getByText('Menu generated as an unsaved draft. Review the meals and shopping list before saving.')).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled(); expect(printButton()).toBeDisabled();
+    expect(axios.put).not.toHaveBeenCalled();
+    await flush();
+    expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/preview'), expect.objectContaining({
+      childrenCount: 8, staffCount: 2, dailyChildrenCounts: { '2026-09-08': 3 }, version: 1, refreshRecipes: true,
+    }), expect.anything());
+    expect(saveButton()).toBeEnabled();
+    fireEvent.change(screen.getAllByLabelText('Breakfast')[0], { target: { value: 'eggs' } }); await flush();
+    fireEvent.click(saveButton()); await flush();
+    expect(axios.put).toHaveBeenCalledOnce();
+    expect(screen.getByText('Menu and shopping list saved.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen saved week' })); await flush();
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+  });
+
+  it('names missing recipes, opens Meal Setup, and retries without losing a saved menu or headcounts', async () => {
+    let available = false;
+    mockGeneration(async () => {
+      if (available) return response({ week: generatedWeek() });
+      throw { response: { status: 422, data: { error: { code: 'MENU_SETUP_REQUIRED',
+        message: 'Complete Meal Setup before generating a menu. Add or repair an active recipe for: Lunch.',
+        details: { missingTypes: [{ type: 'lunch', label: 'Lunch', message: 'All saved Lunch meals are archived. Restore a meal or add an active meal with recipe ingredients in Meal Setup.' }],
+          excludedMeals: [{ mealId: 'soup', mealName: 'Soup', type: 'lunch', reasons: ['Add recipe ingredients and quantities.'] }] } } } } };
+    });
+    render(<SignedIn><Meals /></SignedIn>); await flush();
+    fireEvent.click(generateButton()); await flush();
+    expect(screen.getByRole('heading', { name: 'Menu generation could not finish' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('All saved Lunch meals are archived.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Soup: Add recipe ingredients and quantities.');
+    expect(screen.getByLabelText('Children')).toHaveValue(4);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    expect(printButton()).toBeEnabled(); expect(axios.post).not.toHaveBeenCalled(); expect(axios.put).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Meal Setup' }));
+    expect(screen.getByText('Recipe editor')).toBeVisible();
+    available = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Planner' })); await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry generation' })); await flush();
+    expect(screen.queryByRole('heading', { name: 'Menu generation could not finish' })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('oats');
+    expect(saveButton()).toBeEnabled(); expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reviewed draft through a transport failure and displays legacy string errors', async () => {
+    mockGeneration(async () => { throw { response: { status: 503, data: { error: 'The menu service is unavailable.' } } }; });
+    render(<MealPlanner canWrite />); await flush();
+    input('Children', '7'); input('Children for Wednesday', '9'); await flush();
+    fireEvent.change(screen.getAllByLabelText('Breakfast')[0], { target: { value: 'oats' } }); await flush();
+    const requests = vi.mocked(axios.post).mock.calls.length;
+    fireEvent.click(generateButton()); await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent('The menu service is unavailable.');
+    expect(screen.getByLabelText('Children')).toHaveValue(7);
+    expect(screen.getByLabelText('Children for Wednesday')).toHaveValue(9);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('oats');
+    expect(saveButton()).toBeEnabled(); expect(axios.post).toHaveBeenCalledTimes(requests); expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('requires confirmation before replacing any menu and keeps it when declined', async () => {
+    mockGeneration(async () => response({ week: generatedWeek() }));
+    render(<MealPlanner canWrite />); await flush();
+    vi.mocked(window.confirm).mockReturnValue(false);
+    fireEvent.click(generateButton()); await flush();
+    expect(window.confirm).toHaveBeenCalledWith('Replace this week’s draft menu? Your saved version will remain until you save.');
+    expect(vi.mocked(axios.get).mock.calls.some(([path]) => path.endsWith('/api/menu/generate'))).toBe(false);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    expect(printButton()).toBeEnabled();
+  });
+
+  it('cancels a slow generation, permits editing and week changes, and ignores the late response', async () => {
+    const slow = deferred<ReturnType<typeof response>>(); mockGeneration(() => slow.promise);
+    render(<MealPlanner canWrite />); await flush();
+    input('Children', '7'); input('Children for Tuesday', '3'); await flush();
+    fireEvent.click(generateButton()); await act(async () => {});
+    expect(generateButton()).toBeDisabled(); expect(screen.getByLabelText('Week starting Monday')).toBeDisabled();
+    const request = vi.mocked(axios.get).mock.calls.find(([path]) => path.endsWith('/api/menu/generate'))!;
+    expect(request[1]?.signal?.aborted).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel generation' }));
+    expect(request[1]?.signal?.aborted).toBe(true);
+    input('Children', '9'); input('Week starting Monday', secondWeek); await flush();
+    await act(async () => slow.resolve(response({ week: generatedWeek() })));
+    expect(screen.getByLabelText('Week starting Monday')).toHaveValue(secondWeek);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    input('Week starting Monday', firstWeek); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(9);
+    expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(3);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('cancels on tab or session deactivation and rejects late results even when transport ignores abort', async () => {
+    const slow = deferred<ReturnType<typeof response>>(); mockGeneration(() => slow.promise);
+    const view = render(<MealPlanner canWrite />); await flush();
+    input('Children', '7'); await flush();
+    fireEvent.click(generateButton()); await act(async () => {});
+    view.rerender(<MealPlanner canWrite active={false} />);
+    const request = vi.mocked(axios.get).mock.calls.find(([path]) => path.endsWith('/api/menu/generate'))!;
+    expect(request[1]?.signal?.aborted).toBe(true);
+    await act(async () => slow.resolve(response({ week: generatedWeek() })));
+    view.rerender(<MealPlanner canWrite />); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(7);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    expect(screen.queryByRole('heading', { name: 'Menu generation could not finish' })).not.toBeInTheDocument();
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('aborts generation on unmount and a later response cannot alter a newly opened planner', async () => {
+    const slow = deferred<ReturnType<typeof response>>(); mockGeneration(() => slow.promise);
+    const view = render(<MealPlanner canWrite />); await flush();
+    fireEvent.click(generateButton()); await act(async () => {});
+    const request = vi.mocked(axios.get).mock.calls.find(([path]) => path.endsWith('/api/menu/generate'))!;
+    view.unmount(); expect(request[1]?.signal?.aborted).toBe(true);
+    render(<MealPlanner canWrite />); await flush();
+    await act(async () => slow.resolve(response({ week: generatedWeek() })));
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs'); expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes a shopping preview outage from generation and allows calculation-only retry', async () => {
+    mockGeneration(async () => response({ week: generatedWeek() }));
+    render(<MealPlanner canWrite />); await flush();
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error('Stock calculation unavailable'));
+    fireEvent.click(generateButton()); await flush();
+    expect(screen.getByRole('heading', { name: 'Shopping list could not update' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Stock calculation unavailable');
+    expect(screen.queryByRole('heading', { name: 'Menu generation could not finish' })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('oats'); expect(saveButton()).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry calculation' })); await flush();
+    expect(saveButton()).toBeEnabled();
+    expect(vi.mocked(axios.get).mock.calls.filter(([path]) => path.endsWith('/api/menu/generate'))).toHaveLength(1);
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('rejects an incomplete generation response without replacing the saved menu', async () => {
+    mockGeneration(async () => response({ week: [{ day: 'Monday', menu: {} }] }));
+    render(<MealPlanner canWrite />); await flush(); fireEvent.click(generateButton()); await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent('The generated menu was incomplete.');
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs'); expect(printButton()).toBeEnabled();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+});
+
+
+it('rejects stale Save and Generate callbacks after an immediate draft change', async () => {
+  const hook = renderHook(() => useWeeklyPlan()); await flush();
+  act(() => hook.result.current.update({ childrenCount: '6' })); await flush();
+  expect(hook.result.current.ready).toBe(true);
+  const previous = hook.result.current;
+  act(() => {
+    previous.update({ childrenCount: '8' });
+    void previous.save();
+    void previous.generate();
+  });
+  expect(axios.put).not.toHaveBeenCalled();
+  expect(vi.mocked(axios.get).mock.calls.some(([path]) => path.endsWith('/api/menu/generate'))).toBe(false);
+  await flush();
+  expect(hook.result.current.entry.draft.childrenCount).toBe('8');
+  expect(hook.result.current.ready).toBe(true);
+});
+
+it('allows only one generation request before React has rendered the loading state', async () => {
+  const slow = deferred<ReturnType<typeof response>>(); mockGeneration(() => slow.promise);
+  const hook = renderHook(() => useWeeklyPlan()); await flush();
+  act(() => { void hook.result.current.generate(); void hook.result.current.generate(); });
+  expect(vi.mocked(axios.get).mock.calls.filter(([path]) => path.endsWith('/api/menu/generate'))).toHaveLength(1);
+  act(() => hook.result.current.cancelGeneration());
+  await act(async () => slow.resolve(response({ week: generatedWeek() })));
+  expect(hook.result.current.entry.draft.week[0].menu.breakfast?.id).toBe('eggs');
+  expect(axios.put).not.toHaveBeenCalled();
+});
+
+
+it('keeps an authorized successful save when Meal Setup is opened while the request is pending', async () => {
+  const slow = deferred<ReturnType<typeof response>>();
+  vi.mocked(axios.put).mockReturnValueOnce(slow.promise);
+  render(<SignedIn><Meals /></SignedIn>); await flush();
+  input('Children', '6'); await flush();
+  fireEvent.click(saveButton()); await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Meal Setup' }));
+  expect(screen.getByText('Recipe editor')).toBeVisible();
+  await act(async () => slow.resolve(response({ ...savedPlan(), childrenCount: 6, version: 2 })));
+  fireEvent.click(screen.getByRole('button', { name: 'Planner' })); await flush();
+  expect(screen.getByLabelText('Children')).toHaveValue(6);
+  expect(screen.getByText('Menu and shopping list saved.')).toBeVisible();
+  expect(screen.getByText('Saved', { exact: true })).toBeVisible();
+  expect(saveButton()).toBeDisabled();
+  expect(axios.put).toHaveBeenCalledOnce();
+});
+
+
+const rosterButton = () => screen.getByRole('button', { name: 'Use current roster counts' });
+const mockRoster = (handler: () => Promise<ReturnType<typeof response>>) => {
+  const prior = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/api/menu/headcounts') ? handler() : prior(path, config));
+};
+const mockUnsavedWeek = () => {
+  const prior = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/api/menu/plans/' + firstWeek)
+    ? Promise.resolve(response(null)) : prior(path, config));
+};
+
+describe('current roster counts', () => {
+  it('keeps inputs blank and blocked until an unsaved week receives verified active roster totals', async () => {
+    mockUnsavedWeek();
+    const slow = deferred<ReturnType<typeof response>>(); mockRoster(() => slow.promise);
+    render(<MealPlanner canWrite />); await act(async () => {});
+    expect(screen.getByLabelText('Children')).toHaveValue(null);
+    expect(screen.getByLabelText('Staff')).toHaveValue(null);
+    expect(screen.getByLabelText('Children')).toBeDisabled();
+    expect(generateButton()).toBeDisabled();
+    expect(screen.queryByText(/Child and staff counts must/)).not.toBeInTheDocument();
+    await act(async () => slow.resolve(response({ childrenCount: 14, staffCount: 3 })));
+    expect(screen.getByLabelText('Children')).toHaveValue(14);
+    expect(screen.getByLabelText('Staff')).toHaveValue(3);
+    expect(screen.getByLabelText('Children')).toBeEnabled();
+    expect(axios.put).not.toHaveBeenCalled();
+    expect(vi.mocked(axios.get).mock.calls.filter(([path]) => path.endsWith('/api/menu/headcounts'))).toHaveLength(1);
+  });
+
+  it('shows an honestly empty roster and allows planned counts instead of inventing twenty children and five staff', async () => {
+    mockUnsavedWeek(); mockRoster(async () => response({ childrenCount: 0, staffCount: 0 }));
+    mockGeneration(async () => response({ week: generatedWeek() }));
+    render(<MealPlanner canWrite />); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(0);
+    expect(screen.getByLabelText('Staff')).toHaveValue(0);
+    expect(screen.getByText(/Your active roster is empty/)).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled(); expect(axios.post).not.toHaveBeenCalled();
+    input('Children', '9'); input('Staff', '1');
+    fireEvent.click(generateButton()); await flush();
+    expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/preview'), expect.objectContaining({ childrenCount: 9, staffCount: 1 }), expect.anything());
+    expect(saveButton()).toBeEnabled();
+  });
+
+  it.each(['unavailable', 'malformed'])('does not substitute fake counts when the initial roster is %s and retries safely', async (problem) => {
+    mockUnsavedWeek();
+    let repaired = false;
+    mockRoster(async () => {
+      if (repaired) return response({ childrenCount: 11, staffCount: 2 });
+      if (problem === 'malformed') return response({ childrenCount: '11', staffCount: 2 });
+      throw new Error('Roster unavailable');
+    });
+    render(<MealPlanner canWrite />); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(null);
+    expect(screen.getByLabelText('Staff')).toHaveValue(null);
+    expect(screen.getByLabelText('Children')).toBeDisabled();
+    expect(generateButton()).toBeDisabled(); expect(axios.post).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Retry loading week' })).toBeEnabled();
+    repaired = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading week' })); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(11);
+    expect(screen.getByLabelText('Staff')).toHaveValue(2);
+    expect(generateButton()).toBeEnabled();
+  });
+
+  it('ignores initial roster totals from a week that was left and reopens saved weeks without reading the roster', async () => {
+    mockUnsavedWeek();
+    const slow = deferred<ReturnType<typeof response>>(); mockRoster(() => slow.promise);
+    render(<MealPlanner canWrite />); await act(async () => {});
+    const request = vi.mocked(axios.get).mock.calls.find(([path]) => path.endsWith('/api/menu/headcounts'))!;
+    input('Week starting Monday', secondWeek); await flush();
+    expect(request[1]?.signal?.aborted).toBe(true);
+    await act(async () => slow.resolve(response({ childrenCount: 99, staffCount: 8 })));
+    expect(screen.getByLabelText('Children')).toHaveValue(4);
+    expect(screen.getByLabelText('Staff')).toHaveValue(1);
+    expect(screen.getByLabelText('Week starting Monday')).toHaveValue(secondWeek);
+    expect(vi.mocked(axios.get).mock.calls.filter(([path]) => path.endsWith('/api/menu/headcounts'))).toHaveLength(1);
+  });
+
+  it('keeps saved historical counts until an explicit roster refresh and leaves every daily override and recipe intact', async () => {
+    const prior = vi.mocked(axios.get).getMockImplementation()!;
+    vi.mocked(axios.get).mockImplementation((path, config) => path.endsWith('/api/menu/plans/' + firstWeek)
+      ? Promise.resolve(response({ ...savedPlan(), dailyChildrenCounts: { '2026-09-08': 2 } })) : prior(path, config));
+    render(<MealPlanner canWrite />); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(4);
+    expect(screen.getByLabelText('Staff')).toHaveValue(1);
+    expect(vi.mocked(axios.get).mock.calls.some(([path]) => path.endsWith('/api/menu/headcounts'))).toBe(false);
+    fireEvent.click(rosterButton()); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(7);
+    expect(screen.getByLabelText('Staff')).toHaveValue(2);
+    expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(2);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/preview'), expect.objectContaining({
+      childrenCount: 7, staffCount: 2, dailyChildrenCounts: { '2026-09-08': 2 }, version: 1, refreshRecipes: false,
+    }), expect.anything());
+    expect(saveButton()).toBeEnabled(); expect(axios.put).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen saved week' })); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(4);
+    expect(screen.getByLabelText('Staff')).toHaveValue(1);
+    expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(2);
+    expect(vi.mocked(axios.get).mock.calls.filter(([path]) => path.endsWith('/api/menu/headcounts'))).toHaveLength(1);
+  });
+
+  it('retains reviewed counts and shopping data on refresh failure, then saves the calculation with explicitly refreshed counts', async () => {
+    let available = false;
+    mockRoster(async () => {
+      if (!available) throw new Error('Roster temporarily offline');
+      return response({ childrenCount: 8, staffCount: 2 });
+    });
+    vi.mocked(axios.put).mockResolvedValue(response({ ...savedPlan(), childrenCount: 8, staffCount: 2, version: 2 }));
+    render(<MealPlanner canWrite />); await flush();
+    input('Children', '6'); input('Children for Tuesday', '3'); await flush();
+    const previewRequests = vi.mocked(axios.post).mock.calls.length;
+    fireEvent.click(rosterButton()); await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent('Roster temporarily offline');
+    expect(screen.getByLabelText('Children')).toHaveValue(6);
+    expect(screen.getByLabelText('Staff')).toHaveValue(1);
+    expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(3);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    expect(saveButton()).toBeEnabled(); expect(printButton()).toBeEnabled();
+    expect(vi.mocked(axios.post).mock.calls.length).toBe(previewRequests);
+    expect(axios.put).not.toHaveBeenCalled();
+    available = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry reading roster counts' })); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(8);
+    expect(screen.getByLabelText('Staff')).toHaveValue(2);
+    expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(3);
+    expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/preview'), expect.objectContaining({
+      childrenCount: 8, staffCount: 2, dailyChildrenCounts: { '2026-09-08': 3 },
+    }), expect.anything());
+    fireEvent.click(saveButton()); await flush();
+    expect(axios.put).toHaveBeenCalledWith(expect.stringContaining(firstWeek), { previewToken: 'reviewed-8-2' });
+    expect(screen.getByLabelText('Children')).toHaveValue(8);
+    expect(screen.getByText('Saved', { exact: true })).toBeVisible();
+  });
+
+  it.each(['edit', 'week', 'tab', 'unmount'])('cancels roster refresh on %s and ignores late totals even if transport ignores abort', async (change) => {
+    const slow = deferred<ReturnType<typeof response>>(); mockRoster(() => slow.promise);
+    const view = render(<MealPlanner canWrite />); await flush();
+    input('Children', '6'); input('Children for Tuesday', '3'); await flush();
+    fireEvent.click(rosterButton()); await act(async () => {});
+    const request = vi.mocked(axios.get).mock.calls.find(([path]) => path.endsWith('/api/menu/headcounts'))!;
+    expect(request[1]?.signal?.aborted).toBe(false);
+    expect(screen.getByLabelText('Children')).toBeEnabled();
+    expect(saveButton()).toBeDisabled();
+    if (change === 'edit') input('Children', '9');
+    if (change === 'week') input('Week starting Monday', secondWeek);
+    if (change === 'tab') view.rerender(<MealPlanner canWrite active={false} />);
+    if (change === 'unmount') view.unmount();
+    expect(request[1]?.signal?.aborted).toBe(true);
+    await act(async () => slow.resolve(response({ childrenCount: 99, staffCount: 8 })));
+    if (change === 'week') { input('Week starting Monday', firstWeek); await flush(); }
+    if (change === 'tab') { view.rerender(<MealPlanner canWrite />); await flush(); }
+    if (change === 'unmount') { render(<MealPlanner canWrite />); await flush(); }
+    expect(screen.getByLabelText('Children')).toHaveValue(change === 'edit' ? 9 : change === 'unmount' ? 4 : 6);
+    expect(screen.getByLabelText('Staff')).toHaveValue(1);
+    if (change !== 'unmount') expect(screen.getByLabelText('Children for Tuesday')).toHaveValue(3);
+    expect(screen.getAllByLabelText('Breakfast')[0]).toHaveValue('eggs');
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('allows a read-only planner to calculate refreshed roster counts without gaining write access', async () => {
+    render(<MealPlanner />); await flush();
+    expect(rosterButton()).toBeEnabled();
+    fireEvent.click(rosterButton()); await flush();
+    expect(screen.getByLabelText('Children')).toHaveValue(7);
+    expect(screen.getByLabelText('Staff')).toHaveValue(2);
+    expect(axios.post).toHaveBeenCalled();
+    expect(saveButton()).toBeDisabled(); expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it('blocks stale Save and Generate callbacks while reading roster counts before React rerenders', async () => {
+    const slow = deferred<ReturnType<typeof response>>(); mockRoster(() => slow.promise);
+    const hook = renderHook(() => useWeeklyPlan()); await flush();
+    act(() => hook.result.current.update({ childrenCount: '6' })); await flush();
+    expect(hook.result.current.ready).toBe(true);
+    const previous = hook.result.current;
+    act(() => { void previous.useCurrentRosterCounts(); void previous.save(); void previous.generate(); });
+    expect(axios.put).not.toHaveBeenCalled();
+    expect(vi.mocked(axios.get).mock.calls.some(([path]) => path.endsWith('/api/menu/generate'))).toBe(false);
+    act(() => hook.result.current.update({ childrenCount: '9' }));
+    await act(async () => slow.resolve(response({ childrenCount: 99, staffCount: 8 })));
+    expect(hook.result.current.entry.draft.childrenCount).toBe('9');
+  });
+});
+
+
+describe('legacy import count selection', () => {
+  it('passes manually planned counts to legacy import even when the active roster is empty', async () => {
+    mockUnsavedWeek(); mockRoster(async () => response({ childrenCount: 0, staffCount: 0 }));
+    const priorPost = vi.mocked(axios.post).getMockImplementation()!;
+    vi.mocked(axios.post).mockImplementation((path, body, config) => path.endsWith('/import-preview')
+      ? Promise.resolve(response({ ...savedPlan(), childrenCount: 20, staffCount: 5 })) : priorPost(path, body, config));
+    render(<MealPlanner canWrite />); await flush();
+    input('Children', '9'); input('Staff', '0');
+    fireEvent.click(screen.getByRole('button', { name: 'Use earlier undated menu' })); await flush();
+    expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/import-preview'), { childrenCount: 9, staffCount: 0 }, expect.anything());
+    expect(screen.getByLabelText('Children')).toHaveValue(9);
+    expect(screen.getByLabelText('Staff')).toHaveValue(0);
+    expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/preview'), expect.objectContaining({ childrenCount: 9, staffCount: 0 }), expect.anything());
+    expect(axios.put).not.toHaveBeenCalled(); expect(saveButton()).toBeEnabled();
+  });
+
+  it('preserves selected daily overrides when the import endpoint returns other headcounts', async () => {
+    const priorPost = vi.mocked(axios.post).getMockImplementation()!;
+    vi.mocked(axios.post).mockImplementation((path, body, config) => path.endsWith('/import-preview')
+      ? Promise.resolve(response({ ...savedPlan(), childrenCount: 20, staffCount: 5 })) : priorPost(path, body, config));
+    const hook = renderHook(() => useWeeklyPlan()); await flush();
+    act(() => hook.result.current.update({ childrenCount: '0', staffCount: '2', dailyChildrenCounts: { '2026-09-08': '3' } })); await flush();
+    await act(async () => hook.result.current.generate(true)); await flush();
+    expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/import-preview'), { childrenCount: 0, staffCount: 2 }, expect.anything());
+    expect(hook.result.current.entry.draft).toMatchObject({ childrenCount: '0', staffCount: '2', dailyChildrenCounts: { '2026-09-08': '3' } });
+    expect(axios.post).toHaveBeenLastCalledWith(expect.stringContaining('/preview'), expect.objectContaining({ childrenCount: 0, staffCount: 2, dailyChildrenCounts: { '2026-09-08': 3 } }), expect.anything());
+  });
+
+  it.each(['0', '', '-1', '1.2'])('does not ask the backend to calculate an import with invalid planned count %s', async (childrenCount) => {
+    mockUnsavedWeek(); mockRoster(async () => response({ childrenCount: 0, staffCount: 0 }));
+    render(<MealPlanner canWrite />); await flush();
+    input('Children', childrenCount);
+    fireEvent.click(screen.getByRole('button', { name: 'Use earlier undated menu' })); await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter planned counts before copying an earlier menu.');
+    expect(axios.post).not.toHaveBeenCalled(); expect(axios.put).not.toHaveBeenCalled();
+  });
+});
+
+
+it('does not call a nonempty roster empty when the user manually clears their planned headcount', async () => {
+  mockUnsavedWeek();
+  render(<MealPlanner canWrite />); await flush();
+  expect(screen.getByLabelText('Children')).toHaveValue(7);
+  expect(screen.getByLabelText('Staff')).toHaveValue(2);
+  input('Children', '0'); input('Staff', '0');
+  expect(screen.queryByText(/Your active roster is empty/)).not.toBeInTheDocument();
+  expect(screen.getByText('Child and staff counts must be non-negative whole numbers with a positive total.')).toBeInTheDocument();
 });

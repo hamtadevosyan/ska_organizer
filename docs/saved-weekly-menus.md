@@ -28,8 +28,14 @@ for the initial environment configuration.
 1. Open **Meals → Planner** and select **Week starting Monday**. Selecting another
    weekday selects the Monday of that week.
 2. An existing saved plan loads automatically. For a new week, click **Generate
-   Menu**. Meals and their recipe ingredients must already exist in Meal Setup.
-3. Adjust meals and child/staff counts. Counts must be whole numbers, neither may
+   Menu**. Each period—Breakfast, Morning snack, Lunch and Afternoon snack—needs
+   at least one active meal with a complete recipe in Meal Setup. If setup is
+   incomplete, the planner names the missing periods and recipes, with **Open
+   Meal Setup** and **Retry generation**. Incomplete active recipes are skipped
+   when another complete option exists, and their repair guidance remains visible.
+3. New weeks start with the current totals of active enrolled children and active
+   staff-directory records. Inactive records and sign-in accounts are excluded.
+   Adjust meals and counts for the planned week. Counts must be whole numbers, neither may
    be negative, and their total must exceed zero. The calculation reads linked
    food stock from Inventory across all storage locations.
 4. Review the required, recorded-stock and to-buy quantities, then click **Save
@@ -46,10 +52,19 @@ reloading the browser asks about unsaved work. Save before navigating to another
 application page. **Reopen saved week** asks before discarding that week's draft;
 other weeks' drafts remain intact.
 
+Generating again asks before replacing an existing draft. The prior menu,
+headcounts, daily attendance overrides and shopping preview remain until the
+generation response succeeds. **Cancel generation** or a generation failure
+preserves that work. A successful replacement keeps the counts and daily
+overrides, creates an unsaved menu draft, and recalculates shopping using current
+recipes and Inventory. Review the calculation before saving; generation itself
+does not save or change stock.
+
 If you had a saved menu before calendar weeks were introduced, choose its intended
 week and click **Use earlier undated menu**. This creates an editable draft using
-the old menu, current Inventory and the old defaults of 20 children and 5 staff.
-Review counts and stock before saving. Its ingredients are captured from the
+the old menu and current Inventory, preserving the current draft’s child, staff
+and daily counts. A new untouched week starts with current active child and staff
+roster totals. Review counts and stock before saving. Its ingredients are captured from the
 current catalog because the old format did not store recipe history. The original
 undated records remain available and are never assigned a guessed date.
 
@@ -60,6 +75,28 @@ recipe. **Use current recipes** explicitly adopts catalog corrections in a saved
 week’s draft; the saved week changes only after Save. A newly generated menu or
 new calendar week also uses current recipes. Conflicting units for the
 same ingredient are rejected instead of being added together.
+
+## Child and staff counts
+
+New weeks fetch counts from active enrollment and active employee records across
+all pages, including unassigned children and staff. The totals count people,
+not sign-in accounts. They are enrollment/staffing defaults for planning; they
+do not represent everyone currently checked in or guarantee future attendance.
+
+Saved weeks retain their saved counts. Manual edits, daily attendance overrides
+and generation retries preserve the draft's chosen counts. **Use current roster
+counts** explicitly refreshes the two weekly fields from the latest records.
+Review the resulting shopping calculation and save to update a saved week.
+Daily child overrides remain in place until you change or clear them.
+
+The existing **Review today’s attendance count** control lets you apply
+checked-in children to that date, rather than replacing the weekly enrollment default. Staff check-in
+is not implemented as part of this update.
+
+If roster counts cannot load, the planner provides retry guidance rather than
+substituting assumed values. A facility with no active records returns zero for
+both counts; add active records or enter planned counts with a positive total
+before calculating and saving.
 
 ## Inventory and saved shopping
 
@@ -75,7 +112,12 @@ Saving and printing do not decrease or reserve stock. Record actual usage with *
 
 ## Errors and concurrent edits
 
-- **Calculation error:** correct invalid values or use **Retry calculation**.
+- **Menu generation could not finish:** repair the named periods or recipes in
+  **Meal Setup**, or use **Retry generation** after a temporary service failure.
+  The previous menu and counts remain unchanged.
+- **Shopping list could not update:** correct the reported quantities, recipe or
+  unit issue, or use **Retry calculation** after a temporary service failure.
+  The editable menu remains available. This is separate from menu generation.
 - **Save failure:** the prior saved snapshot remains intact and the editable draft
   stays on screen. Retry saving when the service is available.
 - **Calculation expired:** calculations expire after one hour or a server restart.
@@ -90,14 +132,33 @@ All success responses wrap the result in `{ "data": ... }`. Validation returns
 400, missing saved shopping returns 404, and expired/conflicting saves return
 409, with `{ "error": { "message": "..." } }`.
 
+`GET /api/menu/generate` reads the current catalog under its existing lock and
+returns `{ "data": { "week": [...] } }`, with optional `setupWarnings` for active
+recipes skipped because they are incomplete. It selects only active meals with
+active, valid recipe ingredients and positive quantities. When any of the four
+periods has no usable recipe, it returns 422 with error code
+`MENU_SETUP_REQUIRED`, `fields` keyed by meal type, and
+`details: { missingTypes, excludedMeals }`. Each missing period supplies `type`,
+`label` and `message`; each excluded meal supplies `mealId`, `mealName`, `type`
+and `reasons`. Generation neither saves a plan nor changes stock. The dated
+preview remains a separate validation step, including if recipes change after
+generation.
+
 | Request | Behavior |
 | --- | --- |
+| `GET /api/menu/headcounts` | Current active child and staff totals; aggregate counts only |
 | `GET /api/menu/plans/:weekStart` | Complete saved snapshot, or `null` for a new week |
 | `POST /api/menu/plans/:weekStart/preview` | Read-only calculation; signed `previewToken` only when recipes are complete |
 | `PUT /api/menu/plans/:weekStart` | Atomically saves `{ "previewToken": "..." }` |
 | `GET /api/menu/plans/:weekStart/shopping` | Saved quantities and saved headcounts, independent of today's recipes |
 | `GET /api/shelf/final?weekStart=YYYY-MM-DD` | Same dated saved-shopping result |
 | `POST /api/menu/plans/:weekStart/import-preview` | Read-only import of the earlier undated menu into a new week's draft |
+
+Older undated shopping callers that omit a count use the current active roster
+for that field. Explicit counts, including zero with a positive combined total,
+are preserved. Legacy import accepts optional `childrenCount` and `staffCount`;
+the planner sends the counts the user selected. Dated preview continues to
+require explicit counts, and saved shopping uses its stored snapshot.
 
 `weekStart` must be a valid ISO date on a Monday. Preview input:
 

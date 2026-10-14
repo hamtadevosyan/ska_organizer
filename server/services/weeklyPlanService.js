@@ -139,8 +139,9 @@ exports.shopping = async (weekStart) => {
       ...(plan.dailyChildrenCounts ? { dailyChildrenCounts: plan.dailyChildrenCounts } : {}) } };
 };
 
-exports.importLegacy = async (weekStart) => {
+exports.importLegacy = async (weekStart, counts = {}) => {
   const legacy = await db.getConfirmedMenu();
   if (!legacy) throw problem('There is no earlier undated menu to import.', 404);
-  return exports.preview(weekStart, { version: 0, week: legacy.week, childrenCount: 20, staffCount: 5 });
+  const { childrenCount, staffCount } = await require('./menuHeadcountService').resolveCounts(counts);
+  return exports.preview(weekStart, { version: 0, week: legacy.week, childrenCount, staffCount });
 };

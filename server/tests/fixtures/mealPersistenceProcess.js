@@ -115,14 +115,23 @@ async function documentSnapshot() {
     credentials = { cookie: `skao_session=${signedIn.token}`, csrf: signedIn.csrfToken, token: signedIn.token };
     if (process.argv[2] === 'write') {
       const meal = await api('post', '/api/meals', { name: 'Egg Breakfast', type: 'breakfast' }, 201);
+      const otherMeals = [];
       for (const type of ['snack', 'lunch', 'afternoonSnack']) {
-        await api('post', '/api/meals', { name: `${type} example`, type }, 201);
+        otherMeals.push(await api('post', '/api/meals', { name: `${type} example`, type }, 201));
       }
       const eggs = await api('post', '/api/ingredients', { name: 'Eggs', unit: 'count', shelfLifeDays: 7 }, 201);
       await api('post', `/api/meals/${meal.id}/ingredients`, { ingredientId: eggs.id, quantity: 1 }, 201);
+      for (const otherMeal of otherMeals) {
+        const ingredient = await api('post', '/api/ingredients', { name: `${otherMeal.type} ingredient`, unit: 'count' }, 201);
+        await api('post', `/api/meals/${otherMeal.id}/ingredients`, { ingredientId: ingredient.id, quantity: 1 }, 201);
+      }
       const draft = await api('get', '/api/menu/generate');
       const shopping = await api('post', '/api/shopping/generate', { week: draft.week, childrenCount: 4, staffCount: 1 });
-      if (shopping.items[0].quantity !== 25) throw new Error('Draft quantity changed');
+      const eggsShopping = shopping.items.find((item) => item.ingredient.id === eggs.id);
+      if (shopping.items.length !== 4 || eggsShopping?.quantity !== 25) throw new Error('Draft eggs quantity changed');
+      for (const item of shopping.items.filter((item) => item.ingredient.id !== eggs.id)) {
+        if (item.quantity !== 25) throw new Error('Draft alternate meal quantity changed');
+      }
       if (await api('get', '/api/menu/current') !== null) throw new Error('Draft was saved automatically');
       await api('post', '/api/menu/confirm', { week: draft.week });
       await api('post', '/api/shelf/check', { items: [{ ingredientId: eggs.id, quantity: 20, expiresAt: '2099-01-01' }] });
@@ -136,11 +145,15 @@ async function documentSnapshot() {
       }
       await saveDocuments();
       await saveStaffDocuments(await db.findAccount(identity.username));
+      // The legacy shelf calculation uses the actual synthetic roster after a restart.
+      await require('../helpers/mealRoster').addMealRoster(
+        20 - await db.countChildren({ active: true }), 5 - await db.countStaff({ active: true }));
     }
     const meals = await api('get', '/api/meals');
     const breakfast = meals.find((meal) => meal.type === 'breakfast');
     const snapshot = {
       meals, ingredients: await api('get', '/api/ingredients'),
+      headcounts: await api('get', '/api/menu/headcounts'),
       recipe: await api('get', `/api/meals/${breakfast.id}/ingredients`),
       menu: await api('get', '/api/menu/current'),
       shelf: await db.getShelf(),

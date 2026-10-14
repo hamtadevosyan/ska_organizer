@@ -1,21 +1,23 @@
 const request = require('./helpers/authenticatedRequest');
 const app = require("../index");
 const db = require("../services/dbAdapter");
+const { addRecipeIngredient } = require('./helpers/recipeMeal');
 
 describe("Shopping List API", () => {
   beforeEach(async () => {
     const breakfast = await db.createMeal({ name: "Oatmeal", type: "breakfast" });
-    await db.createMeal({ name: "Banana", type: "snack" });
-    await db.createMeal({ name: "Chicken Rice", type: "lunch" });
-    await db.createMeal({ name: "Yogurt", type: "afternoonSnack" });
 
     const oats = await db.createIngredient({ name: "Oats", unit: "g", shelfLifeDays: 180 });
     const milk = await db.createIngredient({ name: "Milk", unit: "ml", shelfLifeDays: 7 });
 
     await db.addMealIngredient({ mealId: breakfast.id, ingredientId: oats.id, quantity: 30 });
     await db.addMealIngredient({ mealId: breakfast.id, ingredientId: milk.id, quantity: 100 });
+    for (const [name, type] of [['Banana', 'snack'], ['Chicken Rice', 'lunch'], ['Yogurt', 'afternoonSnack']]) {
+      await addRecipeIngredient(await db.createMeal({ name, type }));
+    }
 
     const generated = await request(app).get("/api/menu/generate");
+    expect(generated.status).toBe(200);
 
     await request(app)
       .post("/api/menu/confirm")

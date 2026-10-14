@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { BlankFormActions } from './BlankFormActions';
 import * as api from '../../api/registrationForms';
@@ -22,6 +22,10 @@ let savedCanShare: PropertyDescriptor | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks(); sessionExpired.clear(); downloadClicks = [];
+  // Discard unused one-shot implementations as well as call history, so a
+  // failed preceding test cannot leave a deferred fetch for the next case.
+  vi.mocked(api.getRegistrationForm).mockReset();
+  vi.mocked(api.getRegistrationFormContent).mockReset();
   savedShare = Object.getOwnPropertyDescriptor(navigator, 'share');
   savedCanShare = Object.getOwnPropertyDescriptor(navigator, 'canShare');
   Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
@@ -133,28 +137,35 @@ test.each(['no share', 'no canShare', 'unsupported files', 'canShare throws'] as
 
 test('canceling the native menu keeps the prepared file available to retry without a download', async () => {
   const { share } = nativeSharing(vi.fn().mockRejectedValueOnce(new DOMException('Cancelled', 'AbortError')).mockResolvedValue(undefined));
-  render(<BlankFormActions form={form} revision={revision} />);
-  await prepareShare();
-  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Open share menu' })).toBeEnabled());
-  expect(screen.getByRole('region', { name: 'Share or print blank form' })).toBeInTheDocument();
-  expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(downloadClicks).toHaveLength(0);
-  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
+  const shown = render(<BlankFormActions form={form} revision={revision} />);
+  const local = within(shown.container);
+  await act(async () => { fireEvent.click(local.getByRole('button', { name: 'Share / Print blank ' + form.title })); });
+  const menu = local.getByRole('button', { name: 'Open share menu' });
+  // Await the mocked rejection and React's updates directly. A timed-out
+  // waitFor querying the global DOM could resume against the next test's menu.
+  await act(async () => { fireEvent.click(menu); });
+  expect(share).toHaveBeenCalledTimes(1);
+  expect(menu).toBeEnabled();
+  expect(local.getByRole('region', { name: 'Share or print blank form' })).toBeInTheDocument();
+  expect(local.queryByRole('alert')).not.toBeInTheDocument(); expect(downloadClicks).toHaveLength(0);
+  await act(async () => { fireEvent.click(menu); });
   expect(share).toHaveBeenCalledTimes(2);
   expect(share.mock.calls[1][0].files[0]).toBe(share.mock.calls[0][0].files[0]);
   expect(api.getRegistrationFormContent).toHaveBeenCalledTimes(1);
-  await act(async () => {}); expect(downloadClicks).toHaveLength(0);
+  expect(menu).toBeEnabled(); expect(downloadClicks).toHaveLength(0);
 });
 
 test('a native sharing failure explains retry or download and does not automatically download', async () => {
   const { share } = nativeSharing(vi.fn().mockRejectedValue(new Error('Unsupported')));
-  render(<BlankFormActions form={form} revision={revision} />);
-  await prepareShare();
-  fireEvent.click(screen.getByRole('button', { name: 'Open share menu' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Could not open the share menu. Try again, or download the blank form to share or print it.');
+  const shown = render(<BlankFormActions form={form} revision={revision} />);
+  const local = within(shown.container);
+  await act(async () => { fireEvent.click(local.getByRole('button', { name: 'Share / Print blank ' + form.title })); });
+  const menu = local.getByRole('button', { name: 'Open share menu' });
+  await act(async () => { fireEvent.click(menu); });
+  expect(local.getByRole('alert')).toHaveTextContent('Could not open the share menu. Try again, or download the blank form to share or print it.');
   expect(share).toHaveBeenCalledTimes(1); expect(downloadClicks).toHaveLength(0);
-  expect(screen.getByRole('button', { name: 'Open share menu' })).toBeEnabled();
-  expect(screen.getByRole('button', { name: 'Download blank ' + form.title })).toBeEnabled();
+  expect(menu).toBeEnabled();
+  expect(local.getByRole('button', { name: 'Download blank ' + form.title })).toBeEnabled();
 });
 
 test('PDF previews use a local renderer without mounting a private file URL', async () => {

@@ -12,6 +12,12 @@ async function setupStep(label, operation) {
   const warning = setTimeout(() => console.warn(`Test setup is still ${label} after 20 seconds.`), 20000);
   warning.unref();
   try { await operation(); }
+  catch (error) {
+    const code = error.original?.code || error.parent?.code;
+    const state = typeof code === 'string' && /^[A-Z0-9]{5}$/.test(code) ? ` (SQLSTATE ${code})` : '';
+    console.error(`Test setup failed while ${label}${state}.`);
+    throw error;
+  }
   finally { clearTimeout(warning); }
 }
 

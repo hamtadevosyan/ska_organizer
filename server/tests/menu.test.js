@@ -1,14 +1,14 @@
 const request = require('./helpers/authenticatedRequest');
 const app = require("../index");
 const db = require("../services/dbAdapter");
+const { addRecipeIngredient } = require('./helpers/recipeMeal');
 
 describe("Menu API", () => {
   beforeEach(async () => {
     // Seed meals
-    await db.createMeal({ name: "Oatmeal", type: "breakfast" });
-    await db.createMeal({ name: "Banana", type: "snack" });
-    await db.createMeal({ name: "Chicken Rice", type: "lunch" });
-    await db.createMeal({ name: "Yogurt", type: "afternoonSnack" });
+    for (const [name, type] of [['Oatmeal', 'breakfast'], ['Banana', 'snack'], ['Chicken Rice', 'lunch'], ['Yogurt', 'afternoonSnack']]) {
+      await addRecipeIngredient(await db.createMeal({ name, type }));
+    }
   });
 
   test("GET /api/menu/generate returns weekly menu", async () => {
