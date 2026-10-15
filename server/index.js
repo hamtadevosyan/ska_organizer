@@ -23,6 +23,10 @@ const registrationForms = require('./routes/registrationForms');
 registrationForms.mountUploads(app);
 const staffDocuments = require('./routes/staffDocuments');
 staffDocuments.mountUploads(app);
+// Reviewed purchasing previews carry signed source snapshots. Authenticate and
+// authorize before accepting their bounded, larger request bodies.
+app.use('/api/purchasing', requireSession, requireOperationalAccess,
+  express.json({ limit: '1mb' }), require('./routes/purchasing'));
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);

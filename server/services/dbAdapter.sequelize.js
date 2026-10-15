@@ -22,6 +22,7 @@ exports.withCatalogLock = (fn) => locked(17003, fn);
 exports.withAuthLock = (fn) => locked(17004, fn);
 exports.withRoomLock = (fn) => locked(17005, fn);
 exports.withInventoryLock = (fn) => locked(17006, fn);
+exports.withPurchasingLock = (fn) => locked(17007, fn);
 
 exports.setup = async (connectionString, { schema = 'public' } = {}) => {
   if (sequelize) throw new Error('Database adapter is already initialized.');
@@ -147,6 +148,26 @@ exports.saveWeeklyPlan = async (snapshot, expectedVersion) => {
   });
 };
 
+exports.getPurchasingList = async (weekStart) => unpackPlan(await get('PurchasingList', weekStart));
+exports.savePurchasingList = async (snapshot, expectedVersion) => {
+  const { problem, validateVersion, validateWeekStart } = require('./planValidation');
+  validateVersion(expectedVersion);
+  validateWeekStart(snapshot?.weekStart);
+  if (expectedVersion >= 2147483647) throw problem('The purchasing list version is out of range.');
+  return exports.withPurchasingLock(async () => {
+    const transaction = transactionContext.getStore();
+    const entity = model('PurchasingList');
+    // The advisory lock also protects a first save, before a row exists to lock.
+    const previous = await entity.findByPk(snapshot.weekStart, { transaction, lock: transaction.LOCK.UPDATE });
+    if ((previous?.version || 0) !== expectedVersion) {
+      throw problem('This purchasing list was saved elsewhere. Reopen it before saving again.', 409);
+    }
+    const values = { weekStart: snapshot.weekStart, version: expectedVersion + 1, snapshot, savedAt: new Date() };
+    const row = previous ? await previous.update(values, { transaction }) : await entity.create(values, { transaction });
+    return unpackPlan(plain(row));
+  });
+};
+
 const literalLike = (value) => value.replace(/[\\%_]/g, '\\$&');
 exports.listInventoryGroups = () => list('InventoryGroup', { order: [['name', 'ASC'], ['id', 'ASC']] });
 exports.inventoryGroupCounts = async () => {
@@ -171,6 +192,7 @@ const inventoryWhere = ({ q, category, location, status, groupId } = {}) => {
 exports.listInventory = ({ page = 1, pageSize = 50, ...filters } = {}) => list('InventoryItem', {
   where: inventoryWhere(filters), limit: pageSize, offset: (page - 1) * pageSize, order: [['name', 'ASC'], ['id', 'ASC']],
 });
+exports.listAllInventory = () => list('InventoryItem', { order: [['id', 'ASC']] });
 exports.countInventory = (filters) => model('InventoryItem').count({ where: inventoryWhere(filters), transaction: transactionContext.getStore() });
 exports.inventoryOptions = async () => {
   const rows = await list('InventoryItem', { attributes: ['category', 'location'], group: ['category', 'location'] });

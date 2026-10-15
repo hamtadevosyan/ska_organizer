@@ -36,6 +36,7 @@ const mock = {
   shelf: [],
   confirmedMenu: null,
   weeklyPlans: {},
+  purchasingLists: {},
   uuid: () => Math.random().toString(36).substring(2, 10),
   nowIso: () => new Date().toISOString()
 };
@@ -73,7 +74,7 @@ const withTransaction = (fn) => {
 };
 module.exports = {
   health: async () => {},
-  withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction, withInventoryLock: withTransaction,
+  withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction, withInventoryLock: withTransaction, withPurchasingLock: withTransaction,
   listInventoryGroups: async () => structuredClone(mock.inventoryGroups.slice().sort((a, b) => a.name.localeCompare(b.name))),
   inventoryGroupCounts: async () => mock.inventoryGroups.map((group) => {
     const items = filteredInventory({ groupId: group.id });
@@ -88,6 +89,7 @@ module.exports = {
     mock.inventoryGroups.push(group); return structuredClone(group);
   },
   listInventory: async ({ page = 1, pageSize = 50, ...filters } = {}) => structuredClone(filteredInventory(filters).slice((page - 1) * pageSize, page * pageSize)),
+  listAllInventory: async () => structuredClone(mock.inventoryItems.slice().sort((a, b) => a.id.localeCompare(b.id))),
   countInventory: async (filters) => filteredInventory(filters).length,
   inventoryOptions: async () => ({ categories: [...new Set(mock.inventoryItems.map((item) => item.category))].sort(), locations: [...new Set(mock.inventoryItems.map((item) => item.location))].sort() }),
   getInventoryById: async (id) => structuredClone(mock.inventoryItems.find((item) => item.id === id) || null),
@@ -202,6 +204,7 @@ module.exports = {
     mock.shelf = [];
     mock.confirmedMenu = null;
     mock.weeklyPlans = {};
+    mock.purchasingLists = {};
   },
 
   getWeeklyPlan: async (weekStart) => structuredClone(mock.weeklyPlans[weekStart] || null),
@@ -212,6 +215,22 @@ module.exports = {
     const saved = structuredClone({ ...snapshot, version: version + 1, savedAt: mock.nowIso() });
     mock.weeklyPlans[snapshot.weekStart] = saved;
     return structuredClone(saved);
+  },
+
+  getPurchasingList: async (weekStart) => structuredClone(mock.purchasingLists[weekStart] || null),
+  savePurchasingList: async (snapshot, version) => {
+    const { problem, validateVersion, validateWeekStart } = require('./planValidation');
+    validateVersion(version);
+    validateWeekStart(snapshot?.weekStart);
+    if (version >= 2147483647) throw problem('The purchasing list version is out of range.');
+    return withTransaction(async () => {
+      if ((mock.purchasingLists[snapshot.weekStart]?.version || 0) !== version) {
+        throw problem('This purchasing list was saved elsewhere. Reopen it before saving again.', 409);
+      }
+      const saved = structuredClone({ ...snapshot, version: version + 1, savedAt: mock.nowIso() });
+      mock.purchasingLists[snapshot.weekStart] = saved;
+      return structuredClone(saved);
+    });
   },
 
   // ------------------------------------------------------
