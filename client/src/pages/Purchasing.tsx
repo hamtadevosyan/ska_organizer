@@ -9,6 +9,7 @@ import type { PurchasingLine, PurchasingList, PurchasingOptions, PurchasingSelec
 import { currentMonday, mondayOf } from '../components/meals/weeklyPlan';
 import { validQuantity } from '../components/inventory/quantity';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
+import PurchasingReceiptProgress from '../components/inventory/PurchasingReceiptProgress';
 import './purchasing.css';
 
 const emptySelection = (): PurchasingSelection => ({ includeMeals: true, roomIds: [], lowStockTargets: [] });
@@ -224,6 +225,8 @@ export default function Purchasing() {
         <p className="purchasing-small">{list.mealPlan ? `Meal plan version ${list.mealPlan.version}` : list.includeMeals ? 'Meal plan unavailable' : 'Meals not included'}{list.activityPlans.length ? ' · Activity rooms: ' + list.activityPlans.map(plan => plan.roomName + ' (v' + plan.version + ')').join(', ') : ' · No activity rooms included'}</p>
       </div><span className="purchasing-count">{selected.length} to buy · {selected.filter(line => line.checked).length} checked</span></div>
       <p className="purchasing-small">Saved calculations stay unchanged on reload. Use Refresh current stock deliberately, then Save purchasing list to replace the review. A check-off marks this list only; record actual deliveries separately in Inventory.</p>
+      {!hasUnsaved && !token && !configChanged && !!list.savedAt && !list.issues.length && <PurchasingReceiptProgress
+        weekStart={list.weekStart} version={list.version} stockTakenAt={list.stockTakenAt} canReceive={canWrite && !busy && !conflict} />}
       {!!list.issues.length && <section aria-label="Purchasing issues" className="purchasing-issues"><h3>Resolve these before saving or purchasing</h3><ul>{list.issues.map((issue, index) => <li key={issue.code + index}>
         <strong>{issue.message}</strong><p>{issue.resolution}</p>{issue.href && issue.href.startsWith('/') && !issue.href.startsWith('//') && <Link to={issue.href} className="purchasing-no-print">Open the related record</Link>}
       </li>)}</ul></section>}

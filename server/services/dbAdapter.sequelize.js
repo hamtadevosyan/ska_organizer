@@ -308,6 +308,17 @@ exports.listPurchaseReceipts = ({ itemId, page = 1, pageSize = 25 } = {}) => lis
 exports.countPurchaseReceipts = ({ itemId } = {}) => model('PurchaseReceipt').count({
   where: itemId ? { itemId } : {}, transaction: transactionContext.getStore(),
 });
+exports.createPurchaseBatch = (values) => create('PurchaseBatch', values);
+exports.updatePurchaseBatch = (id, values) => update('PurchaseBatch', id, values);
+exports.getPurchaseBatchById = (id) => get('PurchaseBatch', id);
+exports.getPurchaseBatchByRequestId = async (requestId) => (await list('PurchaseBatch', { where: { requestId }, limit: 1 }))[0] || null;
+exports.listPurchaseBatches = ({ page = 1, pageSize = 25 } = {}) => list('PurchaseBatch', {
+  order: [['recordedAt', 'DESC'], ['id', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize,
+});
+exports.countPurchaseBatches = () => model('PurchaseBatch').count({ transaction: transactionContext.getStore() });
+exports.listPurchaseBatchesForCalculation = (weekStart, calculationKey) => list('PurchaseBatch', {
+  where: { purchasingWeekStart: weekStart, purchasingCalculationKey: calculationKey }, order: [['recordedAt', 'ASC'], ['id', 'ASC']],
+});
 exports.listReportPurchases = ({ from, to, limit }) => list('PurchaseReceipt', {
   where: { receivedOn: { [Op.gte]: from, [Op.lte]: to } },
   order: [['receivedOn', 'ASC'], ['recordedAt', 'ASC'], ['id', 'ASC']], limit,

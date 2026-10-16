@@ -71,6 +71,14 @@ it('purchase history retries errors and displays received details without edit c
   expect(vi.mocked(axios.get).mock.calls.at(-1)?.[1]).toMatchObject({ params: { itemId: item.id, page: 1, pageSize: 25 } });
 });
 
+it('an item receipt links to its complete multi-item receipt while older history remains readable', async () => {
+  vi.mocked(axios.get).mockResolvedValue({ data: { items: [receipt, { ...receipt, id: 'receipt-two', batchId: 'batch / two' }],
+    total: 2, page: 1, pageSize: 25, today: '2026-09-16', timeZone: 'America/Los_Angeles' } });
+  render(<PurchaseHistory itemId={item.id} onClose={vi.fn()} />);
+  expect(await screen.findByRole('link', { name: 'View full receipt' })).toHaveAttribute('href', '/receiving?receipt=batch%20%2F%20two');
+  expect(screen.getAllByText('2 pack')).toHaveLength(2);
+});
+
 it('an everyday purchase needs only the amount and uses the facility date automatically', async () => {
   const callbacks = props(); render(<PurchaseReceiptForm {...callbacks} />);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save amount' })).toBeEnabled());

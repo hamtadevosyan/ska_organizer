@@ -28,6 +28,7 @@ export type InventoryList = {
 };
 export type InventorySnapshot = Omit<InventoryDetails, 'groupId'> & Pick<InventoryItem, 'id' | 'category' | 'quantity' | 'version'> & { groupId?: string };
 export type StockMovement = {
+  batchId?: string | null;
   id: string; type: 'opening' | 'addition' | 'usage' | 'correction' | 'details';
   itemId: string; itemVersion: number; beforeQuantity: string; afterQuantity: string; delta: string;
   reason: string; actorId: string; actorUsername: string; occurredAt: string;
@@ -35,6 +36,7 @@ export type StockMovement = {
 };
 export type InventoryHistory = { item: InventoryItem; items: StockMovement[]; total: number; page: number; pageSize: number };
 export type PurchaseReceipt = {
+  batchId?: string | null;
   id: string; itemId: string; movementId: string; quantity: string; unit: string; receivedOn: string;
   supplier: string | null; totalCost: string | null; currency: 'USD'; itemSnapshot: InventorySnapshot;
   actorId: string; actorUsername: string; recordedAt: string;

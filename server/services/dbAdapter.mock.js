@@ -5,7 +5,7 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [],
+  rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
   staffDocuments: [], staffDocumentRevisions: [], staffDocumentSettings: null,
@@ -119,6 +119,36 @@ module.exports = {
     .sort((a, b) => b.receivedOn.localeCompare(a.receivedOn) || b.recordedAt.localeCompare(a.recordedAt) || b.id.localeCompare(a.id))
     .slice((page - 1) * pageSize, page * pageSize)),
   countPurchaseReceipts: async ({ itemId } = {}) => mock.purchaseReceipts.filter((row) => !itemId || row.itemId === itemId).length,
+  createPurchaseBatch: async (values) => {
+    if (mock.purchaseBatches.some((row) => row.requestId === values.requestId)) {
+      const error = new Error('This receiving request was already recorded.');
+      error.name = 'SequelizeUniqueConstraintError';
+      throw error;
+    }
+    const batch = structuredClone({ id: mock.uuid(), ...values });
+    mock.purchaseBatches.push(batch);
+    return structuredClone(batch);
+  },
+  updatePurchaseBatch: async (id, values) => {
+    const batch = mock.purchaseBatches.find((row) => row.id === id);
+    if (!batch) return null;
+    if (values.requestId && mock.purchaseBatches.some((row) => row.id !== id && row.requestId === values.requestId)) {
+      const error = new Error('This receiving request was already recorded.');
+      error.name = 'SequelizeUniqueConstraintError';
+      throw error;
+    }
+    Object.assign(batch, structuredClone(values));
+    return structuredClone(batch);
+  },
+  getPurchaseBatchById: async (id) => structuredClone(mock.purchaseBatches.find((row) => row.id === id) || null),
+  getPurchaseBatchByRequestId: async (requestId) => structuredClone(mock.purchaseBatches.find((row) => row.requestId === requestId) || null),
+  listPurchaseBatches: async ({ page = 1, pageSize = 25 } = {}) => structuredClone(mock.purchaseBatches.slice()
+    .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt) || b.id.localeCompare(a.id))
+    .slice((page - 1) * pageSize, page * pageSize)),
+  countPurchaseBatches: async () => mock.purchaseBatches.length,
+  listPurchaseBatchesForCalculation: async (weekStart, calculationKey) => structuredClone(mock.purchaseBatches
+    .filter((row) => row.purchasingWeekStart === weekStart && row.purchasingCalculationKey === calculationKey)
+    .sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt) || a.id.localeCompare(b.id))),
   listReportPurchases: async ({ from, to, limit }) => structuredClone(mock.purchaseReceipts
     .filter((row) => row.receivedOn >= from && row.receivedOn <= to)
     .sort((a, b) => a.receivedOn.localeCompare(b.receivedOn) || new Date(a.recordedAt) - new Date(b.recordedAt) || a.id.localeCompare(b.id))
@@ -190,7 +220,7 @@ module.exports = {
   // ------------------------------------------------------
   reset: () => {
     mock.scheduleWeeks = [];
-    mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = [];
+    mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = []; mock.purchaseBatches = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
     mock.registrationForms = []; mock.registrationFormRevisions = [];

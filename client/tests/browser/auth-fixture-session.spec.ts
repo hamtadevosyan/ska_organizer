@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { api, createAuthenticatedApi } from './auth-helpers';
+import { api, createAuthenticatedApi, origin } from './auth-helpers';
 
 test('cached fixture cookies survive clock-skewed exports but a revoked server session still fails', async ({ browser }) => {
   const first = await browser.newContext();
@@ -31,7 +31,16 @@ test('cached fixture cookies survive clock-skewed exports but a revoked server s
     } as unknown as Page;
   }
   try {
-    await authenticate(instrument(await first.newPage(), true));
+    const firstPage = await first.newPage();
+    const firstHttp = await authenticate(instrument(firstPage, true));
+    const initialCookies = (await first.cookies(api)).filter(cookie => cookie.name === 'skao_session');
+    expect(initialCookies.length, 'The first login must install one fixture cookie').toBe(1);
+    expect(initialCookies[0].expires, 'The first fixture context must avoid absolute cookie expiry, just like reused contexts').toBe(-1);
+    // Exercise the first session through both the browser and the API rather
+    // than checking only exported cookie metadata in the second context.
+    await firstPage.goto(origin + '/meals');
+    await expect(firstPage.getByRole('button', { name: 'Meal Setup', exact: true })).toBeVisible();
+    expect((await firstHttp.get(`${api}/meals?includeArchived=true`)).status()).toBe(200);
     const other = await second.newPage();
     const http = await authenticate(instrument(other));
     const cookies = (await second.cookies(api)).filter(cookie => cookie.name === 'skao_session');

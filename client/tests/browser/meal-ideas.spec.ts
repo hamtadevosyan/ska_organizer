@@ -17,7 +17,14 @@ const quantity = (form: Locator, index: number) => form.getByRole('spinbutton', 
 
 async function data<T>(http: Http, path: string): Promise<T> {
   const response = await http.get(api + path);
-  expect(response.status(), path + ' must be readable through the real fixture API').toBe(200);
+  let reason = '';
+  if (response.status() === 401) {
+    const body = await response.json().catch(() => null);
+    // Distinguish a missing cookie from server rejection without printing
+    // session credentials, response data or request headers.
+    if (['AUTH_REQUIRED', 'SESSION_EXPIRED'].includes(body?.error?.code)) reason = ` (${body.error.code})`;
+  }
+  expect(response.status(), path + ' must be readable through the real fixture API' + reason).toBe(200);
   return (await response.json()).data as T;
 }
 

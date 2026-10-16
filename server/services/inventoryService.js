@@ -141,6 +141,7 @@ const publicReceipt = (row) => ({
   ...Object.fromEntries(['id', 'itemId', 'movementId', 'unit', 'receivedOn', 'supplier', 'totalCost', 'currency',
     'itemSnapshot', 'actorId', 'actorUsername', 'recordedAt'].map((key) => [key, row[key]])),
   quantity: v.decimal(v.amount(row.quantity)),
+  ...(row.batchId ? { batchId: row.batchId } : {}),
 });
 exports.purchaseConfig = () => {
   const time = require('./facilityTime');
@@ -192,5 +193,6 @@ exports.history = (id, query = {}) => db.withInventoryLock(async () => {
   return { item: await present(item), items: rows.map((row) => ({
     ...Object.fromEntries(['id', 'itemId', 'type', 'reason', 'actorId', 'actorUsername', 'occurredAt', 'itemVersion', 'before', 'after'].map((key) => [key, row[key]])),
     delta: signed(row.delta), beforeQuantity: signed(row.beforeQuantity), afterQuantity: signed(row.afterQuantity),
+    ...(row.batchId ? { batchId: row.batchId } : {}),
   })), total, page: filters.page, pageSize: filters.pageSize };
 });

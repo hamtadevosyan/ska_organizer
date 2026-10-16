@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const controller = require('../controllers/batchPurchaseController');
+const { audited } = require('../auth/middleware');
+router.get('/', controller.list);
+router.get('/by-request/:requestId', controller.byRequest);
+router.get('/purchasing/:weekStart', controller.fulfillment);
+router.post('/preview', controller.preview);
+router.post('/', audited('inventory.purchase.batch', controller.receive));
+router.get('/:id', controller.get);
+module.exports = router;

@@ -21,6 +21,7 @@ const migrations = [
   { name: '019-template-audience', ...require('./migrations/019-template-audience') },
   { name: '020-staff-documents', ...require('./migrations/020-staff-documents') },
   { name: '021-purchasing-lists', ...require('./migrations/021-purchasing-lists') },
+  { name: '022-purchase-batches', ...require('./migrations/022-purchase-batches') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

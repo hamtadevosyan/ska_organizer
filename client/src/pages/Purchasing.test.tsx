@@ -11,6 +11,10 @@ import type { PurchasingList, PurchasingOptions } from '../api/purchasing';
 vi.mock('../api/purchasing', async importOriginal => ({ ...await importOriginal<typeof import('../api/purchasing')>(),
   getPurchasingList: vi.fn(), getPurchasingOptions: vi.fn(), previewPurchasingList: vi.fn(), savePurchasingList: vi.fn(),
 }));
+vi.mock('../components/inventory/PurchasingReceiptProgress', () => ({
+  default: ({ weekStart, version, canReceive }: { weekStart: string; version: number; canReceive: boolean }) =>
+    <section aria-label="Recorded deliveries" data-week={weekStart} data-version={version} data-receiving-enabled={String(canReceive)} />,
+}));
 const week = '2027-02-01';
 const report = vi.fn();
 const choices: PurchasingOptions = { rooms: [{ id: 'room-one', name: 'Sunflowers', archived: false }, { id: 'room-two', name: 'Stars', archived: false }],
@@ -46,6 +50,19 @@ beforeEach(() => {
   vi.mocked(previewPurchasingList).mockReset();
   vi.mocked(savePurchasingList).mockReset();
   vi.spyOn(window, 'confirm').mockReturnValue(true);
+});
+
+test('receiving progress belongs to the saved review and is hidden while buying choices are unsaved', async () => {
+  mount(); await ready();
+  expect(screen.getByRole('region', { name: 'Recorded deliveries' })).toHaveAttribute('data-week', week);
+  expect(screen.getByRole('region', { name: 'Recorded deliveries' })).toHaveAttribute('data-version', '1');
+  fireEvent.change(input(), { target: { value: '8' } });
+  expect(screen.queryByRole('region', { name: 'Recorded deliveries' })).not.toBeInTheDocument();
+});
+
+test('viewers can inspect recorded deliveries with receiving disabled', async () => {
+  mount('viewer'); await ready();
+  expect(screen.getByRole('region', { name: 'Recorded deliveries' })).toHaveAttribute('data-receiving-enabled', 'false');
 });
 
 test('build uses explicit room choices and target total coverage, without changing any saved plan', async () => {

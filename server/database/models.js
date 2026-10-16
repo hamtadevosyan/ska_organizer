@@ -80,6 +80,7 @@ module.exports = (sequelize) => {
     reason: DataTypes.STRING(500), actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64),
     occurredAt: DataTypes.DATE, itemVersion: DataTypes.INTEGER, before: DataTypes.JSONB, after: DataTypes.JSONB,
     requestId: { type: DataTypes.STRING(100), unique: true }, request: DataTypes.JSONB,
+    batchId: { type: DataTypes.STRING, allowNull: true },
   }, { timestamps: false });
   const PurchaseReceipt = sequelize.define('PurchaseReceipt', {
     id: id(), itemId: { type: DataTypes.STRING, allowNull: false },
@@ -89,6 +90,24 @@ module.exports = (sequelize) => {
     totalCost: DataTypes.DECIMAL(14, 2), currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'USD' },
     itemSnapshot: { type: DataTypes.JSONB, allowNull: false },
     actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64), recordedAt: DataTypes.DATE,
+    batchId: { type: DataTypes.STRING, allowNull: true },
+  }, { timestamps: false });
+  // Preserve the reviewed quantities and balances independently of later stock
+  // edits. Ledger rows keep their legacy shape and point back to this receipt.
+  const PurchaseBatch = sequelize.define('PurchaseBatch', {
+    id: id(), requestId: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+    request: { type: DataTypes.JSONB, allowNull: false },
+    receivedOn: { type: DataTypes.DATEONLY, allowNull: false },
+    supplier: { type: DataTypes.STRING(200), allowNull: true },
+    reason: { type: DataTypes.STRING(500), allowNull: false },
+    currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'USD' },
+    actorId: { type: DataTypes.STRING, allowNull: false },
+    actorUsername: { type: DataTypes.STRING(64), allowNull: false },
+    recordedAt: { type: DataTypes.DATE, allowNull: false },
+    purchasingRef: { type: DataTypes.JSONB, allowNull: true },
+    purchasingWeekStart: { type: DataTypes.DATEONLY, allowNull: true },
+    purchasingCalculationKey: { type: DataTypes.STRING(64), allowNull: true },
+    lines: { type: DataTypes.JSONB, allowNull: false },
   }, { timestamps: false });
   const Child = sequelize.define('Child', {
     id: id(), firstName: DataTypes.STRING, lastName: DataTypes.STRING,
@@ -247,6 +266,6 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt,
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch,
     ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
 };
