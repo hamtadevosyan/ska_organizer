@@ -9,6 +9,7 @@ router.get('/status', inventoryController.getStatus);
 router.get('/groups', inventoryController.listGroups);
 router.get('/purchase-config', inventoryController.purchaseConfig);
 router.get('/purchases', inventoryController.purchases);
+router.use('/purchase-batches', require('./purchaseBatches'));
 router.post('/groups', audited('inventory.group.create', inventoryController.createGroup));
 router.post('/', audited('inventory.create', inventoryController.create));
 router.get('/:id/movements', inventoryController.history);

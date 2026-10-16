@@ -25,16 +25,16 @@ export function createAuthenticatedApi() {
       await page.context().clearCookies({ name: 'skao_session' });
       const response = await page.request.post(`${api}/auth/login`, { headers: { Origin: origin }, data: { username: 'browser-admin', password: adminPassword } });
       expect(response.status(), 'The isolated browser fixture must accept the administrator login').toBe(200);
-      if (!freshSession) {
-        const cookies = (await page.context().cookies(api)).filter(cookie => cookie.name === 'skao_session');
-        expect(cookies.length, 'Login must supply one fixture session cookie').toBe(1);
-        // Only transferred layout-test copies are browser-session cookies.
-        // Importing an absolute Expires from another context/clock must not
-        // discard the fixture before the real backend can validate it. The
-        // server still enforces its original idle/absolute expiry and revocation.
-        // Real cookie lifetimes remain covered by remembered-login.spec.ts.
-        sharedAdminCookies = cookies.map(cookie => ({ ...cookie, expires: -1 }));
-      }
+      const cookies = (await page.context().cookies(api)).filter(cookie => cookie.name === 'skao_session');
+      expect(cookies.length, 'Login must supply one fixture session cookie').toBe(1);
+      // Every layout-test context, including the first login, uses a browser-
+      // session copy. An absolute Expires imported from the request cookie jar
+      // must not discard a valid fixture during a browser/API workflow.
+      // The real server still enforces idle/absolute expiry and revocation;
+      // remembered-login.spec.ts checks unmodified production cookie lifetimes.
+      const fixtureCookies = cookies.map(cookie => ({ ...cookie, expires: -1 }));
+      await page.context().addCookies(fixtureCookies);
+      if (!freshSession) sharedAdminCookies = fixtureCookies;
     }
     const cookies = (await page.context().cookies(api)).filter(cookie => cookie.name === 'skao_session');
     expect(cookies.length, 'The browser fixture cookie must be installed before checking its session').toBe(1);

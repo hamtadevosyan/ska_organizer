@@ -30,6 +30,7 @@ export function InventoryHistory({ itemId, onClose }: { itemId: string; onClose:
         <div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">{labels[movement.type]}</h3></div>
         <p className="mt-1">{movement.beforeQuantity} → {movement.afterQuantity} {movement.after.unit} <span className="text-slate-500">(change {movement.delta})</span></p>
         <p className="mt-2">{movement.reason}</p>
+        {movement.batchId && <a className="block min-h-11 py-2 text-blue-700 underline" href={'/receiving?receipt=' + encodeURIComponent(movement.batchId)}>View full receipt</a>}
         <p className="mt-2 text-sm text-slate-600">{movement.actorUsername} · <time dateTime={movement.occurredAt}>{new Date(movement.occurredAt).toLocaleString()}</time></p>
         <p className="mt-1 text-sm text-slate-600">{describe(movement.after)}</p>
         {movement.type === 'details' && movement.before && <p className="mt-1 text-sm text-slate-500">Previously: {describe(movement.before)}; warning at {movement.before.reorderThreshold}. Now warning at {movement.after.reorderThreshold}.</p>}

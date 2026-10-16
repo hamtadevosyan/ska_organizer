@@ -77,7 +77,7 @@ function audited(action, controller, { adminOnly = false } = {}) {
         if (adminOnly && req.account.role !== 'admin') throw auth.problem('Administrator access is required.', 403, 'FORBIDDEN');
         await controller(req, response, (error) => { throw error || new Error('Controller did not complete.'); });
         if (response.statusCode >= 400) throw Object.assign(new Error('Controller rejected request.'), { bufferedResponse: true });
-        const id = response.body?.data?.id || response.body?.id || req.params.id || req.params.weekStart || req.params.mealId || null;
+        const id = response.body?.data?.id || response.body?.data?.batch?.id || response.body?.id || req.params.id || req.params.weekStart || req.params.mealId || null;
         await auth.audit(req.account, action, id);
       });
     } catch (error) {
