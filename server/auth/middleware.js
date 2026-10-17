@@ -62,7 +62,7 @@ function requireDocumentAccess(write = false) {
 }
 // Existing controllers use status/json/send. Buffer the response until both the
 // mutation and audit insert commit; never acknowledge a change before its audit.
-function audited(action, controller, { adminOnly = false } = {}) {
+function audited(action, controller, { adminOnly = false, skipReplayed = false } = {}) {
   return async (req, res, next) => {
     const response = {
       statusCode: 200, kind: 'json', body: undefined,
@@ -78,7 +78,7 @@ function audited(action, controller, { adminOnly = false } = {}) {
         await controller(req, response, (error) => { throw error || new Error('Controller did not complete.'); });
         if (response.statusCode >= 400) throw Object.assign(new Error('Controller rejected request.'), { bufferedResponse: true });
         const id = response.body?.data?.id || response.body?.data?.batch?.id || response.body?.id || req.params.id || req.params.weekStart || req.params.mealId || null;
-        await auth.audit(req.account, action, id);
+        if (!skipReplayed || response.body?.data?.replayed !== true) await auth.audit(req.account, action, id);
       });
     } catch (error) {
       if (!error.bufferedResponse) return next(error);

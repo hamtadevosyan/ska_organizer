@@ -7,7 +7,10 @@ const { convert } = require('./stockUnits');
 async function applyStock(items) {
   const rows = items.length ? await db.listInventoryForIngredients(items.map((item) => item.ingredient.id)) : [];
   const byIngredient = new Map();
-  for (const row of rows) {
+  // The adapter excludes archived items and inactive parent groups. Keep the
+  // item guard here too so an archived incompatible unit cannot affect a new
+  // stock calculation, even when a caller supplies legacy adapter data.
+  for (const row of rows.filter((row) => !row.archived)) {
     const matches = byIngredient.get(row.ingredientId) || [];
     matches.push(row); byIngredient.set(row.ingredientId, matches);
   }

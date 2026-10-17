@@ -36,17 +36,24 @@ async function receiptTotals(value) {
   }
   return { batches, received };
 }
+async function inactive(item) {
+  if (!item || item.archived) return true;
+  const group = item.groupId ? await db.getInventoryGroupById(item.groupId) : null;
+  return !group || !!(group.archived || group.deletedAt);
+}
 async function progress(value) {
   const { list } = value;
   const { batches, received } = await receiptTotals(value);
   return { weekStart: list.weekStart, version: list.version, stockTakenAt: list.stockTakenAt,
-    lines: list.lines.map((line) => {
+    lines: await Promise.all(list.lines.map(async (line) => {
       const quantity = received.get(line.id) || 0n;
       const remaining = v.amount(line.buyQuantity) - quantity;
+      const unavailable = line.itemId && await inactive(await db.getInventoryById(line.itemId));
       return { id: line.id, itemId: line.itemId, name: line.name, location: line.location, unit: line.unit,
         buyQuantity: v.decimal(v.amount(line.buyQuantity)), receivedQuantity: v.decimal(quantity),
-        remainingQuantity: v.decimal(remaining > 0n ? remaining : 0n), selected: line.selected };
-    }), batches: batches.map(({ id, receivedOn, supplier, recordedAt }) => ({ id, receivedOn, supplier, recordedAt })),
+        remainingQuantity: v.decimal(remaining > 0n ? remaining : 0n), selected: line.selected,
+        ...(unavailable ? { unavailable: true, availabilityMessage: 'This inventory record is archived or unavailable. Refresh purchasing and choose an active record before receiving.' } : {}) };
+    })), batches: batches.map(({ id, receivedOn, supplier, recordedAt }) => ({ id, receivedOn, supplier, recordedAt })),
     note: 'Only receipts linked to this saved stock calculation count here. Manual check-offs do not receive stock. An explicitly refreshed calculation starts a new receiving baseline.' };
 }
 async function review(request) {
@@ -67,6 +74,7 @@ async function review(request) {
   for (const line of request.lines) {
     const item = await db.getInventoryById(line.itemId);
     if (!item) throw problem('A selected inventory record is unavailable. Choose an existing record and location before receiving.', 404);
+    if (await inactive(item)) throw conflict(item.name + ' is archived or belongs to an inactive group. Choose an active inventory record before receiving.', 'INVENTORY_ARCHIVED');
     if (item.version !== line.version) throw conflict(item.name + ' changed elsewhere. Refresh its current version and review the receipt again.', 'INVENTORY_CONFLICT');
     if (!v.UNITS.includes(item.unit) || !compatible(line.unit, item.unit)) throw problem('The received unit for ' + item.name + ' is incompatible with its recorded ' + item.unit + '. Choose a compatible weight, volume or exact package unit.', 422);
     const value = v.amount(line.quantity);
@@ -153,8 +161,8 @@ exports.list = (query = {}) => db.withInventoryLock(async () => {
   const [items, total] = await Promise.all([db.listPurchaseBatches(pagination), db.countPurchaseBatches()]);
   return { items: items.map(publicBatch), total, ...pagination, ...require('./inventoryService').purchaseConfig() };
 });
-exports.fulfillment = (weekStart) => db.withPurchasingLock(async () => {
+exports.fulfillment = (weekStart) => db.withInventoryLock(() => db.withPurchasingLock(async () => {
   const value = await savedList(weekStart);
   return value ? progress(value) : null;
-});
+}));
 exports.calculationKey = calculationKey;

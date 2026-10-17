@@ -239,3 +239,16 @@ test('an unresolved viewer preview with no save token is labelled as unsaved, in
   await screen.findByText('Unsaved preview'); expect(screen.queryByText('Saved version 0')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Export selected CSV' })).toBeDisabled();
 });
+
+test('an archived destination rejection keeps quantities editable and permits explicit unselection before retry', async () => {
+  mount(); await ready(); fireEvent.change(input(), { target: { value: '8' } });
+  vi.mocked(savePurchasingList).mockRejectedValueOnce(responseError(409, 'PURCHASING_ITEM_ARCHIVED', 'This inventory record was archived. Unselect it or refresh current stock.'));
+  fireEvent.click(saveButton()); await screen.findByText('This inventory record was archived. Unselect it or refresh current stock.');
+  expect(input()).toBeEnabled(); expect(input()).toHaveValue('8');
+  expect(screen.queryByText(/Another person saved this week/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Buy Flour stock at Kitchen' }));
+  const saved = snapshot(); saved.version = 2; saved.lines[0] = { ...saved.lines[0], buyQuantity: '8', selected: false };
+  vi.mocked(savePurchasingList).mockResolvedValue(saved); fireEvent.click(saveButton());
+  await screen.findByText('Purchasing list saved. Stock and saved plans were not changed.');
+  expect(vi.mocked(savePurchasingList).mock.calls.at(-1)?.[1].choices[0]).toMatchObject({ buyQuantity: '8', selected: false });
+});

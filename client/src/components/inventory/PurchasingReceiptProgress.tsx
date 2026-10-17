@@ -29,7 +29,7 @@ export default function PurchasingReceiptProgress({ weekStart, version, stockTak
     {!loading && !error && !matches && <p>The saved purchasing list changed. Reopen it to see matching received amounts.</p>}
     {matches && <><p className="purchasing-small">{progress.note}</p>
       <ul className="purchasing-source-list">{progress.lines.filter(line => line.selected).map(line => <li key={line.id}><span>{line.name}{line.location ? ' · ' + line.location : ''}</span>
-        <strong>Received {line.receivedQuantity} {line.unit} · Remaining {line.remainingQuantity} {line.unit}</strong></li>)}</ul>
+        <strong>Received {line.receivedQuantity} {line.unit} · Remaining {line.remainingQuantity} {line.unit}</strong>{line.unavailable && <p>{line.availabilityMessage}</p>}</li>)}</ul>
       {canReceive && <Link className="ska-button is-primary" to={'/receiving?week=' + encodeURIComponent(weekStart)}>Receive purchases</Link>}
     </>}
   </section>;

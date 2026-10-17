@@ -85,9 +85,17 @@ function group(payload) {
   if (typeof description !== 'string' || description.trim().length > 240) throw fieldError('description', 'Keep the group description within 240 characters.');
   return { name, nameKey: name.toLowerCase(), kind, description: description.trim() };
 }
-function pagination(query, allowed = ['q', 'category', 'groupId', 'location', 'status', 'page', 'pageSize']) {
+function archivedFilter(query) {
+  if (query.archived !== undefined && !['true', 'false'].includes(query.archived)) throw problem('Choose active or archived inventory.');
+  return query.archived === undefined ? {} : { archived: query.archived === 'true' };
+}
+function groupFilters(query = {}) {
+  keys(query, ['archived']);
+  return archivedFilter(query);
+}
+function pagination(query, allowed = ['q', 'category', 'groupId', 'location', 'status', 'page', 'pageSize', 'archived']) {
   keys(query, allowed);
-  const result = {};
+  const result = allowed.includes('archived') ? archivedFilter(query) : {};
   if (query.groupId !== undefined) result.groupId = identifier(query.groupId, 'groupId');
   for (const [key, max] of [['q', 100], ['category', 80], ['location', 200]]) {
     if (query[key] === undefined) continue;
@@ -128,4 +136,4 @@ function receipt(payload, previous) {
   return { quantity: decimal(amount(payload.quantity)), unit: previous.unit, receivedOn, supplier, totalCost,
     currency: 'USD', reason, resultingQuantity };
 }
-module.exports = { amount, decimal, text, item, movement, pagination, requestId, identifier, group, receipt, UNITS };
+module.exports = { amount, decimal, text, item, movement, pagination, requestId, identifier, group, receipt, groupFilters, UNITS };

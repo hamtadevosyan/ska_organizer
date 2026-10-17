@@ -60,10 +60,14 @@ module.exports = (sequelize) => {
   }, { tableName: 'StaffMembers' });
   const InventoryGroup = sequelize.define('InventoryGroup', {
     id: id(), name: { type: DataTypes.STRING(80), allowNull: false },
-    nameKey: { type: DataTypes.STRING(80), allowNull: false, unique: true },
+    nameKey: { type: DataTypes.STRING(80), allowNull: false },
     kind: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'supplies' },
     description: { type: DataTypes.STRING(240), allowNull: false, defaultValue: '' },
     requestId: { type: DataTypes.STRING(100), unique: true }, request: DataTypes.JSONB,
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    archived: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    archivedAt: { type: DataTypes.DATE, allowNull: true },
+    deletedAt: { type: DataTypes.DATE, allowNull: true },
   });
   const InventoryItem = sequelize.define('InventoryItem', {
     id: id(), name: { type: DataTypes.STRING(100), allowNull: false },
@@ -73,6 +77,8 @@ module.exports = (sequelize) => {
     quantity: { type: DataTypes.DECIMAL(18, 6), allowNull: false, defaultValue: '0' },
     reorderThreshold: { type: DataTypes.DECIMAL(18, 6), allowNull: false, defaultValue: '0' },
     version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    archived: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    archivedAt: { type: DataTypes.DATE, allowNull: true },
   });
   const InventoryMovement = sequelize.define('InventoryMovement', {
     id: id(), itemId: { type: DataTypes.STRING, allowNull: false }, type: DataTypes.STRING(16),
@@ -81,6 +87,7 @@ module.exports = (sequelize) => {
     occurredAt: DataTypes.DATE, itemVersion: DataTypes.INTEGER, before: DataTypes.JSONB, after: DataTypes.JSONB,
     requestId: { type: DataTypes.STRING(100), unique: true }, request: DataTypes.JSONB,
     batchId: { type: DataTypes.STRING, allowNull: true },
+    groupOperationId: { type: DataTypes.STRING, allowNull: true },
   }, { timestamps: false });
   const PurchaseReceipt = sequelize.define('PurchaseReceipt', {
     id: id(), itemId: { type: DataTypes.STRING, allowNull: false },
@@ -108,6 +115,17 @@ module.exports = (sequelize) => {
     purchasingWeekStart: { type: DataTypes.DATEONLY, allowNull: true },
     purchasingCalculationKey: { type: DataTypes.STRING(64), allowNull: true },
     lines: { type: DataTypes.JSONB, allowNull: false },
+  }, { timestamps: false });
+  const InventoryGroupOperation = sequelize.define('InventoryGroupOperation', {
+    id: id(), requestId: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+    request: { type: DataTypes.JSONB, allowNull: false },
+    result: { type: DataTypes.JSONB, allowNull: false },
+    action: { type: DataTypes.STRING(16), allowNull: false },
+    sourceGroupId: { type: DataTypes.STRING, allowNull: false },
+    targetGroupId: { type: DataTypes.STRING, allowNull: true },
+    actorId: { type: DataTypes.STRING, allowNull: false },
+    actorUsername: { type: DataTypes.STRING(64), allowNull: false },
+    recordedAt: { type: DataTypes.DATE, allowNull: false },
   }, { timestamps: false });
   const Child = sequelize.define('Child', {
     id: id(), firstName: DataTypes.STRING, lastName: DataTypes.STRING,
@@ -266,6 +284,6 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
-    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch,
+    Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
     ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
 };

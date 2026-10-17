@@ -264,3 +264,34 @@ test('administrators and editors receive; viewers inspect receipts and progress 
   expect((await request(app).post(base).send(payload())).status).toBe(403);
   expect((await anonymous(app).get(base)).status).toBe(401);
 });
+
+test('archived records and inactive parents reject an entire new delivery while a previously committed receipt still replays', async () => {
+  const originalBody = payload({ lines: [line(second)] });
+  const original = await receive(originalBody);
+  const currentSecond = await db.getInventoryById(second.id);
+  const body = payload({ lines: [line(first), line(currentSecond)] });
+  await db.updateInventory(second.id, { archived: true, archivedAt: new Date().toISOString(), version: currentSecond.version + 1 });
+  await receive(body, 409);
+  expect(await quantity(first)).toBe('3');
+  expect(await db.countPurchaseBatches()).toBe(1);
+  expect(await receive(originalBody)).toEqual({ ...original, replayed: true });
+  await db.updateInventory(second.id, { archived: false, archivedAt: null });
+  await db.updateInventoryGroup(second.groupId, { archived: true, archivedAt: new Date().toISOString() });
+  await receive(body, 409);
+  expect(await quantity(first)).toBe('3'); expect(await db.countPurchaseBatches()).toBe(1);
+});
+
+test('current fulfillment warns about an archived destination without rewriting the purchasing snapshot or earlier receipt', async () => {
+  const list = await savedPurchasing();
+  const before = await api('get', base + '/purchasing/' + weekStart);
+  expect(before.lines[0]).not.toHaveProperty('unavailable');
+  const received = await receive(linkedPayload(list));
+  const saved = await db.getPurchasingList(weekStart);
+  const updated = await db.getInventoryById(first.id);
+  await db.updateInventory(first.id, { archived: true, archivedAt: new Date().toISOString(), version: updated.version + 1 });
+  const after = await api('get', base + '/purchasing/' + weekStart);
+  expect(after.lines[0]).toMatchObject({ receivedQuantity: '4', remainingQuantity: '6', unavailable: true });
+  expect(after.lines[0].availabilityMessage).toMatch(/archived/);
+  expect(await db.getPurchasingList(weekStart)).toEqual(saved);
+  expect(await api('get', base + '/' + received.batch.id)).toEqual(received.batch);
+});

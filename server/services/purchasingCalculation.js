@@ -30,7 +30,7 @@ function checkedAmount(value) {
   return value;
 }
 
-function calculate({ weekStart, includeMeals, roomIds, lowStockTargets, mealPlan, activityPlans, inventory,
+function calculate({ weekStart, includeMeals, roomIds, lowStockTargets, mealPlan, activityPlans, inventory, inactiveGroupIds = [],
   version = 0, stockTakenAt = new Date().toISOString() }) {
   const issues = [];
   const issueKeys = new Set();
@@ -40,8 +40,13 @@ function calculate({ weekStart, includeMeals, roomIds, lowStockTargets, mealPlan
     issueKeys.add(key); issues.push({ code, message, resolution, ...(href ? { href } : {}) });
     if (issues.length > MAX_LINES) throw problem('This purchasing calculation has too many unresolved details. Include fewer plans and correct their requirements.', 422);
   };
-  const stocks = [...inventory].sort((a, b) => a.id.localeCompare(b.id));
-  const byId = new Map(stocks.map((row) => [row.id, row]));
+  const inactiveGroups = new Set(inactiveGroupIds);
+  const inactive = (row) => !!row.archived || inactiveGroups.has(row.groupId);
+  const retainedStocks = [...inventory].sort((a, b) => a.id.localeCompare(b.id));
+  const stocks = retainedStocks.filter((row) => !inactive(row));
+  // Exact material/target references need the retained row for diagnostics;
+  // food allocation and every availability calculation use active stock only.
+  const byId = new Map(retainedStocks.map((row) => [row.id, row]));
   const rows = new Map();
   let sourceCount = 0;
   const rowFor = (stock) => {
@@ -102,6 +107,13 @@ function calculate({ weekStart, includeMeals, roomIds, lowStockTargets, mealPlan
             'Choose an available inventory record for this material, then update and save the activity plan.', '/activities');
           continue;
         }
+        if (inactive(stock)) {
+          let requested = '';
+          try { requested = decimal(storedAmount(material.quantity)) + ' ' + material.unit + ' of '; } catch { /* Unknown amounts remain in the saved activity. */ }
+          issue('MATERIAL_ARCHIVED', `${plan.room.name}: ${activity.name} requires ${requested}${stock.name}${stock.location ? ' at ' + stock.location : ''}, which is archived.`,
+            'Replace this exact material with an active Inventory item, then update and save the activity plan. Saved requirements are not reassigned to similarly named items.', '/activities');
+          continue;
+        }
         if (!UNITS.includes(material.unit) || !UNITS.includes(stock.unit) || !compatible(material.unit, stock.unit)) {
           issue('MATERIAL_UNIT_INCOMPATIBLE', `${activity.name}: ${stock.name} has incompatible saved and recorded units.`,
             'Correct the material quantity and unit in the activity, then update and save the plan. Package sizes are never guessed.', '/activities');
@@ -146,6 +158,11 @@ function calculate({ weekStart, includeMeals, roomIds, lowStockTargets, mealPlan
     const stock = byId.get(target.itemId);
     if (!stock) {
       issue('LOW_STOCK_ITEM_MISSING', 'A selected low-stock inventory record is unavailable.', 'Remove it from this list or restore the inventory record.', '/inventory');
+      continue;
+    }
+    if (inactive(stock)) {
+      issue('LOW_STOCK_ITEM_ARCHIVED', `${stock.name}${stock.location ? ' at ' + stock.location : ''} is archived and cannot supply the selected coverage target.`,
+        'Remove this archived target and choose an active Inventory item if the supply is still needed.', '/inventory');
       continue;
     }
     if (!UNITS.includes(stock.unit)) {
@@ -267,7 +284,9 @@ function calculate({ weekStart, includeMeals, roomIds, lowStockTargets, mealPlan
       remaining -= canonicalQuantity;
     };
     if (!candidates.length) {
-      issue('FOOD_UNLINKED', `${value.ingredient.name} has no compatible linked inventory record.`, 'Create or link an inventory record in the recipe unit, then recalculate.', '/inventory');
+      const archivedLinks = retainedStocks.some((stock) => stock.ingredientId === value.ingredient.id && inactive(stock));
+      issue('FOOD_UNLINKED', `${value.ingredient.name} has no active compatible linked inventory record.${archivedLinks ? ' Archived stock is unavailable for this calculation.' : ''}`,
+        'Create or link an active inventory record in the recipe unit, then recalculate.', '/inventory');
       unlinked.push({ id: 'ingredient:' + value.ingredient.id, itemId: null, ingredientId: value.ingredient.id,
         name: value.ingredient.name, unit: value.ingredient.unit, location: null, needed: decimal(value.quantity), inStorage: '0',
         toBuy: decimal(value.quantity), buyQuantity: decimal(value.quantity), selected: true, checked: false, stockItems: [],

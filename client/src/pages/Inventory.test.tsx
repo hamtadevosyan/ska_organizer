@@ -278,3 +278,51 @@ test.each(['low', 'out'])('dashboard stock links open the %s items directly', as
     await ready(stock.name);
   } finally { window.history.replaceState({}, '', previousUrl); }
 });
+
+test('group removal is a separate sibling action and viewers cannot remove a group', async () => {
+  const admin = render(<SignedIn><Inventory /></SignedIn>);
+  const card = await screen.findByRole('article', { name: 'Inventory group Art supplies' });
+  const open = within(card).getByRole('button', { name: 'Open group Art supplies' });
+  const remove = within(card).getByRole('button', { name: 'Remove group Art supplies' });
+  expect(open.contains(remove)).toBe(false); expect(remove.contains(open)).toBe(false); admin.unmount();
+  render(<SignedIn account={{ ...testAccount, role: 'viewer' }}><Inventory /></SignedIn>); await screen.findByRole('button', { name: 'Open group Art supplies' });
+  expect(screen.queryByRole('button', { name: /^Remove group / })).not.toBeInTheDocument();
+});
+
+test('archived browsing is read-only, retains history and uses archived record counts rather than active summary totals', async () => {
+  const archivedGroup: InventoryGroup = { ...materials, id: 'old-art', name: 'Old art', archived: true, archivedAt: '2026-10-16T12:00:00Z', summary: { total: 1, available: 0, lowStock: 0, outOfStock: 0 } };
+  const archivedItem = { ...stock, id: 'archived-paper', groupId: archivedGroup.id, group: archivedGroup, archived: true, archivedAt: archivedGroup.archivedAt };
+  const get = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation(async (url, config) => {
+    if (url.endsWith('/inventory/groups') && config?.params?.archived) return { data: { items: [archivedGroup] } };
+    if (url.endsWith('/inventory') && config?.params?.archived) return { data: { items: [archivedItem], total: 1, page: 1, pageSize: 25,
+      summary: { total: 99, available: 99, lowStock: 0, outOfStock: 0 }, options: { categories: [archivedGroup.name], locations: [stock.location] } } };
+    if (url.endsWith('/archived-paper/movements')) return { data: { item: archivedItem, items: movements, total: 1, page: 1, pageSize: 25 } };
+    return get(url, config);
+  });
+  render(<SignedIn><Inventory /></SignedIn>); await screen.findByRole('button', { name: 'Open group Art supplies' });
+  fireEvent.click(screen.getByRole('button', { name: 'Archived inventory' }));
+  await screen.findByRole('button', { name: 'Open group Old art' });
+  expect(screen.queryByRole('button', { name: 'Open group Art supplies' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: /^Remove group / })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add item' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'View all items' })); await ready();
+  expect(screen.queryByRole('button', { name: /Bought more|Used some|Check amount|^Edit / })).not.toBeInTheDocument();
+  expect(within(row()).getByText('Archived', { exact: true })).toBeInTheDocument();
+  expand('Overview'); expect(screen.getByText('Archived items').parentElement).toHaveTextContent('Archived items1');
+  await actions(); fireEvent.click(screen.getByRole('button', { name: 'History for ' + stock.name })); await screen.findByText('Initial physical count');
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/inventory/groups'), expect.objectContaining({ params: { archived: true } }));
+  expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/inventory$/), expect.objectContaining({ params: expect.objectContaining({ archived: true }) }));
+});
+
+test('a failed lifecycle switch never presents previous active group cards as archived', async () => {
+  const get = vi.mocked(axios.get).getMockImplementation()!;
+  vi.mocked(axios.get).mockImplementation((url, config) => {
+    if (url.endsWith('/inventory/groups') && config?.params?.archived) return Promise.reject(new Error('Offline'));
+    return get(url, config);
+  });
+  render(<SignedIn><Inventory /></SignedIn>); await screen.findByRole('button', { name: 'Open group Art supplies' });
+  fireEvent.click(screen.getByRole('button', { name: 'Archived inventory' })); await screen.findByRole('alert');
+  expect(screen.queryByRole('article', { name: 'Inventory group Art supplies' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add your first group' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Active inventory' })); await screen.findByRole('button', { name: 'Open group Art supplies' });
+});

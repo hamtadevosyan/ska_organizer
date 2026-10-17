@@ -38,11 +38,31 @@ Open a group to browse or add its items. **All groups** returns to the cards. **
 
 Use an item's **More → Edit details** for its name, group, location or warning level. Moving a record moves its entire balance and keeps the previous details in history. The main list is hidden while editing so the active task remains clear. An item's **More → History** and **More → Purchases** show past changes; the page's **More → Purchase history** shows all receipts.
 
-Administrators and editors can change inventory. Viewers can read it and its history. Every change records the signed-in user and server time. History and receipts cannot be edited or deleted through this interface. Corrections create a new entry. Item/group deletion, receipt returns and financial accounting are outside this workflow.
+Administrators and editors can change inventory. Viewers can read it and its history. Every change records the signed-in user and server time. History and receipts cannot be edited or deleted through this interface. Corrections create a new entry. Receipt returns and financial accounting are outside this workflow. Group removal is described below.
+
+## Remove or archive a group
+
+An administrator or editor can choose **Remove group** on an active group card. Choose the outcome, then **Review group removal** before confirming:
+
+| Choice | Result |
+|---|---|
+| **Delete empty group** | Removes an empty group from the cards and selectors. A populated group cannot be deleted this way. |
+| **Move all items and delete group** | Moves every record to a different active group of the same type, then removes the empty source. IDs, balances, units, locations, food links and earlier history stay intact. |
+| **Archive group and all items** | Keeps the group and its records read-only, with their recorded balances, and removes them from active stock and planning. |
+
+The review names the source, destination when applicable, affected items and nonzero balances. Archiving a nonzero balance requires a reason and an explicit acknowledgment that quantities will stay recorded. Archive is not disposal: record actual stock use or a physical correction separately before archiving if appropriate. Cancel changes nothing.
+
+If membership, an item or the destination changes while the panel is open, refresh the review. Confirmation never silently includes newly added items. Each action commits the group, all item changes, zero-quantity-change history entries and attributed audit together, or none of them.
+
+Use **Archived inventory** to browse retained groups and items. History and purchases remain accessible; adding items, editing details, receiving or adjusting stock is unavailable there. Archived stock does not satisfy new meal or activity requirements and cannot be a new receiving destination. Previously saved menus, activity plans, purchasing lists and receipts keep their original snapshots. Refresh purchasing to diagnose an archived reference and choose active stock; an old saved line may be explicitly unselected.
+
+The operation link shows who performed the action, when, the reason and before/after records. Deleted empty groups retain a hidden historical identity; their names can be reused. Archived group names remain reserved. There is no group restore action in this release.
+
+If confirmation loses its response, keep the page open and use **Retry same group removal** or **Check removal status**. The exact request remains frozen in this tab for the same signed-in account, including across the sign-in screen. A retry returns the original operation and cannot move/archive twice. Do not close the tab or clear browser data while its result is uncertain.
 
 ## Food and the shopping list
 
-The planner subtracts available food across every location from recipe requirements. **Already have** shows the recorded amount; **Buy** shows `max(needed − available, 0)`. Calculations use ingredient identifiers, including those automatically chosen when adding food, rather than names alone.
+The planner subtracts active available food across every active location from recipe requirements. **Already have** shows the recorded amount; **Buy** shows `max(needed − available, 0)`. Calculations use ingredient identifiers, including those automatically chosen when adding food, rather than names alone.
 
 For older food without a connection, use **More → Choose food** to select the recipe ingredient and save. The amount stays unchanged. If the record is in a supplies group, edit its group first. Group names do not determine group type. Boxes and packs must have their contents counted or measured before they can supply a recipe; do not count both the packages and their contents.
 
@@ -70,6 +90,12 @@ All paths below are relative to `/api/inventory`. Writes require a signed-in adm
 |---|---|
 | `GET /groups` | `{items: groups}` with per-group summaries, including empty groups |
 | `POST /groups` | Create a named group; `201 {data: group}` |
+| `GET /groups?archived=true` | Archived groups only; omission or `false` selects active groups |
+| `GET /groups/:id/removal-context` | Source, complete membership, compatible targets and context version |
+| `POST /groups/:id/removal-preview` | Validate choices against the context; return a ten-minute actor-bound review |
+| `POST /groups/:id/removal` | Atomic confirmation; `201 {data: {...operation, replayed}}` |
+| `GET /group-operations/:id` | Immutable read-only operation receipt |
+| `GET /group-operations/by-request/:requestId` | Current account’s committed receipt or null |
 | `GET /` | `{items, total, page, pageSize, summary, options}` |
 | `GET /items` | Alias for the paginated list |
 | `GET /status` | `{total, available, lowStock, outOfStock}` |
@@ -82,9 +108,9 @@ All paths below are relative to `/api/inventory`. Writes require a signed-in adm
 | `GET /purchases` | `{items, total, page, pageSize, today, timeZone}`; optional `itemId` filter |
 | `POST /:id/purchases` | Record a received purchase; `201 {data: {receipt, item, replayed}}` |
 
-The list accepts `q`, `groupId`, `location`, `status=all|available|low|out`, `page` and `pageSize`. The earlier `category` text filter remains supported for existing clients. Page size defaults to 50 and is capped at 100. History accepts only `page` and `pageSize`. Unknown body/filter fields are rejected. The list replaces the former hardcoded array response. Its API `summary` remains the overall inventory summary; `GET /groups` supplies the group summaries shown in the interface.
+The list accepts `q`, `groupId`, `location`, `status=all|available|low|out`, `page`, `pageSize` and `archived=true|false`. The earlier `category` text filter remains supported for existing clients. Page size defaults to 50 and is capped at 100. History accepts only `page` and `pageSize`. Unknown body/filter fields are rejected. The list replaces the former hardcoded array response. Its API `summary` remains the overall inventory summary; `GET /groups` supplies the group summaries shown in the interface.
 
-Create a group with `name` (1–80 characters), `kind` (`food` or `supplies`), optional `description` (up to 240 characters) and `requestId`. Group creation uses the same identifier on retries and has an attributed audit event. The response includes its stable `id`, name, kind, description and timestamps. Group reads and item responses omit internal request signatures.
+Create a group with `name` (1–80 characters), `kind` (`food` or `supplies`), optional `description` (up to 240 characters) and `requestId`. Group creation uses the same identifier on retries and has an attributed audit event. The response includes its stable `id`, name, kind, description, version, lifecycle flags and timestamps. Group reads and item responses omit internal request signatures.
 
 Example create body (request identifiers must be fresh per intended operation, then retained for retries):
 
@@ -125,11 +151,15 @@ For compatibility, older clients can still supply category text without `groupId
 
 Invalid input returns 400 with field details where applicable. Missing item/ingredient returns 404. Insufficient stock, prohibited unit/link changes, archived new ingredient links or a revision conflict return 409. Revision conflicts use `INVENTORY_CONFLICT`; conflicting reuse of a request identifier uses `INVENTORY_REQUEST_CONFLICT`. Repeating an identical committed request by the same account returns the item's current state with `replayed: true` without changing its quantity, revision or movement history again.
 
+Removal preview accepts `action`, `contextVersion`, optional `targetGroupId`/`targetVersion` for a move, and `reason`. Confirmation accepts only `requestId`, `reviewToken` and boolean `acknowledgeRetainedStock`. Identical committed requests replay before token expiry or current lifecycle checks; changing the body, source or actor for that request ID returns `GROUP_REMOVAL_REQUEST_CONFLICT`. Stale membership, revisions or targets return `GROUP_REMOVAL_CONFLICT`. Removed/archived sources and archived item writes return clear conflicts. Lifecycle preview and confirmation require write permission, including for editor accounts; viewers can read histories and operation receipts.
+
 ## Persistence and verification
 
 Migration `009-inventory-ledger` adds `InventoryItems` and `InventoryMovements`. Migration `010-inventory-groups` adds `InventoryGroups` and required item group references. Existing categories become groups; names differing only by case or repeated whitespace share a group. Groups with ingredient-linked stock, or named Food, Food Stock, Ingredients or Groceries, receive the food type. Other groups receive the supplies type. No quantities, item versions, original categories, timestamps or historical movement entries are rewritten by migration 010.
 
 Migration `011-purchase-receipts` adds `PurchaseReceipts`, linked to the original stock movement, item and account. It does not rewrite balances, old movement history or saved weekly plans. Existing stock additions remain movements; they are not relabeled as purchases.
+
+Migration `023-inventory-group-lifecycle` adds group/item lifecycle fields, hidden removed-group identities, immutable operation receipts and movement links. It replaces the group-name unique index with a partial index excluding removed identities. It does not rewrite balances or earlier JSON snapshots. Existing groups and items remain active. Back up before applying migrations; use the same procedure on supported Ubuntu ARM or x86 systems.
 
 These migrations do not seed demonstration stock or change existing meals, rooms, children, staff, accounts or weekly plans. With no existing inventory, the groups page starts empty and asks you to create the first group. Mock inventory, groups and purchases are empty on every backend start and are for isolated tests; use PostgreSQL for persistent operation.
 
@@ -147,3 +177,7 @@ Use synthetic items and your separate test database for automated checks.
 4. Use a recipe needing 15 eggs with 2 in Inventory: 13 to buy. Keep an unsaved draft open, buy 3 more in the Inventory tab and return: 5 available, 10 to buy; meals and headcounts remain.
 5. Save that week, change Inventory, then return or reload. Its saved shopping amounts must stay unchanged until **Update shopping list**. Save and print; Inventory must not change.
 6. Retry a lost response unchanged and confirm only one change was recorded. A viewer can browse history but cannot mutate stock. Check narrow screens: item details stack and daily actions remain easy to tap.
+
+7. On synthetic groups, cancel each removal preview and verify nothing changed. Delete an empty group. Move a populated group to a compatible target and verify all IDs, balances, locations and prior history survive after reload.
+8. Archive a group with nonzero stock: reason and acknowledgment are required. Confirm active summaries/selectors/planning exclude it, Archived inventory shows unchanged balances and histories, and viewers have no removal or stock-write controls.
+9. Open a removal review, change membership in another tab, then confirm: it must reject until refreshed. Retry a successful confirmation unchanged and verify one operation/history entry per affected item.
