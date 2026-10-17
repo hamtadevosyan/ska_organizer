@@ -97,7 +97,7 @@ export default function Purchasing() {
   function fail(failure: unknown, fallback: string) {
     if (axios.isCancel(failure)) return;
     setError(authError(failure, fallback));
-    if (axios.isAxiosError(failure) && failure.response?.status === 409 && failure.response?.data?.error?.code !== 'PURCHASING_PREVIEW_EXPIRED') setConflict(true);
+    if (axios.isAxiosError(failure) && failure.response?.status === 409 && !['PURCHASING_PREVIEW_EXPIRED', 'PURCHASING_ITEM_ARCHIVED'].includes(failure.response?.data?.error?.code)) setConflict(true);
   }
   async function build() {
     if (busyRef.current || loading || loadFailed || optionsLoading || optionsError || conflict) return;

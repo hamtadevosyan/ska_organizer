@@ -66,7 +66,7 @@ test('multiple actual amounts start blank, review leaves stock untouched, and a 
   ] }), expect.any(AbortSignal));
   fireEvent.click(screen.getByRole('button', { name: 'Record receipt' })); await screen.findByText('Receipt recorded. Inventory updated for 2 items.');
   expect(recordBatchReceipt).toHaveBeenCalledTimes(1); expect(vi.mocked(recordBatchReceipt).mock.calls[0][0]).toEqual(vi.mocked(previewBatchReceipt).mock.calls[0][0]);
-  expect(report).toHaveBeenLastCalledWith(false, false); expect(screen.getByRole('link', { name: 'View recorded receipt' })).toHaveAttribute('href', '/receiving?receipt=batch-one');
+  await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false)); expect(screen.getByRole('link', { name: 'View recorded receipt' })).toHaveAttribute('href', '/receiving?receipt=batch-one');
 });
 
 test('planned items retain explicit location and partial progress but never prefill the actual delivery', async () => {
@@ -163,4 +163,16 @@ test('an uncertain receipt stays private to its account when another user signs 
   expect(screen.getByRole('region', { name: 'Unconfirmed receipt' })).toBeInTheDocument();
   vi.mocked(getBatchByRequest).mockResolvedValue(receipt()); fireEvent.click(screen.getByRole('button', { name: 'Check receipt status' }));
   await screen.findByText('Receipt recorded. Inventory updated for 1 items.');
+});
+
+test('an archived purchasing destination keeps its received history visible and cannot be added to a new receipt', async () => {
+  const value = fulfillment(); value.lines[0].unavailable = true; value.lines[0].availabilityMessage = 'This inventory record is archived. Refresh purchasing before receiving.';
+  vi.mocked(getPurchasingFulfillment).mockResolvedValue(value);
+  vi.mocked(getReceivingItems).mockResolvedValue(stock.filter(item => item.id !== 'paper'));
+  mount('admin', '/receiving?week=' + week);
+  expect(await screen.findByText(value.lines[0].availabilityMessage)).toBeInTheDocument();
+  expect(screen.getByText('Received 2 count · Remaining 6 count')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add selected purchasing items' })).toBeDisabled();
+  expect(screen.queryByLabelText('Received quantity for Paper at Art shelf')).not.toBeInTheDocument();
+  expect(previewBatchReceipt).not.toHaveBeenCalled(); expect(recordBatchReceipt).not.toHaveBeenCalled();
 });

@@ -27,9 +27,10 @@ export function InventoryHistory({ itemId, onClose }: { itemId: string; onClose:
     {!loading && !error && data && <>
       <p className="text-sm text-slate-600">{data.total} recorded changes. Corrections add a record and retain earlier counts.</p>
       <ol className="space-y-3">{data.items.map((movement) => <li key={movement.id} className="rounded-lg border p-4">
-        <div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">{labels[movement.type]}</h3></div>
+        <div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">{movement.type === 'details' && movement.after.archived && !movement.before?.archived ? 'Archived — quantity retained' : labels[movement.type]}</h3></div>
         <p className="mt-1">{movement.beforeQuantity} → {movement.afterQuantity} {movement.after.unit} <span className="text-slate-500">(change {movement.delta})</span></p>
         <p className="mt-2">{movement.reason}</p>
+        {movement.groupOperationId && <a className="block min-h-11 py-2 text-blue-700 underline" href={'/inventory/group-operations/' + encodeURIComponent(movement.groupOperationId)}>View group operation</a>}
         {movement.batchId && <a className="block min-h-11 py-2 text-blue-700 underline" href={'/receiving?receipt=' + encodeURIComponent(movement.batchId)}>View full receipt</a>}
         <p className="mt-2 text-sm text-slate-600">{movement.actorUsername} · <time dateTime={movement.occurredAt}>{new Date(movement.occurredAt).toLocaleString()}</time></p>
         <p className="mt-1 text-sm text-slate-600">{describe(movement.after)}</p>

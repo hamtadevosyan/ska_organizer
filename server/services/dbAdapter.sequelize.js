@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { AsyncLocalStorage } = require('node:async_hooks');
-const { Op, fn, col, where: sqlWhere } = require('sequelize');
+const { Op, fn, col, literal, where: sqlWhere } = require('sequelize');
 const { createConnection } = require('../database/connection');
 const { assertMigrated } = require('../database/migrate');
 const defineModels = require('../database/models');
@@ -169,33 +169,48 @@ exports.savePurchasingList = async (snapshot, expectedVersion) => {
 };
 
 const literalLike = (value) => value.replace(/[\\%_]/g, '\\$&');
-exports.listInventoryGroups = () => list('InventoryGroup', { order: [['name', 'ASC'], ['id', 'ASC']] });
-exports.inventoryGroupCounts = async () => {
+exports.listInventoryGroups = ({ archived = false, includeArchived = false, includeDeleted = false } = {}) => list('InventoryGroup', {
+  where: { ...(!includeDeleted ? { deletedAt: null } : {}), ...(archived ? { archived: true } : !includeArchived ? { archived: false } : {}) },
+  order: [['name', 'ASC'], ['id', 'ASC']],
+});
+exports.inventoryGroupCounts = async ({ archived = false, includeArchived = false } = {}) => {
   const schema = sequelize.options.define.schema;
-  const [rows] = await sequelize.query('SELECT "groupId", count(*)::integer AS "total", ' +
-    'count(*) FILTER (WHERE "quantity" > "reorderThreshold")::integer AS "available", ' +
-    'count(*) FILTER (WHERE "quantity" > 0 AND "quantity" <= "reorderThreshold")::integer AS "lowStock", ' +
-    'count(*) FILTER (WHERE "quantity" = 0)::integer AS "outOfStock" FROM "' + schema + '"."InventoryItems" GROUP BY "groupId"', { transaction: transactionContext.getStore() });
+  const lifecycle = archived ? ' AND i."archived" = true' : !includeArchived ? ' AND i."archived" = false AND g."archived" = false' : '';
+  const [rows] = await sequelize.query('SELECT i."groupId", count(*)::integer AS "total", ' +
+    'count(*) FILTER (WHERE i."quantity" > i."reorderThreshold")::integer AS "available", ' +
+    'count(*) FILTER (WHERE i."quantity" > 0 AND i."quantity" <= i."reorderThreshold")::integer AS "lowStock", ' +
+    'count(*) FILTER (WHERE i."quantity" = 0)::integer AS "outOfStock" FROM "' + schema + '"."InventoryItems" i ' +
+    'JOIN "' + schema + '"."InventoryGroups" g ON g."id" = i."groupId" WHERE g."deletedAt" IS NULL' + lifecycle + ' GROUP BY i."groupId"', { transaction: transactionContext.getStore() });
   return rows;
 };
 exports.getInventoryGroupById = (id) => get('InventoryGroup', id);
-exports.getInventoryGroupByName = async (nameKey) => (await list('InventoryGroup', { where: { nameKey }, limit: 1 }))[0] || null;
+exports.getInventoryGroupByName = async (nameKey) => (await list('InventoryGroup', { where: { nameKey, deletedAt: null }, limit: 1 }))[0] || null;
 exports.getInventoryGroupByRequestId = async (requestId) => (await list('InventoryGroup', { where: { requestId }, limit: 1 }))[0] || null;
 exports.createInventoryGroup = (values) => create('InventoryGroup', values);
-const inventoryWhere = ({ q, category, location, status, groupId } = {}) => {
+exports.updateInventoryGroup = (id, values) => update('InventoryGroup', id, values);
+exports.listInventoryInGroup = (groupId) => list('InventoryItem', { where: { groupId }, order: [['id', 'ASC']] });
+exports.createInventoryGroupOperation = (values) => create('InventoryGroupOperation', values);
+exports.getInventoryGroupOperation = (id) => get('InventoryGroupOperation', id);
+exports.getInventoryGroupOperationById = exports.getInventoryGroupOperation;
+exports.getInventoryGroupOperationByRequestId = async (requestId) => (await list('InventoryGroupOperation', { where: { requestId }, limit: 1 }))[0] || null;
+const inventoryWhere = ({ q, category, location, status, groupId, archived = false, includeArchived = false } = {}) => {
   const checks = q ? q.split(/\s+/).map((part) => sqlWhere(col('name'), { [Op.iLike]: '%' + literalLike(part) + '%' })) : [];
+  const schema = sequelize.options.define.schema;
+  const activeParent = !archived && !includeArchived ? ' AND "archived" = false' : '';
+  checks.push({ groupId: { [Op.in]: literal(`(SELECT "id" FROM "${schema}"."InventoryGroups" WHERE "deletedAt" IS NULL${activeParent})`) } });
   if (status === 'out') checks.push(sqlWhere(col('quantity'), Op.eq, 0));
   if (status === 'low') checks.push(sqlWhere(col('quantity'), Op.gt, 0), sqlWhere(col('quantity'), Op.lte, col('reorderThreshold')));
   if (status === 'available') checks.push(sqlWhere(col('quantity'), Op.gt, col('reorderThreshold')));
-  return { ...(category ? { category } : {}), ...(groupId ? { groupId } : {}), ...(location ? { location } : {}), ...(checks.length ? { [Op.and]: checks } : {}) };
+  return { ...(archived ? { archived: true } : !includeArchived ? { archived: false } : {}),
+    ...(category ? { category } : {}), ...(groupId ? { groupId } : {}), ...(location ? { location } : {}), ...(checks.length ? { [Op.and]: checks } : {}) };
 };
 exports.listInventory = ({ page = 1, pageSize = 50, ...filters } = {}) => list('InventoryItem', {
   where: inventoryWhere(filters), limit: pageSize, offset: (page - 1) * pageSize, order: [['name', 'ASC'], ['id', 'ASC']],
 });
-exports.listAllInventory = () => list('InventoryItem', { order: [['id', 'ASC']] });
+exports.listAllInventory = (options) => list('InventoryItem', { where: inventoryWhere(options), order: [['id', 'ASC']] });
 exports.countInventory = (filters) => model('InventoryItem').count({ where: inventoryWhere(filters), transaction: transactionContext.getStore() });
-exports.inventoryOptions = async () => {
-  const rows = await list('InventoryItem', { attributes: ['category', 'location'], group: ['category', 'location'] });
+exports.inventoryOptions = async (options) => {
+  const rows = await list('InventoryItem', { where: inventoryWhere(options), attributes: ['category', 'location'], group: ['category', 'location'] });
   return { categories: [...new Set(rows.map((row) => row.category))].sort(), locations: [...new Set(rows.map((row) => row.location))].sort() };
 };
 exports.getInventoryById = (id) => get('InventoryItem', id);
@@ -298,7 +313,7 @@ exports.listRegistrationFormRevisions = (formId, { page = 1, pageSize = 20 } = {
 });
 exports.countRegistrationFormRevisions = (formId) => model('RegistrationFormRevision').count({ where: { formId }, transaction: transactionContext.getStore() });
 
-exports.listInventoryForIngredients = (ids) => list('InventoryItem', { where: { ingredientId: { [Op.in]: ids } }, order: [['id', 'ASC']] });
+exports.listInventoryForIngredients = (ids) => list('InventoryItem', { where: { ...inventoryWhere(), ingredientId: { [Op.in]: ids } }, order: [['id', 'ASC']] });
 exports.createPurchaseReceipt = (values) => create('PurchaseReceipt', values);
 exports.getPurchaseByMovementId = async (movementId) => (await list('PurchaseReceipt', { where: { movementId }, limit: 1 }))[0] || null;
 exports.listPurchaseReceipts = ({ itemId, page = 1, pageSize = 25 } = {}) => list('PurchaseReceipt', {

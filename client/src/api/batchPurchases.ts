@@ -25,7 +25,7 @@ export type ReceivingHistory = { items: BatchReceipt[]; total: number; page: num
 export type PurchasingFulfillment = {
   weekStart: string; version: number; stockTakenAt: string;
   lines: { id: string; itemId: string | null; name: string; location: string | null; unit: string; buyQuantity: string;
-    receivedQuantity: string; remainingQuantity: string; selected: boolean }[];
+    receivedQuantity: string; remainingQuantity: string; selected: boolean; unavailable?: boolean; availabilityMessage?: string }[];
   batches: { id: string; receivedOn: string; supplier: string | null; recordedAt: string }[]; note: string;
 };
 const url = inventoryUrl + '/purchase-batches';

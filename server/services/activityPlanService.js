@@ -129,7 +129,10 @@ async function materials(entries) {
       for (const [, change] of [...events].sort(([a], [b]) => a - b)) { current += change; if (current > reused) reused = current; }
     }
     const stock = await db.getInventoryById(row.itemId);
-    const issue = !stock ? 'Item is no longer in Inventory.' : stock.unit !== row.unit ? 'Inventory unit changed. Update the activity material.' : null;
+    const group = stock?.groupId ? await db.getInventoryGroupById(stock.groupId) : null;
+    const issue = !stock ? 'Item is no longer in Inventory.' : stock.archived || group?.archived || group?.deletedAt
+      ? 'This item or its inventory group is archived. Replace the activity material with an active Inventory item.'
+      : stock.unit !== row.unit ? 'Inventory unit changed. Update the activity material.' : null;
     const needed = row.consumed + reused;
     const available = issue ? 0n : amount(stock.quantity);
     return { itemId: row.itemId, name: row.name, location: stock?.location || row.location, unit: row.unit,

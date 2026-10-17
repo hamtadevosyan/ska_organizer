@@ -6,8 +6,10 @@ const { fieldError, validate } = require('./catalogValidation');
 const { compatible } = require('./stockUnits');
 
 const snapshot = (item) => ({ ...Object.fromEntries(['id', 'name', 'category', 'groupId', 'location', 'unit', 'ingredientId', 'version'].map((key) => [key, item[key]])),
-  quantity: v.decimal(v.amount(item.quantity)), reorderThreshold: v.decimal(v.amount(item.reorderThreshold)) });
-const publicGroup = (group) => Object.fromEntries(['id', 'name', 'kind', 'description', 'createdAt', 'updatedAt'].map((key) => [key, group[key]]));
+  quantity: v.decimal(v.amount(item.quantity)), reorderThreshold: v.decimal(v.amount(item.reorderThreshold)),
+  ...(item.archived ? { archived: true, archivedAt: item.archivedAt } : {}) });
+const publicGroup = (group) => ({ ...Object.fromEntries(['id', 'name', 'kind', 'description', 'createdAt', 'updatedAt'].map((key) => [key, group[key]])),
+  version: group.version || 1, archived: !!group.archived, archivedAt: group.archivedAt || null, deletedAt: group.deletedAt || null });
 const summary = (item, ingredient, group) => ({ ...item, ...snapshot(item), group: group ? publicGroup(group) : null,
   status: v.amount(item.quantity) === 0n ? 'out' : v.amount(item.quantity) <= v.amount(item.reorderThreshold) ? 'low' : 'available',
   ingredient: ingredient ? { id: ingredient.id, name: ingredient.name, unit: ingredient.unit, archived: !!ingredient.archived } : null,
@@ -24,6 +26,16 @@ async function requireGroup(id) {
   if (!group) throw fieldError('groupId', 'Inventory group not found.', 404);
   return group;
 }
+function activeGroup(group) {
+  if (group.deletedAt || group.archived) throw fieldError('groupId', group.deletedAt ?
+    'This inventory group was removed. Choose an active group.' : 'This inventory group is archived and read-only. Choose an active group.', 409);
+  return group;
+}
+async function activeItem(item) {
+  if (item.archived) throw problem('This inventory item is archived and read-only. Its recorded quantity and history have been retained.', 409);
+  activeGroup(await requireGroup(item.groupId));
+  return item;
+}
 async function assignGroup(values) {
   let group;
   if (values.groupId) group = await requireGroup(values.groupId);
@@ -33,6 +45,7 @@ async function assignGroup(values) {
     if (!group) group = await db.createInventoryGroup({ name: values.category, nameKey: values.category.toLowerCase(),
       kind: values.ingredientId || /^(food|food stock|ingredients|groceries)$/i.test(values.category) ? 'food' : 'supplies', description: '' });
   }
+  activeGroup(group);
   if (values.ingredientId && group.kind !== 'food') throw fieldError('groupId', 'Choose a food stock group for an ingredient-linked item.', 409);
   return { ...values, groupId: group.id, category: group.name };
 }
@@ -80,8 +93,9 @@ exports.createGroup = (payload, actor) => db.withInventoryLock(async () => {
   if (await db.getInventoryGroupByName(values.nameKey)) throw fieldError('name', 'An inventory group with this name already exists.', 409);
   return publicGroup(await db.createInventoryGroup({ ...values, requestId: payload.requestId, request }));
 });
-exports.listGroups = () => db.withInventoryLock(async () => {
-  const [groups, counts] = await Promise.all([db.listInventoryGroups(), db.inventoryGroupCounts()]);
+exports.listGroups = (query = {}) => db.withInventoryLock(async () => {
+  const filters = v.groupFilters(query);
+  const [groups, counts] = await Promise.all([db.listInventoryGroups(filters), db.inventoryGroupCounts(filters)]);
   const byId = new Map(counts.map(({ groupId, ...totals }) => [groupId, totals]));
   return { items: groups.map((group) => ({ ...publicGroup(group), summary: byId.get(group.id) || { total: 0, available: 0, lowStock: 0, outOfStock: 0 } })) };
 });
@@ -118,7 +132,7 @@ exports.create = (payload, actor) => locked(async () => {
 exports.update = (id, payload, actor) => locked(async () => {
   const repeated = await replay(payload, 'update', id, actor);
   if (repeated) return repeated;
-  const previous = await requireItem(id);
+  const previous = await activeItem(await requireItem(id));
   const values = await connectNewFood(await assignGroup(v.item(payload, previous)), payload);
   v.text(payload.reason, 'reason', 500);
   await verifyIngredient(values, previous);
@@ -129,7 +143,7 @@ exports.update = (id, payload, actor) => locked(async () => {
 exports.adjust = (id, payload, actor) => locked(async () => {
   const repeated = await replay(payload, 'adjust', id, actor);
   if (repeated) return repeated;
-  const previous = await requireItem(id);
+  const previous = await activeItem(await requireItem(id));
   const quantity = v.movement(payload, previous);
   v.text(payload.reason, 'reason', 500);
   const saved = await db.updateInventory(id, { quantity, version: previous.version + 1 });
@@ -155,7 +169,7 @@ exports.receivePurchase = (id, payload, actor) => locked(async () => {
     if (!receipt) throw problem('The purchase record could not be loaded.', 500);
     return { receipt: publicReceipt(receipt), item: repeated, replayed: true };
   }
-  const previous = await requireItem(id);
+  const previous = await activeItem(await requireItem(id));
   const values = v.receipt(payload, previous);
   const saved = await db.updateInventory(id, { quantity: values.resultingQuantity, version: previous.version + 1 });
   const movement = await record(previous, saved, 'addition', payload, 'purchase', actor, values.reason);
@@ -178,7 +192,7 @@ exports.getInventoryItems = (query = {}) => db.withInventoryLock(async () => {
   const filters = v.pagination(query);
   if (filters.groupId) await requireGroup(filters.groupId);
   const [items, total, status, options, ingredients, groups] = await Promise.all([
-    db.listInventory(filters), db.countInventory(filters), exports.getStatus(), db.inventoryOptions(), db.listIngredients({ includeArchived: true }), db.listInventoryGroups(),
+    db.listInventory(filters), db.countInventory(filters), exports.getStatus(), db.inventoryOptions({ archived: filters.archived }), db.listIngredients({ includeArchived: true }), db.listInventoryGroups({ includeArchived: true }),
   ]);
   const byId = new Map(ingredients.map((item) => [item.id, item]));
   const byGroup = new Map(groups.map((group) => [group.id, group]));
@@ -194,5 +208,6 @@ exports.history = (id, query = {}) => db.withInventoryLock(async () => {
     ...Object.fromEntries(['id', 'itemId', 'type', 'reason', 'actorId', 'actorUsername', 'occurredAt', 'itemVersion', 'before', 'after'].map((key) => [key, row[key]])),
     delta: signed(row.delta), beforeQuantity: signed(row.beforeQuantity), afterQuantity: signed(row.afterQuantity),
     ...(row.batchId ? { batchId: row.batchId } : {}),
+    ...(row.groupOperationId ? { groupOperationId: row.groupOperationId } : {}),
   })), total, page: filters.page, pageSize: filters.pageSize };
 });

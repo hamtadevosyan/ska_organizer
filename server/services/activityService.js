@@ -10,6 +10,9 @@ async function values(payload, previous) {
   result.materials = await Promise.all(result.materials.map(async (material) => {
     const item = await db.getInventoryById(material.itemId);
     if (!item) throw fieldError('materials', 'A material is no longer in Inventory. Choose it again.');
+    const group = item.groupId ? await db.getInventoryGroupById(item.groupId) : null;
+    if (item.archived || group?.archived || group?.deletedAt) throw fieldError('materials',
+      'A material or its inventory group is archived. Replace it with an active Inventory item before saving this activity.', 409);
     if (item.unit !== material.unit) throw fieldError('materials', 'The material unit changed. Choose the inventory item again and review its quantity.', 409);
     return { ...material, name: item.name, location: item.location };
   }));

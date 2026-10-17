@@ -1,7 +1,7 @@
 const inventoryService = require('../services/inventoryService');
 
 exports.listGroups = async (req, res, next) => {
-  try { res.json(await inventoryService.listGroups()); } catch (error) { next(error); }
+  try { res.json(await inventoryService.listGroups(req.query)); } catch (error) { next(error); }
 };
 exports.createGroup = async (req, res, next) => {
   try { res.status(201).json({ data: await inventoryService.createGroup(req.body, req.account) }); } catch (error) { next(error); }

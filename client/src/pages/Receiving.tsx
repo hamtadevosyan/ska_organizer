@@ -131,6 +131,7 @@ export default function Receiving() {
     const failures: string[] = [];
     for (const planned of fulfillment.lines.filter(line => line.selected)) {
       if (lines.some(line => line.item.id === planned.itemId)) continue;
+      if (planned.unavailable) { failures.push(planned.name + ' (archived or unavailable)'); continue; }
       const item = items.find(value => value.id === planned.itemId);
       if (!item || item.unit !== planned.unit) { failures.push(planned.name); continue; }
       if (lines.length + additions.length >= 50) { failures.push(planned.name); continue; }
@@ -253,8 +254,8 @@ export default function Receiving() {
         {sourceError && <p role="alert">{sourceError} <button className="ska-button" disabled={frozen} onClick={() => setSourceRetry(value => value + 1)}>Retry purchasing source</button></p>}
         {week && !sourceLoading && !sourceError && !fulfillment && <p>No purchasing list is saved for this week. You can still receive standalone inventory items.</p>}
         {fulfillment && <><p>Saved purchasing list · Week of {fulfillment.weekStart} · Version {fulfillment.version}</p><p className="receiving-small">{fulfillment.note}</p>
-          <ul className="receiving-planned">{fulfillment.lines.filter(line => line.selected).map(line => <li key={line.id}><span>{line.name} · {line.location || 'No linked location'}</span><strong>Received {line.receivedQuantity} {line.unit} · Remaining {line.remainingQuantity} {line.unit}</strong></li>)}</ul>
-          <button type="button" className="ska-button" disabled={frozen || !!review || conflict || itemsLoading || !!itemsError || !fulfillment.lines.some(line => line.selected && !lines.some(value => value.item.id === line.itemId))} onClick={addPlanned}><ShoppingBasket size={18} aria-hidden="true" />Add selected purchasing items</button>
+          <ul className="receiving-planned">{fulfillment.lines.filter(line => line.selected).map(line => <li key={line.id}><span>{line.name} · {line.location || 'No linked location'}</span><strong>Received {line.receivedQuantity} {line.unit} · Remaining {line.remainingQuantity} {line.unit}</strong>{line.unavailable && <p>{line.availabilityMessage}</p>}</li>)}</ul>
+          <button type="button" className="ska-button" disabled={frozen || !!review || conflict || itemsLoading || !!itemsError || !fulfillment.lines.some(line => line.selected && !line.unavailable && !lines.some(value => value.item.id === line.itemId))} onClick={addPlanned}><ShoppingBasket size={18} aria-hidden="true" />Add selected purchasing items</button>
           {linked && <p className="receiving-small">This receipt will reference saved purchasing version {fulfillment.version}. The purchasing list stays unchanged.</p>}
         </>}
       </section>

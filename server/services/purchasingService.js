@@ -98,8 +98,9 @@ exports.preview = (weekStart, input) => {
   validateWeekStart(weekStart);
   const selected = selection(input);
   return db.withCatalogLock(() => db.withRoomLock(() => db.withInventoryLock(() => db.withPurchasingLock(async () => {
-    const [previous, mealPlan, rooms, inventory] = await Promise.all([db.getPurchasingList(weekStart),
-      selected.includeMeals ? db.getWeeklyPlan(weekStart) : null, db.listRooms({ includeArchived: true }), db.listAllInventory()]);
+    const [previous, mealPlan, rooms, inventory, groups] = await Promise.all([db.getPurchasingList(weekStart),
+      selected.includeMeals ? db.getWeeklyPlan(weekStart) : null, db.listRooms({ includeArchived: true }),
+      db.listAllInventory({ includeArchived: true }), db.listInventoryGroups({ includeArchived: true, includeDeleted: true })]);
     const roomById = new Map(rooms.map((room) => [room.id, room]));
     const storedPlans = await Promise.all(selected.roomIds.map(async (roomId) => {
       const [header, entries] = await Promise.all([db.getScheduleWeek(roomId, weekStart), db.listScheduleEntries(roomId, weekStart)]);
@@ -117,7 +118,8 @@ exports.preview = (weekStart, input) => {
       const current = legacyHints.get(entry.activityId);
       return { ...entry, materialHintsUnknown: !!(typeof current?.materialsNotes === 'string' && current.materialsNotes.trim() || current?.materialsLinks?.length) };
     }) }));
-    const list = calculate({ ...selected, weekStart, version: previous?.version || 0, mealPlan, activityPlans, inventory });
+    const inactiveGroupIds = groups.filter((group) => group.archived || group.deletedAt).map((group) => group.id);
+    const list = calculate({ ...selected, weekStart, version: previous?.version || 0, mealPlan, activityPlans, inventory, inactiveGroupIds });
     return { list, token: list.issues.length ? '' : encode(list) };
   }))));
 };
@@ -125,7 +127,9 @@ exports.save = (weekStart, input) => {
   validateWeekStart(weekStart);
   object(input, ['version', 'token', 'choices']);
   const expectedVersion = version(input.version);
-  return db.withPurchasingLock(async () => {
+  // Group removal holds the inventory lock. Take it before purchasing so an
+  // archive cannot race the final active-reference check of an older review.
+  return db.withInventoryLock(() => db.withPurchasingLock(async () => {
     let list;
     if (Object.hasOwn(input, 'token')) {
       const decoded = decode(input.token);
@@ -138,6 +142,16 @@ exports.save = (weekStart, input) => {
       if (list.version !== expectedVersion) throw conflict();
     }
     if (list.issues.length) throw problem('Resolve the missing or incompatible plan details before saving this purchasing list.', 409);
-    return db.savePurchasingList(reviewed(list, input.choices), expectedVersion);
-  });
+    const checked = reviewed(list, input.choices);
+    const groups = new Map();
+    for (const line of checked.lines.filter((line) => line.selected)) {
+      const item = line.itemId ? await db.getInventoryById(line.itemId) : null;
+      if (item?.groupId && !groups.has(item.groupId)) groups.set(item.groupId, await db.getInventoryGroupById(item.groupId));
+      const group = groups.get(item?.groupId);
+      if (!item || item.archived || group?.archived || group?.deletedAt) throw Object.assign(problem(
+        `${line.name}${line.location ? ' at ' + line.location : ''} is archived or unavailable. Unselect this line, or replace its source and refresh the calculation before saving.`, 409),
+      { code: 'PURCHASING_ITEM_ARCHIVED' });
+    }
+    return db.savePurchasingList(checked, expectedVersion);
+  }));
 };

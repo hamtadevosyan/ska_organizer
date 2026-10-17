@@ -8,6 +8,7 @@ import Children from "../pages/Children";
 import Attendance from "../pages/Attendance";
 import Dashboard from "../pages/Dashboard";
 import Inventory from "../pages/Inventory";
+import InventoryGroupOperation from "../pages/InventoryGroupOperation";
 import Purchasing from "../pages/Purchasing";
 import Receiving from "../pages/Receiving";
 import Activities from "../pages/Activities";
@@ -27,6 +28,7 @@ export default function AppRoutes() {
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/inventory" element={<Inventory />} />
+      <Route path="/inventory/group-operations/:id" element={<InventoryGroupOperation />} />
       <Route path="/purchasing" element={<Purchasing />} />
       <Route path="/receiving" element={<Receiving />} />
       <Route path="/activities" element={<Activities />} />

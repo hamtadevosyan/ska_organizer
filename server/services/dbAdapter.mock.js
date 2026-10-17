@@ -5,7 +5,7 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
+  rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
   staffDocuments: [], staffDocumentRevisions: [], staffDocumentSettings: null,
@@ -43,8 +43,17 @@ const mock = {
 
 let transactionQueue = Promise.resolve();
 const inventoryStatus = (item) => amount(item.quantity) === 0n ? 'out' : amount(item.quantity) <= amount(item.reorderThreshold) ? 'low' : 'available';
-const filteredInventory = ({ q, category, location, status, groupId } = {}) => mock.inventoryItems
-  .filter((item) => (!q || q.toLowerCase().split(/\s+/).every((word) => item.name.toLowerCase().includes(word))) &&
+const visibleInventory = (item, { archived = false, includeArchived = false } = {}) => {
+  const group = mock.inventoryGroups.find((row) => row.id === item.groupId);
+  if (!group || group.deletedAt) return false;
+  if (archived) return !!item.archived;
+  return includeArchived || (!item.archived && !group.archived);
+};
+const filteredGroups = ({ archived = false, includeArchived = false, includeDeleted = false } = {}) => mock.inventoryGroups
+  .filter((group) => (includeDeleted || !group.deletedAt) && (archived ? !!group.archived : includeArchived || !group.archived))
+  .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+const filteredInventory = ({ q, category, location, status, groupId, archived, includeArchived } = {}) => mock.inventoryItems
+  .filter((item) => visibleInventory(item, { archived, includeArchived }) && (!q || q.toLowerCase().split(/\s+/).every((word) => item.name.toLowerCase().includes(word))) &&
     (!category || item.category === category) && (!groupId || item.groupId === groupId) && (!location || item.location === location) && (!status || inventoryStatus(item) === status))
   .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 const searchName = (child) => [child.firstName, child.lastName, child.preferredName].filter(Boolean).join(' ').toLowerCase();
@@ -75,26 +84,46 @@ const withTransaction = (fn) => {
 module.exports = {
   health: async () => {},
   withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction, withInventoryLock: withTransaction, withPurchasingLock: withTransaction,
-  listInventoryGroups: async () => structuredClone(mock.inventoryGroups.slice().sort((a, b) => a.name.localeCompare(b.name))),
-  inventoryGroupCounts: async () => mock.inventoryGroups.map((group) => {
-    const items = filteredInventory({ groupId: group.id });
+  listInventoryGroups: async (options) => structuredClone(filteredGroups(options)),
+  inventoryGroupCounts: async (options = {}) => mock.inventoryGroups.map((group) => {
+    const items = filteredInventory({ ...options, groupId: group.id });
     return { groupId: group.id, total: items.length, available: items.filter((item) => inventoryStatus(item) === 'available').length,
       lowStock: items.filter((item) => inventoryStatus(item) === 'low').length, outOfStock: items.filter((item) => inventoryStatus(item) === 'out').length };
   }),
   getInventoryGroupById: async (id) => structuredClone(mock.inventoryGroups.find((group) => group.id === id) || null),
-  getInventoryGroupByName: async (nameKey) => structuredClone(mock.inventoryGroups.find((group) => group.nameKey === nameKey) || null),
+  getInventoryGroupByName: async (nameKey) => structuredClone(mock.inventoryGroups.find((group) => group.nameKey === nameKey && !group.deletedAt) || null),
   getInventoryGroupByRequestId: async (requestId) => structuredClone(mock.inventoryGroups.find((group) => group.requestId === requestId) || null),
   createInventoryGroup: async (values) => {
-    const group = { id: mock.uuid(), createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values };
+    const group = { id: mock.uuid(), version: 1, archived: false, archivedAt: null, deletedAt: null, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values };
     mock.inventoryGroups.push(group); return structuredClone(group);
   },
+  updateInventoryGroup: async (id, values) => {
+    const group = mock.inventoryGroups.find((row) => row.id === id);
+    if (!group) return null;
+    Object.assign(group, structuredClone(values), { updatedAt: mock.nowIso() });
+    return structuredClone(group);
+  },
+  listInventoryInGroup: async (groupId) => structuredClone(mock.inventoryItems.filter((row) => row.groupId === groupId).sort((a, b) => a.id.localeCompare(b.id))),
+  createInventoryGroupOperation: async (values) => {
+    if (mock.inventoryGroupOperations.some((row) => row.requestId === values.requestId)) {
+      const error = new Error('This group operation was already recorded.');
+      error.name = 'SequelizeUniqueConstraintError';
+      throw error;
+    }
+    const operation = structuredClone({ id: mock.uuid(), ...values });
+    mock.inventoryGroupOperations.push(operation);
+    return structuredClone(operation);
+  },
+  getInventoryGroupOperation: async (id) => structuredClone(mock.inventoryGroupOperations.find((row) => row.id === id) || null),
+  getInventoryGroupOperationById: async (id) => structuredClone(mock.inventoryGroupOperations.find((row) => row.id === id) || null),
+  getInventoryGroupOperationByRequestId: async (requestId) => structuredClone(mock.inventoryGroupOperations.find((row) => row.requestId === requestId) || null),
   listInventory: async ({ page = 1, pageSize = 50, ...filters } = {}) => structuredClone(filteredInventory(filters).slice((page - 1) * pageSize, page * pageSize)),
-  listAllInventory: async () => structuredClone(mock.inventoryItems.slice().sort((a, b) => a.id.localeCompare(b.id))),
+  listAllInventory: async (options) => structuredClone(mock.inventoryItems.filter((item) => visibleInventory(item, options)).sort((a, b) => a.id.localeCompare(b.id))),
   countInventory: async (filters) => filteredInventory(filters).length,
-  inventoryOptions: async () => ({ categories: [...new Set(mock.inventoryItems.map((item) => item.category))].sort(), locations: [...new Set(mock.inventoryItems.map((item) => item.location))].sort() }),
+  inventoryOptions: async (options) => ({ categories: [...new Set(filteredInventory(options).map((item) => item.category))].sort(), locations: [...new Set(filteredInventory(options).map((item) => item.location))].sort() }),
   getInventoryById: async (id) => structuredClone(mock.inventoryItems.find((item) => item.id === id) || null),
   createInventory: async (values) => {
-    const item = { id: mock.uuid(), createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values };
+    const item = { id: mock.uuid(), archived: false, archivedAt: null, createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values };
     mock.inventoryItems.push(item); return structuredClone(item);
   },
   updateInventory: async (id, values) => {
@@ -109,7 +138,7 @@ module.exports = {
   listInventoryMovements: async (itemId, { page = 1, pageSize = 50 } = {}) => structuredClone(mock.inventoryMovements
     .filter((row) => row.itemId === itemId).sort((a, b) => b.itemVersion - a.itemVersion).slice((page - 1) * pageSize, page * pageSize)),
   countInventoryMovements: async (itemId) => mock.inventoryMovements.filter((row) => row.itemId === itemId).length,
-  listInventoryForIngredients: async (ids) => structuredClone(mock.inventoryItems.filter((item) => ids.includes(item.ingredientId)).sort((a, b) => a.id.localeCompare(b.id))),
+  listInventoryForIngredients: async (ids) => structuredClone(mock.inventoryItems.filter((item) => ids.includes(item.ingredientId) && visibleInventory(item)).sort((a, b) => a.id.localeCompare(b.id))),
   createPurchaseReceipt: async (values) => {
     const receipt = { id: mock.uuid(), ...values }; mock.purchaseReceipts.push(receipt); return structuredClone(receipt);
   },
@@ -220,7 +249,7 @@ module.exports = {
   // ------------------------------------------------------
   reset: () => {
     mock.scheduleWeeks = [];
-    mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = []; mock.purchaseBatches = [];
+    mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryGroupOperations = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = []; mock.purchaseBatches = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
     mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
     mock.registrationForms = []; mock.registrationFormRevisions = [];

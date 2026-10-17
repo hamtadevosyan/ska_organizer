@@ -37,3 +37,11 @@ test('a late progress response from the old list cannot replace the new version'
   component.rerender(<MemoryRouter><PurchasingReceiptProgress weekStart={weekStart} version={3} stockTakenAt={stockTakenAt} canReceive /></MemoryRouter>);
   await screen.findByText(value().note); await act(async () => resolveOld(value())); expect(screen.queryByText('Received 2 count · Remaining 6 count')).not.toBeInTheDocument();
 });
+
+test('an archived destination warns beside retained partial delivery totals', async () => {
+  const progress = value(); progress.lines[0].unavailable = true; progress.lines[0].availabilityMessage = 'This inventory record is archived. Refresh purchasing before receiving.';
+  vi.mocked(getPurchasingFulfillment).mockResolvedValue(progress);
+  render(<MemoryRouter><PurchasingReceiptProgress weekStart={weekStart} version={2} stockTakenAt={stockTakenAt} canReceive={false} /></MemoryRouter>);
+  expect(await screen.findByText(progress.lines[0].availabilityMessage)).toBeInTheDocument();
+  expect(screen.getByText('Received 2 count · Remaining 6 count')).toBeInTheDocument();
+});
