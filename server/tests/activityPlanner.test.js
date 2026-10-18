@@ -116,15 +116,15 @@ test('invalid identifiers and dates, foreign rooms and incompatible ages cannot 
   expect((await get(target)).body.data.version).toBe(1);
 });
 
-test('archived rooms keep printable weeks; viewers read plans and materials but cannot change them', async () => {
+test('archived rooms keep printable weeks for operators while class viewers cannot use global plans', async () => {
   const target = await room(); const value = await activity(); const values = body(target, [entry(value)]);
   expect((await save(values)).status).toBe(200);
   expect((await request(app).put('/api/rooms/' + target.id).send({ active: false })).status).toBe(200);
   expect((await get(target)).body.data.entries).toHaveLength(1);
   expect((await save(body(target, [], { version: 1 }))).status).toBe(409);
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  expect((await get(target)).status).toBe(200);
-  expect((await request(app).post('/api/schedule/plan/preview').send({ roomId: target.id, weekStart, entries: values.entries })).status).toBe(200);
+  expect((await get(target)).status).toBe(403);
+  expect((await request(app).post('/api/schedule/plan/preview').send({ roomId: target.id, weekStart, entries: values.entries })).status).toBe(403);
   expect((await save(values)).status).toBe(403);
   expect((await request(app).post('/api/activity').send({ name: 'Blocked', durationMinutes: 20 })).status).toBe(403);
   expect((await anonymous(app).get('/api/schedule/plan').query({ roomId: target.id, weekStart })).status).toBe(401);

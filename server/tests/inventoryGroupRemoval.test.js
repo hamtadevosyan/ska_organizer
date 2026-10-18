@@ -357,12 +357,12 @@ test('commit unknown fields and preview unknown fields cannot spoof archive meta
   expect((await db.getInventoryGroupById(source.id)).archived).toBe(false);
 });
 
-test('viewers can inspect archived items and operation receipts but cannot preview or remove any group', async () => {
+test('class viewers cannot inspect archived items, operation receipts, preview or remove any group', async () => {
   const receipt = await commit(body(await preview('archive')));
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  expect((await request(app).get(base + '/items?archived=true')).status).toBe(200);
-  expect((await request(app).get(base + '/group-operations/' + receipt.id)).status).toBe(200);
-  expect((await request(app).get(path(target.id) + '/removal-context')).status).toBe(200);
+  expect((await request(app).get(base + '/items?archived=true')).status).toBe(403);
+  expect((await request(app).get(base + '/group-operations/' + receipt.id)).status).toBe(403);
+  expect((await request(app).get(path(target.id) + '/removal-context')).status).toBe(403);
   expect((await request(app).post(path(target.id) + '/removal-preview').send({})).status).toBe(403);
   expect((await request(app).post(path(target.id) + '/removal').send({})).status).toBe(403);
   expect((await anonymous(app).get(base + '/group-operations/' + receipt.id)).status).toBe(401);

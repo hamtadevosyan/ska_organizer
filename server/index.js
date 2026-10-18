@@ -32,6 +32,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);
 app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
+app.use('/api/classroom', requireSession, require('./routes/classroom'));
 app.use('/api', requireSession, requireOperationalAccess);
 app.use('/api/registration-forms', registrationForms.router);
 app.use('/api/staff-compliance', staffDocuments.compliance);

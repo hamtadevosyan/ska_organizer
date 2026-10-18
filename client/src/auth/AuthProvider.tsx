@@ -7,6 +7,7 @@ import type { Account } from './context';
 import { authError, isServerUnavailable, onServerUnavailable, onSessionExpired, replaceSession } from './transport';
 
 type Session = { account: Account; csrfToken: string };
+const accountScope = (account: Account) => JSON.stringify([account.id, account.role, account.roomId ?? null]);
 const url = `${API_BASE_URL}/api/auth`;
 const announce = () => { try { localStorage.setItem('skao-account-changed', `${Date.now()}-${Math.random()}`); } catch { /* Optional cross-tab notification. */ } };
 export default function AuthProvider({ children }: { children: ReactNode }) {
@@ -17,6 +18,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const unavailableRef = useRef(false);
   const hadSession = useRef(false);
   const csrfRef = useRef('');
+  const scopeRef = useRef('');
   const connection = useCallback((unavailable: boolean) => {
     unavailableRef.current = unavailable;
     setServerUnavailable(unavailable);
@@ -24,6 +26,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const accept = useCallback((session: Session) => {
     replaceSession(session.csrfToken);
     csrfRef.current = session.csrfToken;
+    scopeRef.current = accountScope(session.account);
     hadSession.current = true;
     connection(false);
     setAccount(session.account); setNotice(''); setReady(true);
@@ -34,8 +37,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       if (signal?.aborted) return;
       const recovered = unavailableRef.current && hadSession.current;
       connection(false);
-      // Polling must not cancel in-flight operational requests or change the session epoch.
-      if (initial || csrfRef.current !== data.csrfToken) accept(data);
+      // Only the same account, role and class may retain in-flight requests and drafts.
+      if (initial || csrfRef.current !== data.csrfToken || scopeRef.current !== accountScope(data.account)) accept(data);
       else {
         setAccount(data.account);
         if (recovered) setNotice('Connection restored. Check the latest records before retrying a failed save. Refreshing clears unsaved edits.');
@@ -85,7 +88,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     try { await axios.post(`${url}/logout`, {}); }
     catch (error) { if (!axios.isAxiosError(error) || error.response?.status !== 401) throw error; }
-    replaceSession(); hadSession.current = false; setAccount(null); setNotice('You have signed out.'); announce();
+    replaceSession(); scopeRef.current = ''; hadSession.current = false; setAccount(null); setNotice('You have signed out.'); announce();
   };
   const changePassword = async (currentPassword: string, password: string) => {
     const { data } = await axios.post<Session>(`${url}/password`, { currentPassword, password });

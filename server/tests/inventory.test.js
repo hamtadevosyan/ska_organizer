@@ -254,18 +254,18 @@ test('a history or audit failure rolls back the balance and the same request can
   expect(await db.listAudit()).toEqual(expect.arrayContaining([expect.objectContaining({ action: 'inventory.create', entityId: stock.id, actorId: request.credentials().account.id })]));
 });
 
-test('editors can manage inventory, viewers can read history and anonymous requests are rejected', async () => {
+test('editors can manage inventory, class viewers cannot read history and anonymous requests are rejected', async () => {
   expect((await anonymous(app).get('/api/inventory')).status).toBe(401);
   await db.updateAccount(request.credentials().account.id, { role: 'editor' });
   const stock = await item();
   expect((await move(stock, { quantity: '1' })).status).toBe(200);
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  expect((await request(app).get('/api/inventory')).status).toBe(200);
-  expect((await history(stock.id)).total).toBe(2);
+  expect((await request(app).get('/api/inventory')).status).toBe(403);
+  expect((await request(app).get('/api/inventory/' + stock.id + '/movements')).status).toBe(403);
   expect((await request(app).post('/api/inventory').send(createBody())).status).toBe(403);
   expect((await edit(stock, { name: 'Unauthorized change' })).status).toBe(403);
   expect((await move(stock, { quantity: '5' })).status).toBe(403);
-  expect((await history(stock.id)).item.quantity).toBe('11');
+  expect(Number((await db.getInventoryById(stock.id)).quantity)).toBe(11);
 });
 
 test('list failures return a retryable error instead of fabricated stock figures', async () => {

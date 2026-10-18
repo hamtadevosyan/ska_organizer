@@ -6,12 +6,13 @@ umask 077
 
 usage() {
   cat <<'HELP'
-Usage: bash scripts/check-update.sh [--inventory] [--dry-run] [--backup-dir DIR]
+Usage: bash scripts/check-update.sh [--inventory | --access] [--dry-run] [--backup-dir DIR]
 
 Back up the configured database, verify the archive, apply pending migrations,
 then run server tests, PostgreSQL tests, client tests, build, lint and browser tests.
 
   --inventory        Run inventory, purchasing and related planner suites.
+  --access           Run class access and account isolation suites.
   --dry-run          Print the steps without reading credentials or running them.
   --backup-dir DIR   Backup directory (default: ~/ska_backups).
   --help             Show this help.
@@ -24,11 +25,13 @@ HELP
 }
 
 inventory_only=false
+access_only=false
 dry_run=false
 backup_dir="${HOME}/ska_backups"
 while (($#)); do
   case "$1" in
     --inventory) inventory_only=true; shift ;;
+    --access) access_only=true; shift ;;
     --dry-run) dry_run=true; shift ;;
     --backup-dir)
       if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
@@ -40,6 +43,11 @@ while (($#)); do
   esac
 done
 
+if "$inventory_only" && "$access_only"; then
+  printf 'Choose either --inventory or --access.\n' >&2
+  exit 2
+fi
+
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 server_tests=(npm test)
 postgres_tests=(npm run test:postgres)
@@ -50,6 +58,12 @@ if "$inventory_only"; then
   postgres_tests+=(-- --runTestsByPath tests/inventory.test.js tests/inventory.postgres.test.js tests/inventoryGroups.test.js tests/inventoryGroups.postgres.test.js tests/inventoryGroupRemoval.test.js tests/inventoryGroupPersistence.test.js tests/inventoryGroupLifecycle.postgres.test.js tests/inventoryLifecyclePlanning.test.js tests/inventoryStock.test.js tests/purchasing.test.js tests/purchasing.postgres.test.js tests/purchasingListCalculation.test.js tests/purchasingListApi.test.js tests/purchasingPersistence.test.js tests/purchasingLists.postgres.test.js tests/batchPurchases.test.js tests/batchPurchasePersistence.test.js tests/batchPurchases.postgres.test.js tests/weeklyPlans.test.js tests/catalogCorrections.test.js)
   client_tests+=(-- src/pages/Inventory.test.tsx src/components/inventory/InventoryGroupRemoval.test.tsx src/pages/InventoryGroupOperation.test.tsx src/pages/Purchasing.test.tsx src/pages/Receiving.test.tsx src/components/inventory/PurchasingReceiptProgress.test.tsx src/components/inventory/Purchasing.test.tsx src/components/meals/MealPlanner.test.tsx)
   browser_tests+=(-- tests/browser/inventory.spec.ts tests/browser/inventory-group-removal.spec.ts tests/browser/purchasing.spec.ts tests/browser/purchasing-list.spec.ts tests/browser/batch-receiving.spec.ts tests/browser/weekly-plans.spec.ts tests/browser/catalog-corrections.spec.ts)
+fi
+if "$access_only"; then
+  server_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/classAccountScope.postgres.test.js tests/authenticationPersistence.postgres.test.js)
+  client_tests+=(-- src/auth/AuthFlow.test.tsx src/auth/transport.test.ts src/components/AppShell.test.tsx src/pages/Accounts.test.tsx src/pages/Classroom.test.tsx)
+  browser_tests+=(-- tests/browser/classroom-access.spec.ts tests/browser/authentication.spec.ts tests/browser/remembered-login.spec.ts)
 fi
 
 current_step='Preflight'
@@ -150,7 +164,7 @@ else
       exit 1
     fi
   done
-  if ! "$inventory_only"; then
+  if ! "$inventory_only" && ! "$access_only"; then
     if ! command -v tesseract >/dev/null 2>&1 || ! tesseract --list-langs 2>/dev/null | grep -qx 'eng'; then
       printf '%s\n' 'Local recipe OCR is required by the photo-import checks. Run: bash scripts/setup-recipe-ocr.sh' >&2
       exit 1
@@ -178,6 +192,7 @@ run_in 'PostgreSQL tests (separate test database)' server env NODE_ENV=developme
 run_in 'Client component tests' client env NODE_ENV=test "${client_tests[@]}"
 run_in 'Client production build' client env NODE_ENV=production npm run build
 run_in 'Client lint' client npm run lint
+run_in 'Browser runner tests' client npm run test:browser:runner
 run_in 'Browser tests (isolated test servers)' client env NODE_ENV=test "${browser_tests[@]}"
 
 if "$dry_run"; then

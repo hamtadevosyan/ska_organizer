@@ -10,9 +10,10 @@ type Props = { onChangePassword: () => void; onSignOut: () => void; signingOut: 
 export default function Topbar({ onChangePassword, onSignOut, signingOut }: Props) {
   const { account } = useAuth();
   const { pathname } = useLocation();
-  const current = getNavigationItems(account?.role).find((item) => matchPath({ path: item.to, end: false }, pathname));
+  const current = [...getNavigationItems(account?.role)].sort((a, b) => b.to.length - a.to.length)
+    .find((item) => matchPath({ path: item.to, end: false }, pathname));
   return <header className="app-topbar print:hidden">
-    <Link className="mobile-brand-link" to="/dashboard" aria-label="Smart Kids Academy home"><AcademyBrand /></Link>
+    <Link className="mobile-brand-link" to={account?.role === 'viewer' ? '/classroom' : '/dashboard'} aria-label="Smart Kids Academy home"><AcademyBrand /></Link>
     <div className="app-breadcrumb"><House size={16} aria-hidden="true" /><span>Your workspace</span><span aria-hidden="true">/</span><strong>{current?.label || 'Home'}</strong></div>
     <div className="desktop-account">
       <AppHelpButton />

@@ -24,7 +24,7 @@ The screen shows 50 records per page. Printing and CSV include every matching re
 
 ## Access and exports
 
-Administrators, editors and viewers with an active session can read these operational reports. Configuration, JSON and CSV use the same session and access checks. Disabled/expired sessions cannot export; users who must change a temporary password must do that first. Responses are marked `Cache-Control: no-store`.
+Administrators and editors with an active session can read these operational reports. Class viewers cannot read reports or exports. Configuration, JSON and CSV use the same session and access checks. Disabled/expired sessions cannot export; users who must change a temporary password must do that first. Responses are marked `Cache-Control: no-store`.
 
 CSV uses UTF-8 with a BOM, CRLF line endings and quoted fields with doubled embedded quotation marks. Formula-like prefixes (including leading whitespace, controls and full-width characters) are prefixed with an apostrophe in both metadata and data. This protects the initial export; spreadsheet applications can alter escaping when saving and reopening or re-exporting a file. Treat those derived files separately. These are operational reports, not regulatory or accounting filings.
 
@@ -69,4 +69,4 @@ Manual checks:
 3. Review a historical room after archiving it or moving a child. Existing visits should remain attached to their original room.
 4. Receive purchases with a recorded cost, no cost, and a true zero cost. Filter their received dates and compare quantities and totals with purchase history. Renaming an item afterward must preserve its historical purchase details.
 5. Download CSV and use print preview. Confirm the active filters, labels and records are present, including rows beyond the screen's first page. Check that stock balances have not changed.
-6. Verify read-only access using a viewer account, then sign out and confirm that protected report requests require sign-in.
+6. Verify a Class viewer cannot open reports or exports, then sign out and confirm that protected report requests require sign-in.

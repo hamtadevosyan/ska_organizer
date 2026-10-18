@@ -57,7 +57,7 @@ test('primary navigation uses the existing routes and tracks the active page', (
   expect(nav.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current');
 });
 
-test.each(['admin', 'editor', 'viewer'] as const)('More and desktop preserve %s account visibility', (role) => {
+test.each(['admin', 'editor'] as const)('More and desktop preserve %s account visibility', (role) => {
   setup('/dashboard', role);
   const sidebar = within(screen.getByRole('navigation', { name: 'Desktop navigation' }));
   expect(Boolean(sidebar.queryByRole('link', { name: 'Accounts' }))).toBe(role === 'admin');
@@ -68,6 +68,28 @@ test.each(['admin', 'editor', 'viewer'] as const)('More and desktop preserve %s 
     'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Receipts', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
   ]);
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
+});
+
+test('Class viewer navigation contains only its four class pages and account actions', () => {
+  setup('/classroom/children', 'viewer');
+  for (const name of ['Desktop navigation', 'Mobile navigation']) {
+    const nav = within(screen.getByRole('navigation', { name }));
+    expect(nav.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual([
+      '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals',
+    ]);
+    expect(nav.getByRole('link', { name: 'Children' })).toHaveAttribute('aria-current', 'page');
+    expect(nav.getByRole('link', { name: 'My class' })).not.toHaveAttribute('aria-current');
+  }
+  for (const brand of screen.getAllByRole('link', { name: 'Smart Kids Academy home' })) expect(brand).toHaveAttribute('href', '/classroom');
+  expect(document.title).toBe('Smart Kids Academy · Class children');
+  expect(document.querySelector('.app-breadcrumb strong')).toHaveTextContent('Children');
+  fireEvent.click(screen.getByRole('button', { name: 'More' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'More' }));
+  expect(dialog.queryAllByRole('link')).toHaveLength(0);
+  expect(dialog.getByRole('button', { name: 'Change password' })).toBeEnabled();
+  expect(dialog.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+  expect(dialog.getByText('Class viewer')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'More' })).not.toHaveAttribute('aria-current');
 });
 
 test('More highlights secondary routes including filters and closes after navigation', () => {

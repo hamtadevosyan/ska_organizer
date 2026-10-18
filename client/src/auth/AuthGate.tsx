@@ -51,7 +51,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (!account && serverUnavailable) return <ServerConnection standalone retry={retry} />;
   const connectionNotice = serverUnavailable ? <ServerConnection retry={retry} /> :
     account && notice ? <p role="status" className="server-reconnected print:hidden">{notice}</p> : null;
-  if (account && !account.mustChangePassword) return <Fragment key={`${account.id}:${account.role}`}>
+  if (account && !account.mustChangePassword) return <Fragment key={JSON.stringify([account.id, account.role, account.roomId ?? null])}>
     {connectionNotice}{children}
   </Fragment>;
   return <>{connectionNotice}<main className="auth-screen">

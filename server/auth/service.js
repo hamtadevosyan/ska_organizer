@@ -10,7 +10,8 @@ const csrfToken = (token) => createHmac('sha256', token).update('skao-csrf-v1').
 const documentAccess = (account) => account.role === 'admin' ? 'edit' : 'none';
 const publicAccount = (account) => {
   const { id, username, displayName, role, disabled, mustChangePassword, createdAt, updatedAt } = account;
-  return { id, username, displayName, role, disabled, mustChangePassword, documentAccess: documentAccess(account), createdAt, updatedAt };
+  return { id, username, displayName, role, roomId: role === 'viewer' ? account.roomId ?? null : null,
+    disabled, mustChangePassword, documentAccess: documentAccess(account), createdAt, updatedAt };
 };
 const audit = (actor, action, entityId = null) => db.appendAudit({
   id: randomUUID(), actorId: actor?.id || null, actorUsername: actor?.username || 'system',
@@ -22,13 +23,24 @@ function accountValues(input) {
   const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : '';
   if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw problem('Username must be 3–64 letters, numbers, periods, underscores or hyphens.');
   if (!displayName || displayName.length > 100) throw problem('Display name must be between 1 and 100 characters.');
-  if (!['admin', 'editor', 'viewer'].includes(input.role)) throw problem('Choose administrator, editor or read-only access.');
+  if (!['admin', 'editor', 'viewer'].includes(input.role)) throw problem('Choose administrator, editor or Class viewer access.');
   return { username, displayName, role: input.role };
 }
 function documentAccessValue(value, role) {
   if (!['none', 'view', 'edit'].includes(value)) throw problem('Choose a valid document access value.');
   if (role !== 'admin' && value !== 'none') throw problem('Child documents and registration forms are available only to administrators.');
   return 'none'; // Administrator access is inherent in the role, never a transferable grant.
+}
+async function classroomAssignment(input, role, previous = null) {
+  const roomId = input.roomId === undefined ? (role === 'viewer' ? previous : null) : input.roomId;
+  if (roomId !== null && (typeof roomId !== 'string' || !roomId.trim() || roomId !== roomId.trim() || roomId.length > 255 || role !== 'viewer')) {
+    throw problem('Choose a valid class assignment for a Class viewer account.', 400, 'CLASS_ASSIGNMENT_INVALID');
+  }
+  if (roomId !== null) {
+    const room = await db.getRoomById(roomId);
+    if (!room || !room.active) throw problem('Choose an active class, or leave the account unassigned.', 409, 'CLASS_ASSIGNMENT_INVALID');
+  }
+  return roomId;
 }
 async function issueSession(account, remembered = false) {
   const absoluteMs = remembered ? config.rememberAbsoluteMs : config.absoluteMs;
@@ -123,16 +135,17 @@ async function createAccount(token, input) {
   const values = accountValues(input);
   values.documentAccess = documentAccessValue(input.documentAccess === undefined ? 'none' : input.documentAccess, values.role);
   const passwordHash = await hashPassword(input.password);
-  return db.withAuthLock(async () => {
+  return db.withAuthLock(() => db.withRoomLock(async () => {
     const actor = await administrator(token);
+    values.roomId = await classroomAssignment(input, values.role);
     if (await db.findAccount(values.username)) throw problem('That username is already in use.', 409);
     const account = await db.createAccount({ id: randomUUID(), ...values, passwordHash, disabled: false, mustChangePassword: true });
     await audit(actor, 'account.create', account.id);
     return publicAccount(account);
-  });
+  }));
 }
 async function updateAccount(token, id, input) {
-  return db.withAuthLock(async () => {
+  return db.withAuthLock(() => db.withRoomLock(async () => {
     const actor = await administrator(token);
     const account = await db.getAccount(id);
     if (!account) throw problem('Account not found.', 404);
@@ -140,16 +153,19 @@ async function updateAccount(token, id, input) {
     const values = accountValues({ username: account.username, displayName: input.displayName, role: input.role });
     const previousAccess = documentAccess(account);
     values.documentAccess = documentAccessValue(input.documentAccess === undefined ? 'none' : input.documentAccess, values.role);
+    values.roomId = await classroomAssignment(input, values.role, account.roomId ?? null);
     if (id === actor.id && (input.disabled || values.role !== 'admin')) throw problem('Use another administrator to change your own access.', 409);
     const removesAdmin = account.role === 'admin' && !account.disabled && (input.disabled || values.role !== 'admin');
     if (removesAdmin && (await db.listAccounts()).filter((item) => item.role === 'admin' && !item.disabled).length <= 1) {
       throw problem('At least one enabled administrator is required.', 409);
     }
-    const saved = await db.updateAccount(id, { displayName: values.displayName, role: values.role, disabled: input.disabled, documentAccess: values.documentAccess });
-    if (account.role !== saved.role || account.disabled !== saved.disabled || previousAccess !== documentAccess(saved)) await db.revokeSessions(id);
+    const saved = await db.updateAccount(id, { displayName: values.displayName, role: values.role, roomId: values.roomId,
+      disabled: input.disabled, documentAccess: values.documentAccess });
+    if (account.role !== saved.role || account.disabled !== saved.disabled || (account.roomId ?? null) !== saved.roomId ||
+        previousAccess !== documentAccess(saved)) await db.revokeSessions(id);
     await audit(actor, 'account.update_access', id);
     return publicAccount(saved);
-  });
+  }));
 }
 async function resetPassword(token, id, password) {
   await administrator(token);

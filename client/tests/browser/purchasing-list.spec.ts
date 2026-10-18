@@ -184,7 +184,7 @@ test('a save conflict preserves the local buying quantity until the saved list i
   await expect(quantity).toHaveValue('11');
 });
 
-test('a viewer can inspect, preview and export a purchasing list but cannot change its reviewed choices', async ({ page, browser }) => {
+test('a class viewer cannot inspect, preview, export or change a purchasing list', async ({ page, browser }) => {
   const http = await authenticatedApi(page);
   const suffix = randomUUID().slice(0, 8);
   const item = await stock(http, 'Purchasing viewer ' + suffix, 'Supply cabinet', '0');
@@ -204,18 +204,16 @@ test('a viewer can inspect, preview and export a purchasing list but cannot chan
       data: { currentPassword: temporaryPassword, password } });
     expect(changed.status()).toBe(200);
     const headers = { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken };
-    await openWeek(viewer, weeks.viewer);
-    await expect(viewer.getByRole('article', { name: label(item), exact: true })).toBeVisible();
+    await viewer.goto('/purchasing?weekStart=' + weeks.viewer);
+    await expect(viewer).toHaveURL(/\/classroom$/);
+    await expect(viewer.getByRole('article', { name: label(item), exact: true })).toHaveCount(0);
     await expect(viewer.getByRole('button', { name: 'Save purchasing list', exact: true })).toHaveCount(0);
-    await expect(viewer.getByLabel('Buy quantity for ' + label(item) + ' (count)', { exact: true })).toBeDisabled();
-    await expect(viewer.getByRole('checkbox', { name: 'Buy ' + label(item), exact: true })).toBeDisabled();
-    await expect(viewer.getByRole('checkbox', { name: 'Checked off ' + label(item), exact: true })).toBeDisabled();
-    const exported = viewer.waitForEvent('download');
-    await viewer.getByRole('button', { name: 'Export selected CSV', exact: true }).click();
-    expect(await readFile((await (await exported).path())!, 'utf8')).toContain(item.name);
+    await expect(viewer.getByRole('button', { name: 'Export selected CSV', exact: true })).toHaveCount(0);
+    expect((await viewer.request.get(`${api}/purchasing/${weeks.viewer}`, { headers })).status()).toBe(403);
+    expect((await viewer.request.get(api + '/purchasing/options', { headers })).status()).toBe(403);
     expect((await viewer.request.post(`${api}/purchasing/${weeks.viewer}/preview`, { headers, data: {
       includeMeals: false, roomIds: [], lowStockTargets: [{ itemId: item.id, targetQuantity: '12' }],
-    } })).status()).toBe(200);
+    } })).status()).toBe(403);
     expect((await viewer.request.put(`${api}/purchasing/${weeks.viewer}`, { headers, data: {
       version: saved.version, choices: choices(saved).map(choice => ({ ...choice, checked: true })),
     } })).status()).toBe(403);

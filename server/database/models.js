@@ -267,6 +267,7 @@ module.exports = (sequelize) => {
     displayName: { type: DataTypes.STRING(100), allowNull: false },
     passwordHash: { type: DataTypes.TEXT, allowNull: false },
     role: { type: DataTypes.STRING(16), allowNull: false },
+    roomId: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
     documentAccess: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'none' },
     disabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },

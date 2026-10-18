@@ -159,7 +159,7 @@ test('configuration, JSON and exports all require the same active operational se
   const id = request.credentials().account.id;
   for (const role of ['admin', 'editor', 'viewer']) {
     await db.updateAccount(id, { role });
-    for (const path of paths) expect((await get(request(app), path)).status).toBe(200);
+    for (const path of paths) expect((await get(request(app), path)).status).toBe(role === 'viewer' ? 403 : 200);
   }
   await db.updateAccount(id, { mustChangePassword: true });
   for (const path of paths) expect((await get(request(app), path)).status).toBe(403);

@@ -7,7 +7,7 @@ The owner approved the Bloom v5 direction on September 24, 2026 (America/Los_Ang
 - The academy crest, local Plus Jakarta Sans font, white sidebar, colorful icons, four Home action cards, and 3D learning illustration.
 - Home uses the existing dashboard API: current attendance/enrollment/staff counts, stock counts, saved meals, every room's activities, and recent changes. Loading/errors hide previous results. Partial failures still have individual recovery actions; uncertain attendance counts still direct staff to review.
 - Current counts remain separate from the selected plan date. No sample schedules, children, dates, or room totals were copied from the prototype into operational screens. The learning spotlight is labeled as inspiration and opens the real planner.
-- Find a child opens Attendance with search focused. Child cards show the available arrival/departure action; visit details and corrections expand below. Older, incomplete, or multiple open visits remain expanded. Historical dates and viewers do not get live attendance controls. Retry IDs, request locks, record versions, correction history, and facility-time behavior are preserved.
+- Find a child opens Attendance with search focused. Child cards show the available arrival/departure action; visit details and corrections expand below. Older, incomplete, or multiple open visits remain expanded. Historical dates do not get live attendance controls. Class viewers cannot access attendance pages or APIs. Retry IDs, request locks, record versions, correction history, and facility-time behavior are preserved.
 - The phone dock contains Home, Attendance, Activities, Meals, and More. More retains all other modules and account actions. The desktop and phone both call the dashboard Home; routes and existing bookmarks are unchanged.
 - Sign-in uses the academy crest and the shared primary button. The inactive language selector was removed from the header because it did not change translations. Existing authentication and server permissions remain unchanged.
 
@@ -31,7 +31,7 @@ After applying this commit and rebuilding the installed client:
 
 1. Sign in with a test account. Check the academy logo and Home, then open every phone dock/More destination. On a narrow phone, the dock and child actions should fit without page-wide horizontal scrolling.
 2. Open Find a child, search, check a synthetic child in/out, and refresh. Expand Visit details, inspect history, and make a correction only to a synthetic record.
-3. Check a viewer and an older attendance date. Neither should offer live check-in/out controls.
+3. Check an older attendance date has no live check-in/out controls. A Class viewer must be redirected to the class area and cannot access attendance APIs.
 4. Change Plan date on Home. Saved meals and activities should change; current counts stay current. Check an empty date and an unavailable connection.
 5. Use keyboard navigation, browser Back, portrait/landscape, and reduced-motion settings. Check the bottom of long pages and account dialogs on target tablets/phones.
 

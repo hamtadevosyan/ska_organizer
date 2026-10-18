@@ -51,7 +51,7 @@ test.each(['editor', 'viewer'].flatMap(role => [undefined, 'none', 'view', 'edit
     const user = await actor(role, access);
     if (access !== undefined) expect((await db.getAccount(user.account.id)).documentAccess).toBe(access);
     expect(user.account.documentAccess).toBe('none');
-    expect((await api(user, 'get', '/api/children')).status).toBe(200);
+    expect((await api(user, 'get', '/api/children')).status).toBe(role === 'viewer' ? 403 : 200);
     expect((await documents(user, 'get', '/read')).status).toBe(403);
     expect((await documents(user, 'post', '/write')).status).toBe(403);
     expect((await documents(user, 'get', '/stale')).status).toBe(403);

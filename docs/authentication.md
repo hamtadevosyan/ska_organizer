@@ -54,11 +54,11 @@ For automation, the bootstrap command also accepts `--password-stdin`, with the 
 |---|---|---|
 | Administrator | Read and write | Create accounts, change access, disable/re-enable, reset passwords, read audit |
 | Editor | Read and write | No access |
-| Read only | View, calculate draft shopping quantities, print | No access |
+| Class viewer (`viewer`) | Assigned active class only: basic children names, saved activities, shared academy meal names | No access |
 
-Read-only accounts cannot save a menu, edit recipes, change stock, record attendance or mutate other operational data. The API enforces this even for direct requests. The Meals screen disables Save Menu and Meal Setup for these accounts. Draft calculations do not write a saved menu.
+Class viewers use a dedicated class area. Every legacy operational route is denied, including draft generation and previews. An unassigned or unavailable class shows no records. The server reads the live account and class for every class request; callers cannot choose a different class. See [Class access](classroom-access.md).
 
-Administrators open **Accounts** in the sidebar. Creating or resetting another account requires a temporary password, which is not shown again. Give it directly to the authorized person; they must choose a different password on first sign-in. Resetting a password revokes all existing sessions. Disabling an account revokes all sessions, and re-enabling does not restore them. Role changes also revoke sessions. Accounts are retained for audit attribution rather than deleted.
+Administrators open **Accounts** in the sidebar. Creating or resetting another account requires a temporary password, which is not shown again. Give it directly to the authorized person; they must choose a different password on first sign-in. Resetting a password revokes all existing sessions. Disabling an account revokes all sessions, and re-enabling does not restore them. Role and assigned-class changes also revoke every session for that account. Accounts are retained for audit attribution rather than deleted.
 
 Use **Change password** in the header for your own password. It requires the current password, revokes your other sessions and rotates the current session. Administrators cannot disable themselves or remove their own administrator role. At least one enabled administrator must remain. Maintain a second explicitly authorized administrator if recovery is needed; this phase does not include email recovery or an unauthenticated recovery endpoint.
 
@@ -104,11 +104,12 @@ All responses containing authentication state have `Cache-Control: no-store`. No
 | `POST /api/auth/logout` | Cookie + CSRF + allowed Origin; revokes session; 204 |
 | `POST /api/auth/password` | Cookie + CSRF + allowed Origin; `{currentPassword,password}`; rotates session |
 | `GET /api/admin/accounts` | Administrator; sanitized account list |
-| `POST /api/admin/accounts` | Administrator + CSRF; `{username,displayName,role,password}`; 201 |
-| `PUT /api/admin/accounts/:id` | Administrator + CSRF; `{displayName,role,disabled}` |
+| `POST /api/admin/accounts` | Administrator + CSRF; `{username,displayName,role,password,roomId?}`; 201 |
+| `PUT /api/admin/accounts/:id` | Administrator + CSRF; `{displayName,role,disabled,roomId?}` |
 | `POST /api/admin/accounts/:id/password` | Administrator + CSRF; `{password}`; 204 |
 | `GET /api/admin/audit?limit=25&offset=0` | Administrator; newest events first; maximum 100 per page |
-| All other `/api/*` endpoints | Authenticated account that has changed its temporary password; writes require editor or administrator |
+| `/api/classroom` and its child routes | Class viewer, assigned active class; saved read-only projections |
+| Other operational `/api/*` endpoints | Editor or administrator who has changed their temporary password |
 
 Errors use `{error:{message,code}}` where applicable: HTTP 401 for missing/expired sessions, HTTP 403 for insufficient permission or invalid Origin/CSRF, HTTP 429 for sign-in limits. A temporary-password account receives `PASSWORD_CHANGE_REQUIRED` until its password is changed. Domain validation errors retain their existing field details. Internal failures return a generic message without database or credential details.
 
@@ -170,3 +171,7 @@ Use a synthetic account on the trusted LAN. Browser automation does not replace 
 7. Try reopening while the Pi is unavailable: show the connection screen; do not bypass authentication. Restore the connection and verify the live session or sign-in screen, as appropriate.
 
 Automated checks: `npm test -- --silent` in server, `npm run test:postgres -- --silent` against the separate test database, and `npm run test:browser -- remembered-login.spec.ts` in client. The browser scenario uses a temporary real Chromium profile, closes/reopens it and removes it afterward. It contains only synthetic account data and must never be reused with real accounts. PostgreSQL scenarios cover additive migration, reconnect, a new Node process, and revocation across restarts.
+
+## Class account migration (SKAO-111)
+
+Migration `024-classroom-account-scope` adds nullable `Accounts.roomId` with a room foreign key and a role constraint. It revokes existing Class viewer sessions once; the next live authorization check signs them out and clears the old protected view. Administrator and editor sessions, accounts, passwords and operational records are preserved. Existing viewers have no inferred class. An administrator must assign an active class in Accounts before they can see records. Repeating the migration does not revoke newly issued sessions. Class changes revoke ordinary and remembered sessions.

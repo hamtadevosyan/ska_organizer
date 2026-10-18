@@ -118,7 +118,7 @@ test('all rooms require sign-in, only administrators manage rooms, and viewers c
   expect((await request(app).put('/api/rooms/' + target.id).send({ active: false })).status).toBe(403);
   expect((await request(app).put('/api/children/' + person.id + '/room').send({ roomId: target.id })).status).toBe(200);
   await db.updateAccount(account.id, { role: 'viewer' });
-  expect((await request(app).get('/api/rooms')).status).toBe(200);
+  expect((await request(app).get('/api/rooms')).status).toBe(403);
   expect((await request(app).put('/api/children/' + person.id + '/room').send({ roomId: null })).status).toBe(403);
 });
 

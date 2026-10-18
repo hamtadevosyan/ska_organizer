@@ -82,17 +82,17 @@ test('temporary passwords must be changed and rotation invalidates other session
   expect((await api({ cookie: changed.headers['set-cookie'][0].split(';')[0], csrf: changed.body.csrfToken }, 'get', '/api/meals')).status).toBe(200);
 });
 
-test('read-only accounts can view data and calculate drafts but cannot mutate or administer', async () => {
+test('class viewers cannot read global data, calculate drafts, mutate or administer', async () => {
   const viewer = await ready('viewer');
-  expect((await api(viewer, 'get', '/api/meals')).status).toBe(200);
+  expect((await api(viewer, 'get', '/api/meals')).status).toBe(403);
   const meal = (await api(admin(), 'post', '/api/meals', { name: 'Viewer breakfast', type: 'breakfast' })).body.data;
   const ingredient = (await api(admin(), 'post', '/api/ingredients', { name: 'Viewer oats', unit: 'g' })).body.data;
   await api(admin(), 'post', `/api/meals/${meal.id}/ingredients`, { ingredientId: ingredient.id, quantity: 30 });
   const preview = await api(viewer, 'post', '/api/shopping/generate', {
     week: [{ day: 'Monday', menu: { breakfast: meal } }], childrenCount: 1, staffCount: 0,
   });
-  expect(preview.status).toBe(200);
-  expect(preview.body.data.items[0].quantity).toBe(30);
+  expect(preview.status).toBe(403);
+  expect(preview.body.error.code).toBe('CLASSROOM_ONLY');
   expect(await db.getConfirmedMenu()).toBeNull();
   for (const [method, path] of [['post','/api/meals'], ['put','/api/menu/plans/2026-09-07'], ['delete','/api/ingredients/missing'],
     ['post','/api/shelf/check'], ['post','/api/attendance/checkin'], ['post','/api/children'], ['post','/api/activity'], ['post','/api/schedule/week']]) {

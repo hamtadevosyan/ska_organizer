@@ -19,7 +19,7 @@ This is the reusable command for future updates. It uses the database settings f
 | 6 | Run the PostgreSQL suites using `TEST_DATABASE_URL` |
 | 7 | Run all client component tests |
 | 8 | Run the client production build and lint |
-| 9 | Run browser tests with their isolated mock backend and Vite test server |
+| 9 | Check browser-runner selection, then run browser tests with isolated mock backend and Vite test servers |
 
 Archive verification checks readability, not a full restore. Each run creates a uniquely named backup and prints its location. Previous backups are retained, including when a migration or test fails.
 
@@ -34,6 +34,18 @@ bash scripts/check-update.sh --inventory
 ```
 
 This runs the same backup and migration steps, but limits API, PostgreSQL, component and browser suites to inventory, purchasing and the affected weekly-planner/catalog flows. Build and lint still cover the client. Run the default full command before merging.
+
+## Focused class access checks
+
+For SKAO-111 account assignments, session revocation and class isolation:
+
+```bash
+bash scripts/check-update.sh --access
+```
+
+This retains the normal backup and migration steps and runs the affected authentication, class API, PostgreSQL migration, client and browser suites. Build and lint still cover the client. `--access` and `--inventory` are mutually exclusive. Run the default full command before merging. Focused access checks do not require recipe OCR.
+
+Browser tests are selected from Playwright's actual discovery output and run in fresh fixture groups so independent sign-in scenarios do not share a single IP attempt budget. Production sign-in limits remain unchanged. A failing group stops the run; authentication failures are not retried automatically.
 
 ## Preview or choose a backup directory
 

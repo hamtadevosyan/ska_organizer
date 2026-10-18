@@ -23,6 +23,7 @@ const migrations = [
   { name: '021-purchasing-lists', ...require('./migrations/021-purchasing-lists') },
   { name: '022-purchase-batches', ...require('./migrations/022-purchase-batches') },
   { name: '023-inventory-group-lifecycle', ...require('./migrations/023-inventory-group-lifecycle') },
+  { name: '024-classroom-account-scope', ...require('./migrations/024-classroom-account-scope') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

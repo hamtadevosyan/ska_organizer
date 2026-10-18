@@ -36,10 +36,10 @@ records are displayed.
 
 ## Access and data
 
-The new route stays behind the existing application sign-in gate. Administrators,
-editors and read-only accounts can review permitted rooms and child profiles.
-The APIs enforce the existing authenticated session and write roles. Read-only
-accounts receive no editing controls or additional permissions.
+The route stays behind the application sign-in gate. Administrators and editors
+can review rooms and child profiles. Class viewers cannot use this route or its
+global APIs; their class area shows only basic names of active children assigned
+to their active class. The APIs enforce these boundaries on every request.
 
 The page reuses `GET /api/rooms/:id`, the filtered child-roster API and the existing
 profile API. API responses retain `no-store` protections. Operational records,
@@ -64,5 +64,5 @@ Use the shared [update checks](update-checks.md), then verify synthetic records
 on desktop and iPhone/iPad: open empty/populated/archived rooms, search preferred
 names, include inactive records, view distinct same-name profiles and return,
 transfer/end/reactivate enrollment and refresh both affected room rosters. Verify
-a read-only account can view the flow and cannot edit records. Restart the native
+a Class viewer is redirected to its class area and cannot read global roster/profile APIs. Restart the native
 backend and reopen the room URL to check saved assignments and counts.

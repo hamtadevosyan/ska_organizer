@@ -12,8 +12,8 @@ are Secure and SameSite=Strict. Use `GET /api/auth/session` to read the current
 account/token. `POST /api/auth/logout` and `POST /api/auth/password` require the
 session, exact allowed `Origin`, JSON content type and `X-CSRF-Token`.
 
-Operational writes require the same session/CSRF/Origin checks. Viewer accounts
-cannot mutate operational data; account, room and staff administration have
+Operational writes require the same session/CSRF/Origin checks. Class viewer accounts
+can use only the dedicated assigned-class projections; legacy operational reads, previews and generation are also denied. Account, room and staff administration have
 additional role restrictions. The authentication guide is the maintained source
 for these rules. Do not put a password, session cookie or CSRF token in a URL.
 
@@ -21,6 +21,7 @@ for these rules. Do not put a password, session cookie or CSRF token in a URL.
 |---|---|---|
 | Health | `GET /api/health`, `GET /api/ready` | Process/storage status only; no account or record data |
 | Accounts/audit | `/api/auth/*`, `/api/admin/accounts`, `/api/admin/audit` | [Authentication](authentication.md) |
+| Class viewer | `/api/classroom`, `/api/classroom/children`, `/api/classroom/activities`, `/api/classroom/meals` | [Class access](classroom-access.md) |
 | Dashboard | `GET /api/dashboard` | [Dashboard](dashboard.md) |
 | Rooms | `/api/rooms`, `/api/rooms/:id` | [Rooms and classes](rooms-and-classes.md) |
 | Children | `/api/children`, `/api/children/:id/profile` | [Child roster](child-roster.md) |

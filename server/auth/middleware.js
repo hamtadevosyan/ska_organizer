@@ -40,8 +40,11 @@ function isOperationalWrite(req) {
 }
 async function requireOperationalAccess(req, res, next) {
   try {
+    // Authorization must use the current account, including a concurrently
+    // changed role. Class viewers use only the dedicated bounded projections.
+    req.account = await auth.sessionAccount(req.sessionToken, { touch: true });
+    if (req.account.role === 'viewer') throw auth.problem('Use your assigned class to view information.', 403, 'CLASSROOM_ONLY');
     auth.operationalPermission(req.account, isOperationalWrite(req));
-    await auth.sessionAccount(req.sessionToken, { touch: true });
     next();
   } catch (error) { next(error); }
 }

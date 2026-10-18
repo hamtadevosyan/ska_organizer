@@ -1,12 +1,12 @@
 # Staff directory — SKAO-24
 
-Staff records contain a person's name, job role, active status and optional room assignment. Open **Staff** from the sidebar, or **More → Staff** on a phone. Administrators can add, edit, deactivate and reactivate records. Editors and viewers can read and filter the directory.
+Staff records contain a person's name, job role, active status and optional room assignment. Open **Staff** from the sidebar, or **More → Staff** on a phone. Administrators can add, edit, deactivate and reactivate records. Editors can read and filter the directory. Class viewer accounts cannot access staff records.
 
 ## Using the directory
 
 - Select **Add staff**, enter **Full name** and **Job role**, optionally select a room, and select **Save staff**. Names and job roles must be 1–100 characters after trimming. A job role is free text such as Teacher, Cook or Director.
 - The default view shows active staff. Choose **Inactive** or **All statuses** to find deactivated records. Search by name and select **Search**; combine it with the room and status filters. **Unassigned** finds people without a room. Reset filters returns to the active directory.
-- Select **View details** on any staff record to open its name, job role, assigned room and status. This works for administrators, editors and viewers, including on phones. Closing these details preserves any open staff edit or employee document draft. The details window does not contain private personnel documents, certificate numbers or notes.
+- Select **View details** on any staff record to open its name, job role, assigned room and status. This works for administrators and editors, including on phones. Closing these details preserves any open staff edit or employee document draft. The details window does not contain private personnel documents, certificate numbers or notes.
 - Administrators can select **Add employee requirement** at the top of Staff to add a required training or certificate by name. A blank template file is optional for employee requirements. Administrators upload and review each employee's completed evidence through **Documents & training**; editors receive the permitted renewal summary, and viewers do not receive employee document or compliance information.
 - Select **Edit** to change a record. Select **Deactivate** and confirm to remove someone from the active total. Their record, ID and existing room reference remain available. To reactivate, edit the inactive record and check **Active staff member**.
 - Newly assigned rooms must be active and configured. Existing assignments to archived rooms remain visible and editable. To reactivate an inactive person assigned to an archived room, select an active room or Unassigned.
@@ -75,4 +75,4 @@ Regression coverage is provided in `server/tests/staff.test.js`, `server/tests/s
 2. Search and filter, deactivate, then reactivate the person. Verify the facility-wide active count, including across pages, and the Dashboard Active Staff count. Meal-plan headcounts and login accounts must stay unchanged.
 3. Archive the assigned room. Existing details should remain editable, but new assignments and reactivation require an active room or Unassigned.
 4. Save conflicting edits from two tabs; verify the stale form retains its values until **Reload staff record** is confirmed.
-5. On a phone, open **More → Staff**, then **View details** for a synthetic employee. Verify editors and viewers can browse basic staff information but cannot add, edit or deactivate staff. A viewer must not have **Documents & training** or employee requirement management controls. Deactivate synthetic staff when finished.
+5. On a phone, open **More → Staff**, then **View details** for a synthetic employee. Verify editors can browse basic staff information but cannot add, edit or deactivate staff. Class viewers must be redirected to their class area and cannot read the staff directory or employee requirements. Deactivate synthetic staff when finished.

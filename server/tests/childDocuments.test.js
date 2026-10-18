@@ -338,7 +338,7 @@ test.each(['editor', 'viewer'])('%s cannot read private metadata or bytes with l
       expect(denied.status).toBe(403);
       expect(JSON.stringify(denied.body)).not.toContain(metadata.title);
     }
-    expect((await request(app).get('/api/children/' + savedChild.id + '/profile')).status).toBe(200);
+    expect((await request(app).get('/api/children/' + savedChild.id + '/profile')).status).toBe(role === 'viewer' ? 403 : 200);
     expect((await request(app).post(url(savedChild.id)).send(upload())).status).toBe(403);
     expect((await request(app).post(url(savedChild.id, original.document.id) + '/revisions').send({ requestId: randomUUID(), version: 1, file: file('png') })).status).toBe(403);
     expect((await request(app).put(url(savedChild.id, original.document.id)).send({ version: 1, ...metadata })).status).toBe(403);

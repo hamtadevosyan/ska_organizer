@@ -92,12 +92,12 @@ test.each(['appendInventoryMovement', 'createPurchaseReceipt', 'appendAudit'])('
   expect(await db.countPurchaseReceipts()).toBe(1);
 });
 
-test('editors receive purchases; viewers read history but cannot receive; authentication remains required', async () => {
+test('editors receive purchases; class viewers cannot read history or receive; authentication remains required', async () => {
   const item = await stock();
   await db.updateAccount(request.credentials().account.id, { role: 'editor' });
   expect((await receive(item, receiptBody(item))).status).toBe(201);
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  expect((await purchases()).status).toBe(200);
+  expect((await purchases()).status).toBe(403);
   expect((await receive(item, receiptBody(item))).status).toBe(403);
   expect((await anonymous(app).get('/api/inventory/purchases')).status).toBe(401);
   // A viewer is rejected before routing; an administrator reaches the missing route.

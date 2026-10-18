@@ -254,12 +254,12 @@ test.each(['stale-version', 'unselected', 'wrong-destination', 'wrong-unit', 'mi
   expect(await db.countPurchaseBatches()).toBe(0);
 });
 
-test('administrators and editors receive; viewers inspect receipts and progress but cannot preview or commit', async () => {
+test('administrators and editors receive; class viewers cannot inspect, preview or commit receipts', async () => {
   await db.updateAccount(request.credentials().account.id, { role: 'editor' });
   const { batch } = await receive(payload());
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  expect(await api('get', base + '/' + batch.id)).toEqual(batch);
-  expect((await request(app).get(base)).status).toBe(200);
+  expect((await request(app).get(base + '/' + batch.id)).status).toBe(403);
+  expect((await request(app).get(base)).status).toBe(403);
   expect((await request(app).post(base + '/preview').send(payload())).status).toBe(403);
   expect((await request(app).post(base).send(payload())).status).toBe(403);
   expect((await anonymous(app).get(base)).status).toBe(401);

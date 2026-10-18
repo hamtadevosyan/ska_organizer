@@ -604,7 +604,7 @@ Object.assign(module.exports, {
   listAccounts: async () => copy(mock.accounts).sort((a, b) => a.username.localeCompare(b.username)),
   getAccount: async (id) => find('accounts', id),
   findAccount: async (username) => copy(mock.accounts.find((item) => item.username === username) || null),
-  createAccount: async (values) => insert('accounts', { createdAt: mock.nowIso(), updatedAt: mock.nowIso(), ...values }),
+  createAccount: async (values) => insert('accounts', { createdAt: mock.nowIso(), updatedAt: mock.nowIso(), roomId: null, ...values }),
   updateAccount: async (id, values) => edit('accounts', id, { ...values, updatedAt: mock.nowIso() }),
   createSession: async (values) => insert('sessions', values),
   getSession: async (id) => find('sessions', id),

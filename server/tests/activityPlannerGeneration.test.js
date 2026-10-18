@@ -220,6 +220,6 @@ test('archived or unconfigured rooms reject generation, editors can generate and
   expect((await generate(payload(target))).status).toBe(200);
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
   expect((await generate(payload(target))).status).toBe(403);
-  expect((await request(app).post('/api/schedule/plan/preview').send({ roomId: target.id, weekStart, version: 0, entries: [] })).status).toBe(200);
+  expect((await request(app).post('/api/schedule/plan/preview').send({ roomId: target.id, weekStart, version: 0, entries: [] })).status).toBe(403);
   expect((await anonymous(app).post('/api/schedule/plan/generate').set('Origin', request.origin).send(payload(target))).status).toBe(401);
 });

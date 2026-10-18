@@ -271,15 +271,22 @@ test('teachers and read-only accounts have no paperwork UI and direct requests a
       const paperworkRequests: string[] = [];
       other.on('request', request => { if (/\/api\/(?:registration-forms|children\/[^/]+\/documents)/.test(new URL(request.url()).pathname)) paperworkRequests.push(request.url()); });
       await other.goto('/children');
-      await other.getByRole('searchbox', { name: 'Search children', exact: true }).fill('Synthetic Permission ' + suffix);
-      await other.getByRole('button', { name: 'View Synthetic Permission ' + suffix, exact: true }).click();
-      await expect(other.getByRole('region', { name: 'Child profile', exact: true })).toContainText('2023-01-01');
+      if (role === 'viewer') {
+        await expect(other).toHaveURL(/\/classroom$/);
+        await expect(other.getByRole('searchbox', { name: 'Search children', exact: true })).toHaveCount(0);
+        expect((await other.request.get(api + '/children/' + child.id + '/profile')).status()).toBe(403);
+      } else {
+        await other.getByRole('searchbox', { name: 'Search children', exact: true }).fill('Synthetic Permission ' + suffix);
+        await other.getByRole('button', { name: 'View Synthetic Permission ' + suffix, exact: true }).click();
+        await expect(other.getByRole('region', { name: 'Child profile', exact: true })).toContainText('2023-01-01');
+      }
       await expect(other.getByRole('region', { name: 'Documents', exact: true })).toHaveCount(0);
       await expect(other.getByRole('region', { name: 'Registration checklist', exact: true })).toHaveCount(0);
       await expect(other.getByText('Synthetic restricted paperwork', { exact: true })).toHaveCount(0);
       expect(paperworkRequests).toEqual([]);
       await other.goto('/registration-forms');
-      await expect(other.getByRole('alert')).toContainText('Administrator access');
+      if (role === 'viewer') await expect(other).toHaveURL(/\/classroom$/);
+      else await expect(other.getByRole('alert')).toContainText('Administrator access');
       expect(paperworkRequests).toEqual([]);
       expect((await other.request.get(base)).status()).toBe(403);
       expect((await other.request.get(base + '/checklist')).status()).toBe(403);

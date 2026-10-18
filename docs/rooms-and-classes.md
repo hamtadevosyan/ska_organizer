@@ -3,7 +3,7 @@
 ## What changed
 
 - The Rooms & Classes page at `/rooms` lists persisted rooms, their age ranges, configured capacities, active status and assigned-child counts.
-- Administrators create, edit, archive and reactivate rooms. Editors can assign existing children; read-only accounts can view rooms and counts.
+- Administrators create, edit, archive and reactivate rooms. Editors can assign existing children. Class viewers cannot access global rooms or counts; their class area shows only their assigned active class.
 - Ages are entered as whole months, from 0 to 216. Maximum age must be greater than minimum age. Capacity is a positive integer. These capacities are operational settings, not a determination of licensing compliance.
 - An assignment that would exceed capacity returns a warning and requires explicit acknowledgement before it is saved. Transfers and removal of assignments update the counts. After SKAO-22, counts include all actively enrolled assigned children, regardless of pagination. Ending enrollment frees the place while preserving the room reference.
 - Archived rooms remain available for history. Existing child assignments, attendance, activities and schedule records remain attached. New child assignments, new activity room assignments, check-ins and schedule writes to archived rooms are rejected.
@@ -81,7 +81,7 @@ Use the shared [backup, migration and automated checks procedure](update-checks.
 2. Assign two active children, acknowledging the capacity warning for the second. Transfer or unassign one and check both room counts.
 3. Select the room in Activity Planner and the schedule. Archive it and confirm existing references remain, while new assignments are rejected. Reactivate it.
 4. Refresh Chrome and restart the backend; room details and assignments should persist.
-5. Verify administrators can manage rooms, editors can assign children, and read-only accounts see no write controls.
+5. Verify administrators can manage rooms, editors can assign children, and Class viewers cannot access global room pages or APIs.
 
 ## Strict age ranges and correcting older rooms (SKAO-43)
 

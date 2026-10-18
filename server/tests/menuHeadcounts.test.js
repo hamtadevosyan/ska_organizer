@@ -38,12 +38,13 @@ test('an empty roster returns zero totals and blocks omitted-count calculations 
   expect(manualImport.body.data).toMatchObject({ childrenCount: 2, staffCount: 0, items: [{ quantity: 2 }] });
 });
 
-test.each(['admin', 'editor', 'viewer'])('%s can read only aggregate meal roster totals', async role => {
+test.each(['admin', 'editor', 'viewer'])('%s receives only its permitted meal roster response', async role => {
   await addMealRoster(3, 2);
   await db.updateAccount(request.credentials().account.id, { role });
   const response = await request(app).get('/api/menu/headcounts');
-  expect(response.status).toBe(200);
-  expect(response.body).toEqual({ data: { childrenCount: 3, staffCount: 2 } });
+  expect(response.status).toBe(role === 'viewer' ? 403 : 200);
+  if (role === 'viewer') expect(response.body.error.code).toBe('CLASSROOM_ONLY');
+  else expect(response.body).toEqual({ data: { childrenCount: 3, staffCount: 2 } });
 });
 
 test('meal roster counts require an active session and reject foreign origins', async () => {

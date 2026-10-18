@@ -24,7 +24,7 @@ Catalog corrections do not rewrite the names in saved plans. Stock and enrollmen
 
 ## Empty states and failures
 
-A successful read of empty storage displays zero or a clear empty state. A failed section displays a retry button and no substituted zero. Other sections remain usable. A whole-request failure hides old totals until a successful retry. Changing dates cancels older requests so a late response cannot replace the newly selected day. Page access follows the same session and admin/editor/viewer permissions as the existing operational pages.
+A successful read of empty storage displays zero or a clear empty state. A failed section displays a retry button and no substituted zero. Other sections remain usable. A whole-request failure hides old totals until a successful retry. Changing dates cancels older requests so a late response cannot replace the newly selected day. Administrators and editors can access this operational page. Class viewers are redirected to their class area; the dashboard API denies them.
 
 ## API
 
