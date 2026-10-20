@@ -83,12 +83,16 @@ for (const width of [320, 1280]) test(`Teacher records class attendance and read
     await nav.getByRole('link', { name: width === 320 ? 'Attendance' : 'Class attendance', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Class attendance', exact: true })).toBeVisible();
     await expect(page.getByText(/signature is handled separately/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check out ' + saved.pupil.firstName, exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Check in ' + saved.pupil.firstName, exact: true }).click();
     await expect(page.getByRole('button', { name: 'Check out ' + saved.pupil.firstName, exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Check in ' + saved.pupil.firstName, exact: true })).toHaveCount(0);
     await page.reload();
     await expect(page.getByText('Currently checked in', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Check out ' + saved.pupil.firstName, exact: true }).click();
-    await expect(page.getByText('Not currently checked in', { exact: true })).toBeVisible(); await fits(page);
+    await expect(page.getByText('Not currently checked in', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check out ' + saved.pupil.firstName, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Check in ' + saved.pupil.firstName, exact: true })).toBeEnabled(); await fits(page);
     expect((await page.request.get(api + '/classroom/children/' + saved.foreign.id + '/safety')).status()).toBe(404);
     for (const path of ['/children', '/staff', '/attendance/daily', '/inventory', '/menu/generate']) expect((await page.request.get(api + path)).status()).toBe(403);
     expect(requests.filter(path => !path.startsWith('/api/classroom') && !path.startsWith('/api/auth/'))).toEqual([]);

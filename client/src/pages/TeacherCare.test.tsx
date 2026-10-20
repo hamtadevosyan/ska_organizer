@@ -42,10 +42,10 @@ test('check-out sends the current visit version without client-supplied time or 
   render(view()); fireEvent.click(await screen.findByRole('button', { name: 'Check out Ari' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/classroom/attendance/visit/checkout'), { date: roster.today, version: 3 }));
 });
-test('an administrator-review visit disables both attendance actions', async () => {
+test('an administrator-review visit offers neither attendance action', async () => {
   vi.mocked(axios.get).mockResolvedValue({ data: { data: { ...roster, rows: [{ ...roster.rows[0], needsAdminReview: true, canCheckIn: false, canCheckOut: false }] } } });
   render(view()); expect(await screen.findByText('Attendance needs administrator review.')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Check in Ari' })).toBeDisabled(); expect(screen.getByRole('button', { name: 'Check out Ari' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Check in Ari' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Check out Ari' })).not.toBeInTheDocument();
 });
 test('children view offers attendance and the selected safety card without global-profile actions', async () => {
   render(view(account, 'children')); fireEvent.click(await screen.findByRole('button', { name: 'Health & emergency' }));
@@ -83,4 +83,22 @@ test('replaying an already closed arrival explains its state and a later arrival
   fireEvent.click(await screen.findByRole('button', { name: 'Check in Ari' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
   expect(vi.mocked(axios.post).mock.calls[0][1]).not.toEqual(vi.mocked(axios.post).mock.calls[1][1]);
+});
+
+
+test.each(['children', 'attendance'] as const)('%s shows only the valid action before arrival, during a visit and after departure', async section => {
+  const visit = { id: 'visit', checkIn: '2026-10-18T15:00:00Z', checkOut: null, version: 1, voided: false, needsReview: false };
+  vi.mocked(axios.get)
+    .mockResolvedValueOnce({ data: { data: roster } })
+    .mockResolvedValueOnce({ data: { data: { ...roster, rows: [{ ...roster.rows[0], records: [visit], canCheckIn: false, canCheckOut: true }] } } })
+    .mockResolvedValueOnce({ data: { data: { ...roster, rows: [{ ...roster.rows[0], records: [{ ...visit, version: 2, checkOut: '2026-10-18T16:00:00Z' }] }] } } });
+  render(view(account, section));
+  const checkIn = await screen.findByRole('button', { name: 'Check in Ari' });
+  expect(screen.queryByRole('button', { name: 'Check out Ari' })).not.toBeInTheDocument();
+  fireEvent.click(checkIn);
+  const checkOut = await screen.findByRole('button', { name: 'Check out Ari' });
+  expect(screen.queryByRole('button', { name: 'Check in Ari' })).not.toBeInTheDocument();
+  fireEvent.click(checkOut);
+  expect(await screen.findByRole('button', { name: 'Check in Ari' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Check out Ari' })).not.toBeInTheDocument();
 });

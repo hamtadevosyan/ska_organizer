@@ -88,8 +88,8 @@ export default function TeacherCare({ section }: { section: 'children' | 'attend
               <button onClick={() => setSelected(row.child.id)}><HeartPulse size={18} aria-hidden="true" />Health & emergency</button>
               <><p>{row.needsAdminReview ? 'Attendance needs administrator review.' : open ? 'Currently checked in' : 'Not currently checked in'}</p>
                 {row.records.map(visit => <p key={visit.id}>Arrived: {attendanceTime(visit.checkIn, current.timeZone)}{visit.checkOut && <><br />Departed: {attendanceTime(visit.checkOut, current.timeZone)}</>}</p>)}
-                <button disabled={!!busy || !row.canCheckIn} onClick={() => void record(row)}>Check in {row.child.firstName}</button>
-                <button disabled={!!busy || !row.canCheckOut || !open} onClick={() => { if (open) void record(row, open); }}>Check out {row.child.firstName}</button>
+                {!row.needsAdminReview && !open && row.canCheckIn && <button disabled={!!busy} onClick={() => void record(row)}>Check in {row.child.firstName}</button>}
+                {!row.needsAdminReview && open && row.canCheckOut && <button disabled={!!busy} onClick={() => void record(row, open)}>Check out {row.child.firstName}</button>}
               </>
             </article>;
           })}</div>

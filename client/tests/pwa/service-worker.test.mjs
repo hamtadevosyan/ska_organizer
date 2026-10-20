@@ -48,7 +48,7 @@ function harness() {
     self: { location: { origin }, clients: { claim: async () => { claimed++; } },
       addEventListener: (type, callback) => events.set(type, callback),
       skipWaiting: () => { throw new Error('An update must not replace an active worker.'); } },
-    caches, crypto: webcrypto, Request, Response, URL, Uint8Array, AbortController, setTimeout, clearTimeout,
+    caches, crypto: webcrypto, Request, Response, Headers, URL, Uint8Array, AbortController, setTimeout, clearTimeout,
     fetch: async request => { calls.push(request); return serve(request); },
   };
   vm.runInNewContext(source, scope);
@@ -127,6 +127,50 @@ test('install stores only verified public bytes and fetches without credentials 
     assert.equal(request.cache, 'no-store');
     assert.equal(request.redirect, 'error');
   }
+});
+
+test('installation consumes each fetched body once and caches fresh verified responses without cloning', async () => {
+  const sw = harness(); const fetched = [];
+  sw.network(async request => {
+    const path = new URL(request.url).pathname;
+    const response = new Response(bodies.get(path), { headers: {
+      'Content-Type': path.endsWith('.html') ? 'text/html' : 'application/octet-stream',
+      'Content-Encoding': 'gzip', 'Content-Length': '1', 'X-Public-Build': 'verified',
+    } });
+    // Deterministically reproduce the unsafe branch: a runtime returning the
+    // consumed source from clone must never affect the verified cache body.
+    Object.defineProperty(response, 'clone', { value() { return response; } });
+    const read = response.arrayBuffer.bind(response); let reads = 0;
+    Object.defineProperty(response, 'arrayBuffer', { value() {
+      assert.equal(++reads, 1, 'a network body must be consumed exactly once');
+      return read();
+    } });
+    fetched.push(response); return response;
+  });
+  await sw.lifecycle('install');
+  assert.equal(fetched.length, manifest.length);
+  assert.ok(fetched.every(response => response.bodyUsed));
+  const cache = await sw.caches.open(cacheName);
+  for (const file of manifest) {
+    const saved = await cache.match(file.url);
+    assert.deepEqual(Buffer.from(await saved.arrayBuffer()), bodies.get(file.url));
+    assert.equal(saved.headers.get('x-public-build'), 'verified');
+    assert.equal(saved.headers.get('content-encoding'), null);
+    assert.equal(saved.headers.get('content-length'), null);
+  }
+});
+
+test('uncached static fetch returns a readable verified response without cloning', async () => {
+  const sw = harness(); const file = manifest.find(file => file.url.startsWith('/assets/'));
+  assert.ok(file);
+  sw.network(async request => {
+    const response = new Response(bodies.get(new URL(request.url).pathname));
+    Object.defineProperty(response, 'clone', { value() { throw new TypeError('Synthetic consumed clone'); } });
+    return response;
+  });
+  const response = await sw.dispatch(file.url).response;
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bodies.get(file.url));
+  assert.deepEqual(sw.keys(), [], 'a cache miss must not enable runtime caching');
 });
 
 test('API, credentials, writes, other origins and unknown/query asset URLs never touch caches or respondWith', async () => {
