@@ -150,7 +150,7 @@ test('selected saved room snapshots and legacy material hints are reviewed witho
   expect(options.lowStock).toContainEqual({ id: item.id, name: item.name, location: item.location, unit: 'g', quantity: '3', reorderThreshold: '5', version: 1 });
 });
 
-test.each(['viewer', 'editor'])('%s can inspect and preview while only an editor can save', async (role) => {
+test.each(['viewer', 'editor'])('%s has the permitted purchasing read, preview and save access', async (role) => {
   const administrator = await db.getAccount(request.credentials().account.id);
   const account = await db.createAccount({ id: randomUUID(), username: 'purchasing-' + randomUUID().slice(0, 8), displayName: 'Synthetic purchasing operator',
     passwordHash: administrator.passwordHash, role, disabled: false, mustChangePassword: false });
@@ -159,9 +159,14 @@ test.each(['viewer', 'editor'])('%s can inspect and preview while only an editor
   const actor = (method, url, body) => anonymous(app)[method](url).set('Origin', request.origin)
     .set('Cookie', login.headers['set-cookie'][0].split(';')[0]).set('X-CSRF-Token', login.body.csrfToken).send(body);
   const calculation = await actor('post', path + '/preview', input);
-  expect(calculation.status).toBe(200);
-  expect((await actor('get', '/api/purchasing/options')).status).toBe(200);
-  expect((await actor('get', path)).status).toBe(200);
+  expect(calculation.status).toBe(role === 'viewer' ? 403 : 200);
+  expect((await actor('get', '/api/purchasing/options')).status).toBe(role === 'viewer' ? 403 : 200);
+  expect((await actor('get', path)).status).toBe(role === 'viewer' ? 403 : 200);
+  if (role === 'viewer') {
+    expect(calculation.body.error.code).toBe('CLASSROOM_ONLY');
+    expect((await actor('put', path, { version: 0, token: 'forged', choices: [] })).status).toBe(403);
+    return;
+  }
   const { list, token } = calculation.body.data;
   const saving = await actor('put', path, { version: 0, token, choices: choices(list) });
   expect(saving.status).toBe(role === 'editor' ? 200 : 403);

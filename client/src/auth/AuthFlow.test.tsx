@@ -120,6 +120,35 @@ test('runtime outage and recovery keep the same open draft and do not rotate or 
   expect(axios.post).not.toHaveBeenCalled();
 });
 
+test.each([
+  ['account', { ...testAccount, id: 'another-account' }],
+  ['role', { ...testAccount, role: 'viewer' as const }],
+  ['class', { ...testAccount, roomId: 'new-class' }],
+] as const)('a changed %s replaces the session epoch and unmounts old drafts even with the same CSRF token', async (_name, account) => {
+  vi.mocked(axios.get).mockResolvedValueOnce({ data: session });
+  app();
+  const draft = await screen.findByLabelText('Draft note');
+  fireEvent.change(draft, { target: { value: 'Private old-scope draft' } });
+  vi.mocked(axios.get).mockResolvedValueOnce({ data: { ...session, account } });
+  act(() => window.dispatchEvent(new Event('focus')));
+  await waitFor(() => expect(replaceSession).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByLabelText('Draft note')).not.toBe(draft));
+  expect(screen.getByLabelText('Draft note')).toHaveValue('');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('an unchanged focus check retains the open draft and pending request epoch', async () => {
+  vi.mocked(axios.get).mockResolvedValue({ data: session });
+  app();
+  const draft = await screen.findByLabelText('Draft note');
+  fireEvent.change(draft, { target: { value: 'Keep this draft' } });
+  act(() => window.dispatchEvent(new Event('focus')));
+  await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+  expect(screen.getByLabelText('Draft note')).toBe(draft);
+  expect(draft).toHaveValue('Keep this draft');
+  expect(replaceSession).toHaveBeenCalledTimes(1);
+});
+
 test('reconnection still rejects an expired session and clears the operational form', async () => {
   vi.mocked(axios.get).mockResolvedValueOnce({ data: session });
   app();

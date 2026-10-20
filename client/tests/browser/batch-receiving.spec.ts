@@ -211,7 +211,7 @@ test('one stale item prevents the whole receipt; refreshed amounts survive an un
   await fits(page);
 });
 
-test('a viewer can read receiving history and receipt detail without inventory receiving controls', async ({ page, browser }) => {
+test('a class viewer cannot read receiving history or receipt detail', async ({ page, browser }) => {
   const http = await authenticatedApi(page);
   const { today } = await (await http.get(api + '/inventory/purchase-config')).json() as { today: string };
   const suffix = randomUUID().slice(0, 8);
@@ -236,10 +236,11 @@ test('a viewer can read receiving history and receipt detail without inventory r
     expect(changed.status()).toBe(200);
     const headers = { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken };
     await viewer.goto('/receiving');
-    const history = viewer.getByRole('region', { name: 'Receiving history', exact: true });
-    await expect(history).toBeVisible();
-    await history.getByRole('link', { name: 'View receipt ' + batch.id, exact: true }).click();
-    await expect(viewer.getByRole('region', { name: 'Recorded receipt', exact: true })).toContainText(item.name);
+    await expect(viewer).toHaveURL(/\/classroom$/);
+    await expect(viewer.getByRole('region', { name: 'Receiving history', exact: true })).toHaveCount(0);
+    await expect(viewer.getByRole('main')).not.toContainText(item.name);
+    expect((await viewer.request.get(batches, { headers })).status()).toBe(403);
+    expect((await viewer.request.get(batches + '/' + batch.id, { headers })).status()).toBe(403);
     await expect(viewer.getByRole('button', { name: 'Add inventory item', exact: true })).toHaveCount(0);
     await expect(viewer.getByRole('button', { name: 'Review receipt', exact: true })).toHaveCount(0);
     await expect(viewer.getByRole('button', { name: 'Record receipt', exact: true })).toHaveCount(0);

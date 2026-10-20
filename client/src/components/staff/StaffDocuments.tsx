@@ -37,7 +37,7 @@ function validDate(value: string | null) {
 
 export function StaffDocuments({ staffId, employeeName, onWorkChange }: { staffId: string; employeeName: string; onWorkChange?: (work: DocumentWork) => void }) {
   const { account } = useAuth();
-  if (!account || account.disabled || account.mustChangePassword || account.role === 'viewer') return null;
+  if (!account || account.disabled || account.mustChangePassword || ['viewer', 'teacher'].includes(account.role)) return null;
   return <StaffDocumentArea key={staffId + ':' + account.id + ':' + account.role} staffId={staffId} employeeName={employeeName} admin={account.role === 'admin'} onWorkChange={onWorkChange} />;
 }
 

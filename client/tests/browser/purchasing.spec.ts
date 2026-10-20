@@ -66,7 +66,10 @@ test('receive purchases, reopen history and deliberately refresh historical shop
   await page.reload();
   await expect(row.getByText('0 count', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save Menu' })).toBeDisabled();
+  // Synchronize the deliberate stock refresh with its actual HTTP response.
+  const refresh = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/preview'));
   await page.getByRole('button', { name: 'Update shopping list' }).click();
+  expect((await refresh).status()).toBe(200);
   await expect(row.getByText('4 count', { exact: true })).toBeVisible();
   await page.evaluate(() => { window.print = () => {}; });
   await page.getByRole('button', { name: 'Print List' }).click();

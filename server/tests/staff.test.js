@@ -110,14 +110,14 @@ test('stale or simultaneous edits cannot overwrite another staff update', async 
   expect((await request(app).put('/api/staff/' + person.id).send({ name: 'Without version' })).status).toBe(400);
 });
 
-test('only administrators can change staff; all operational users can read', async () => {
+test('only administrators can change staff; editors can read and class viewers cannot', async () => {
   expect((await anonymous(app).get('/api/staff')).status).toBe(401);
   const person = await staff();
   const { account } = request.credentials();
   for (const role of ['editor', 'viewer']) {
     await db.updateAccount(account.id, { role });
-    expect((await request(app).get('/api/staff')).status).toBe(200);
-    expect((await request(app).get('/api/staff/' + person.id)).status).toBe(200);
+    expect((await request(app).get('/api/staff')).status).toBe(role === 'viewer' ? 403 : 200);
+    expect((await request(app).get('/api/staff/' + person.id)).status).toBe(role === 'viewer' ? 403 : 200);
     expect((await request(app).post('/api/staff').send(details)).status).toBe(403);
     expect((await update(person, { active: false })).status).toBe(403);
   }

@@ -2,6 +2,7 @@ const { randomBytes, randomUUID, createHash, createHmac } = require('node:crypto
 const db = require('../services/dbAdapter');
 const { hashPassword, verifyPassword, verifyUnknown, validatePassword } = require('./passwords');
 const config = require('./config');
+const staffAccess = require('../services/staffAccountAccess');
 const problem = (message, status = 400, code) => Object.assign(new Error(message), { status, code });
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const csrfToken = (token) => createHmac('sha256', token).update('skao-csrf-v1').digest('hex');
@@ -10,7 +11,9 @@ const csrfToken = (token) => createHmac('sha256', token).update('skao-csrf-v1').
 const documentAccess = (account) => account.role === 'admin' ? 'edit' : 'none';
 const publicAccount = (account) => {
   const { id, username, displayName, role, disabled, mustChangePassword, createdAt, updatedAt } = account;
-  return { id, username, displayName, role, disabled, mustChangePassword, documentAccess: documentAccess(account), createdAt, updatedAt };
+  return { id, username, displayName, role, roomId: ['viewer', 'teacher'].includes(role) ? account.roomId ?? null : null,
+    staffMemberId: account.staffMemberId ?? null, linkedStaff: account.linkedStaff ?? null,
+    disabled, mustChangePassword, documentAccess: documentAccess(account), createdAt, updatedAt };
 };
 const audit = (actor, action, entityId = null) => db.appendAudit({
   id: randomUUID(), actorId: actor?.id || null, actorUsername: actor?.username || 'system',
@@ -22,7 +25,7 @@ function accountValues(input) {
   const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : '';
   if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw problem('Username must be 3–64 letters, numbers, periods, underscores or hyphens.');
   if (!displayName || displayName.length > 100) throw problem('Display name must be between 1 and 100 characters.');
-  if (!['admin', 'editor', 'viewer'].includes(input.role)) throw problem('Choose administrator, editor or read-only access.');
+  if (!['admin', 'editor', 'viewer', 'teacher'].includes(input.role)) throw problem('Choose administrator, editor, Class viewer or Teacher access.');
   return { username, displayName, role: input.role };
 }
 function documentAccessValue(value, role) {
@@ -30,7 +33,20 @@ function documentAccessValue(value, role) {
   if (role !== 'admin' && value !== 'none') throw problem('Child documents and registration forms are available only to administrators.');
   return 'none'; // Administrator access is inherent in the role, never a transferable grant.
 }
+async function classroomAssignment(input, role, previous = null) {
+  const roomId = input.roomId === undefined ? (['viewer', 'teacher'].includes(role) ? previous : null) : input.roomId;
+  if (roomId !== null && (typeof roomId !== 'string' || !roomId.trim() || roomId !== roomId.trim() || roomId.length > 255 || !['viewer', 'teacher'].includes(role))) {
+    throw problem('Choose a valid class assignment for a Class viewer or Teacher account.', 400, 'CLASS_ASSIGNMENT_INVALID');
+  }
+  if (roomId !== null) {
+    const room = await db.getRoomById(roomId);
+    if (!room || !room.active) throw problem('Choose an active class, or leave the account unassigned.', 409, 'CLASS_ASSIGNMENT_INVALID');
+  }
+  return roomId;
+}
 async function issueSession(account, remembered = false) {
+  account = await staffAccess.resolve(account);
+  if (!account || account.disabled) throw problem('Username or password is incorrect.', 401, 'INVALID_CREDENTIALS');
   const absoluteMs = remembered ? config.rememberAbsoluteMs : config.absoluteMs;
   const token = randomBytes(32).toString('hex');
   const now = new Date();
@@ -49,7 +65,7 @@ async function sessionAccount(token, { touch = false } = {}) {
       new Date(session.lastSeenAt).getTime() + idleMs <= now) {
     throw problem('Your session has expired. Sign in again.', 401, 'SESSION_EXPIRED');
   }
-  const account = await db.getAccount(session.accountId);
+  const account = await staffAccess.resolve(await db.getAccount(session.accountId));
   if (!account || account.disabled) throw problem('Your session has expired. Sign in again.', 401, 'SESSION_EXPIRED');
   if (touch && now - new Date(session.lastSeenAt).getTime() > 60000) await db.updateSession(session.id, { lastSeenAt: new Date(now) });
   return account;
@@ -99,7 +115,7 @@ async function login({ username: supplied, password, rememberMe = false }, ip, o
   const valid = candidate ? await verifyPassword(password, candidate.passwordHash) : await verifyUnknown(password);
   if (!valid || !candidate || candidate.disabled) throw problem('Username or password is incorrect.', 401, 'INVALID_CREDENTIALS');
   return db.withAuthLock(async () => {
-    const account = await db.getAccount(candidate.id);
+    const account = await staffAccess.resolve(await db.getAccount(candidate.id));
     if (!account || account.disabled || account.passwordHash !== candidate.passwordHash) throw problem('Username or password is incorrect.', 401, 'INVALID_CREDENTIALS');
     await db.deleteLoginAttempt(digest(`login:user:${username}`));
     if (oldToken && /^[a-f0-9]{64}$/.test(oldToken)) await db.deleteSession(digest(oldToken));
@@ -123,16 +139,19 @@ async function createAccount(token, input) {
   const values = accountValues(input);
   values.documentAccess = documentAccessValue(input.documentAccess === undefined ? 'none' : input.documentAccess, values.role);
   const passwordHash = await hashPassword(input.password);
-  return db.withAuthLock(async () => {
+  return db.withAuthLock(() => db.withRoomLock(async () => {
     const actor = await administrator(token);
+    const link = await staffAccess.assignment(input, null, values.role);
+    values.staffMemberId = link.staffMemberId;
+    values.roomId = await classroomAssignment(link.staff ? { roomId: staffAccess.classRole(values.role) ? link.staff.roomId : null } : input, values.role);
     if (await db.findAccount(values.username)) throw problem('That username is already in use.', 409);
     const account = await db.createAccount({ id: randomUUID(), ...values, passwordHash, disabled: false, mustChangePassword: true });
     await audit(actor, 'account.create', account.id);
-    return publicAccount(account);
-  });
+    return publicAccount(await staffAccess.resolve(account, { allowInactive: true }));
+  }));
 }
 async function updateAccount(token, id, input) {
-  return db.withAuthLock(async () => {
+  return db.withAuthLock(() => db.withRoomLock(async () => {
     const actor = await administrator(token);
     const account = await db.getAccount(id);
     if (!account) throw problem('Account not found.', 404);
@@ -140,16 +159,40 @@ async function updateAccount(token, id, input) {
     const values = accountValues({ username: account.username, displayName: input.displayName, role: input.role });
     const previousAccess = documentAccess(account);
     values.documentAccess = documentAccessValue(input.documentAccess === undefined ? 'none' : input.documentAccess, values.role);
+    const link = await staffAccess.assignment(input, account, values.role);
+    values.staffMemberId = link.staffMemberId;
+    if (link.staff && !link.staff.active && !input.disabled) throw problem('Reactivate the staff record before enabling its account.', 409);
+    values.roomId = await classroomAssignment(link.staff ? { roomId: staffAccess.classRole(values.role) ? link.staff.roomId : null } : input, values.role, account.roomId ?? null);
     if (id === actor.id && (input.disabled || values.role !== 'admin')) throw problem('Use another administrator to change your own access.', 409);
     const removesAdmin = account.role === 'admin' && !account.disabled && (input.disabled || values.role !== 'admin');
     if (removesAdmin && (await db.listAccounts()).filter((item) => item.role === 'admin' && !item.disabled).length <= 1) {
       throw problem('At least one enabled administrator is required.', 409);
     }
-    const saved = await db.updateAccount(id, { displayName: values.displayName, role: values.role, disabled: input.disabled, documentAccess: values.documentAccess });
-    if (account.role !== saved.role || account.disabled !== saved.disabled || previousAccess !== documentAccess(saved)) await db.revokeSessions(id);
+    const saved = await db.updateAccount(id, { displayName: values.displayName, role: values.role, roomId: values.roomId, staffMemberId: values.staffMemberId,
+      disabled: input.disabled, documentAccess: values.documentAccess });
+    if (account.role !== saved.role || account.disabled !== saved.disabled || (account.roomId ?? null) !== saved.roomId ||
+        (account.staffMemberId ?? null) !== (saved.staffMemberId ?? null) || previousAccess !== documentAccess(saved)) await db.revokeSessions(id);
     await audit(actor, 'account.update_access', id);
-    return publicAccount(saved);
+    return publicAccount(await staffAccess.resolve(saved, { allowInactive: true }));
+  }));
+}
+async function listAccounts(token) {
+  return db.withAuthLock(async () => {
+    await administrator(token);
+    return Promise.all((await db.listAccounts()).map(async account => publicAccount(await staffAccess.resolve(account, { allowInactive: true }))));
   });
+}
+async function staffOptions(token) {
+  return db.withAuthLock(() => db.withRoomLock(async () => {
+    await administrator(token);
+    const [staff, accounts, rooms] = await Promise.all([db.listAllStaff(), db.listAccounts(), db.listRooms({ includeArchived: true })]);
+    return staff.map(person => {
+      const account = accounts.find(item => item.staffMemberId === person.id);
+      return { id: person.id, name: person.name, jobRole: person.role, active: person.active, roomId: person.roomId ?? null,
+        roomName: rooms.find(room => room.id === person.roomId)?.name ?? null,
+        account: account ? { id: account.id, username: account.username, role: account.role, disabled: account.disabled } : null };
+    });
+  }));
 }
 async function resetPassword(token, id, password) {
   await administrator(token);
@@ -188,4 +231,4 @@ async function logout(token) {
   });
 }
 module.exports = { login, bootstrap, createAccount, updateAccount, resetPassword, changePassword, logout,
-  publicAccount, sessionAccount, operationalPermission, documentPermission, administrator, csrfToken, digest, audit, problem };
+  listAccounts, staffOptions, publicAccount, sessionAccount, operationalPermission, documentPermission, administrator, csrfToken, digest, audit, problem };

@@ -135,7 +135,8 @@ test('section failures omit their totals, preserve other sections, redact errors
 test('only signed-in operational users can read, and invalid dates and unsupported filters are rejected', async () => {
   expect((await anonymous(app).get('/api/dashboard')).status).toBe(401);
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  expect((await dashboard()).status).toBe(200);
+  expect((await dashboard()).status).toBe(403);
+  await db.updateAccount(request.credentials().account.id, { role: 'editor' });
   for (const query of [{ date: '2026-02-30' }, { date: '' }, { date: ['2026-09-14', '2026-09-15'] }, { roomId: 'room' }]) {
     expect((await request(app).get('/api/dashboard').query(query)).status).toBe(400);
   }

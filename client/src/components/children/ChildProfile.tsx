@@ -8,12 +8,25 @@ import { attendanceTime } from '../../api/attendance';
 import { useAuth } from '../../auth/context';
 import { EnrollmentProgress } from './EnrollmentProgress';
 import { ChildDocuments } from './ChildDocuments';
+import ChildSafetyCard from './ChildSafetyCard';
+import { useUnsavedChanges } from '../UnsavedChangesContext';
 import type { DocumentWork } from '../../api/childDocuments';
 
 export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile', openAddDocuments = false, onWorkChange }: { id: string; rooms: Pick<Room, 'id' | 'name'>[]; onClose: () => void; closeLabel?: string; openAddDocuments?: boolean; onWorkChange?: (work: DocumentWork) => void }) {
   const { account } = useAuth();
   const [documentWork, setDocumentWork] = useState<DocumentWork>({ dirty: false, busy: false });
-  useEffect(() => { onWorkChange?.(documentWork); }, [documentWork, onWorkChange]);
+  const [showSafety, setShowSafety] = useState(false);
+  const [safetyWork, setSafetyWork] = useState<DocumentWork>({ dirty: false, busy: false });
+  const reportUnsaved = useUnsavedChanges();
+  const work = { dirty: documentWork.dirty || safetyWork.dirty, busy: documentWork.busy || safetyWork.busy };
+  useEffect(() => { onWorkChange?.({ dirty: documentWork.dirty || safetyWork.dirty, busy: documentWork.busy || safetyWork.busy }); }, [documentWork, safetyWork, onWorkChange]);
+  useEffect(() => { reportUnsaved(work.dirty, work.busy); }, [reportUnsaved, work.dirty, work.busy, documentWork, safetyWork]);
+  useEffect(() => () => reportUnsaved(false, false), [reportUnsaved]);
+  useEffect(() => {
+    const leave = (event: BeforeUnloadEvent) => { if (work.dirty || work.busy) { event.preventDefault(); event.returnValue = ''; } };
+    window.addEventListener('beforeunload', leave);
+    return () => window.removeEventListener('beforeunload', leave);
+  }, [work.dirty, work.busy]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -25,10 +38,11 @@ export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile',
   }, [id]);
   return <section className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm" aria-label="Child profile">
     <div className="flex flex-wrap items-start justify-between gap-4"><h2 className="text-xl font-bold">{profile ? childName(profile.child) : 'Child profile'}</h2>
-      <button disabled={documentWork.busy} onClick={() => { if (!documentWork.dirty || window.confirm('Discard the unsaved document changes and close this profile?')) onClose(); }} className="ska-button">{closeLabel}</button></div>
+      <button disabled={work.busy} onClick={() => { if (!work.dirty || window.confirm('Discard the unsaved profile changes and close this profile?')) onClose(); }} className="ska-button">{closeLabel}</button></div>
     {error && <p role="alert" className="text-red-800">{error}</p>}
     {!profile && !error && <p role="status">Loading profile…</p>}
     {profile && <>
+      {['admin', 'editor'].includes(account?.role || '') && <div><button className="ska-button" disabled={work.busy} onClick={() => { if (!safetyWork.dirty || window.confirm('Discard the unsaved safety card changes?')) { setShowSafety(value => !value); setSafetyWork({ dirty: false, busy: false }); } }}>{showSafety ? 'Hide health & emergency' : 'Health & emergency'}</button>{showSafety && <ChildSafetyCard childId={id} name={childName(profile.child)} onWorkChange={setSafetyWork} />}</div>}
       {account?.role === 'editor' && <EnrollmentProgress childId={profile.child.id} />}
       <ChildDocuments childId={profile.child.id} openAdd={openAddDocuments} onWorkChange={setDocumentWork} />
       <dl className="grid gap-4 text-sm sm:grid-cols-2">

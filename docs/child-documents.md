@@ -9,8 +9,9 @@ feature does not extract text or ingredients from it.
 
 Only administrators can access child documentation, registration checklists,
 blank templates, medical paperwork, insurance records and contracts. Teacher
-(editor) and read-only accounts retain their operational roster access but see
-no documentation section. Older stored document grants do not override this
+(editor) accounts retain their operational roster access but see no documentation
+section. Class viewers receive only basic names of active children assigned to their
+own class through the class area; global rosters and profiles are denied. Older stored document grants do not override this
 policy. Account management cannot grant paperwork access to a non-administrator.
 Administrator demotion revokes sessions and removes documentation access.
 

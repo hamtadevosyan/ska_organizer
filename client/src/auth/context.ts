@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
-export type Role = 'admin' | 'editor' | 'viewer';
+export type Role = 'admin' | 'editor' | 'viewer' | 'teacher';
 export type DocumentAccess = 'none' | 'view' | 'edit';
-export type Account = { id: string; username: string; displayName: string; role: Role; disabled: boolean; mustChangePassword: boolean; documentAccess?: DocumentAccess };
+export type Account = { id: string; username: string; displayName: string; role: Role; disabled: boolean; mustChangePassword: boolean; documentAccess?: DocumentAccess; roomId?: string | null; staffMemberId?: string | null; linkedStaff?: { id: string; name: string; active: boolean; roomId: string | null } | null };
 export type AuthState = {
   account: Account | null; ready: boolean; notice: string; serverUnavailable: boolean;
   signIn: (username: string, password: string, rememberMe?: boolean) => Promise<void>;
@@ -15,4 +15,6 @@ export function useAuth() {
   if (!value) throw new Error('Authentication provider is missing.');
   return value;
 }
-export const roleLabels: Record<Role, string> = { admin: 'Administrator', editor: 'Editor', viewer: 'Read only' };
+export const roleLabels: Record<Role, string> = { admin: 'Administrator', editor: 'Editor', viewer: 'Class viewer', teacher: 'Teacher' };
+
+export const isClassAccount = (role?: Role) => role === 'viewer' || role === 'teacher';

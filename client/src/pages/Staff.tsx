@@ -12,6 +12,7 @@ import { RoomSelect } from '../components/rooms/RoomSelect';
 import { useStaff } from '../components/staff/useStaff';
 import { StaffDocuments } from '../components/staff/StaffDocuments';
 import { StaffComplianceAlerts } from '../components/staff/StaffComplianceAlerts';
+import { StaffAccountAccess } from '../components/staff/StaffAccountAccess';
 import AppModal from '../components/AppModal';
 import type { DocumentWork } from '../api/staffDocuments';
 
@@ -92,7 +93,7 @@ export default function Staff() {
     if (newAssignment && (!room?.active || room.needsConfiguration)) invalid.roomId = 'Choose an active, configured room or leave this person unassigned.';
     setFields(invalid);
     if (Object.keys(invalid).length) { setError('Correct the highlighted staff details.'); return; }
-    if (editing?.active && !form.active && !window.confirm('Deactivate ' + editing.name + '? Their record and room assignment will remain available.')) return;
+    if (editing?.active && !form.active && !window.confirm('Deactivate ' + editing.name + '? Their linked sign-in account will be disabled. Their record and room assignment will remain available.')) return;
     if (!startSaving()) return;
     setError(''); setMessage('');
     try {
@@ -103,7 +104,7 @@ export default function Staff() {
     finally { endSaving(); }
   }
   async function deactivate(person: StaffMember) {
-    if (saving.current || !window.confirm('Deactivate ' + person.name + '? Their record and room assignment will remain available.')) return;
+    if (saving.current || !window.confirm('Deactivate ' + person.name + '? Their linked sign-in account will be disabled. Their record and room assignment will remain available.')) return;
     if (!startSaving()) return;
     setError(''); setMessage('');
     try {
@@ -140,7 +141,7 @@ export default function Staff() {
         <button disabled={busy || loading || roomState.loading} onClick={() => void Promise.all([refresh(), roomState.refresh()])} className="ska-button">Refresh staff</button>
       </div>
     </header>
-    <p className="text-sm text-slate-600">Staff records do not provide app access. An administrator manages sign-in accounts separately in Accounts.</p>
+    <p className="text-sm text-slate-600">Administrators link staff to sign-in accounts in Accounts and choose their permissions. Linked Teachers and Class viewers follow the staff class assignment. Deactivating a staff member disables their linked login.</p>
     <p className="text-sm text-slate-600">Choose View details to check a staff member's information. On a phone, open More → Staff.</p>
     {loadError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{loadError}</p>}
     {roomState.error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{roomState.error} Use Refresh staff to reload room choices.</p>}
@@ -153,6 +154,7 @@ export default function Staff() {
         <div className="min-w-0"><dt className="text-sm text-slate-600">Room</dt><dd className="mt-1 break-words">{viewing.room ? viewing.room.name + (viewing.room.active ? '' : ' (archived)') : viewing.roomId ? 'Room unavailable' : 'Unassigned'}</dd></div>
         <div className="min-w-0"><dt className="text-sm text-slate-600">Status</dt><dd className="mt-1">{viewing.active ? 'Active' : 'Inactive'}</dd></div>
       </dl>
+      {admin && <StaffAccountAccess staffId={viewing.id} />}
       <button type="button" onClick={() => setViewing(null)} className="ska-button mt-5">Done</button>
     </AppModal>}
     <StaffComplianceAlerts expanded />

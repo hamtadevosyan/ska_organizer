@@ -61,6 +61,6 @@ For manual verification with synthetic children:
 2. Check blank-name and future-birth-date rejection, duplicate-name acknowledgement and full-room capacity acknowledgement.
 3. Search by preferred name and combine room and enrollment filters. End enrollment and confirm the profile/history remain while the room count decreases.
 4. Reactivate the child; verify capacity is checked again and an archived room requires an active replacement or Unassigned.
-5. Verify read-only accounts can view profiles but cannot change enrollment or details. For legacy profiles, missing birth dates must remain unknown until entered explicitly.
+5. Verify Class viewers cannot view global rosters or profiles, and see only basic names in their assigned class area. For legacy profiles, missing birth dates must remain unknown until entered explicitly.
 
 Room age validation and correction of older rooms are described in [Rooms and classes](rooms-and-classes.md). Direct navigation from a room to its assigned children is described in [Room rosters](room-roster.md). Daily attendance entry is described in [Daily attendance](daily-attendance.md). Parent onboarding, billing and document collection remain later work.

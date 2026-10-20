@@ -239,7 +239,7 @@ test('the complete-recipe endpoint preserves authentication, CSRF, origin and vi
   expect((await anonymous(app).post(endpoint).set('Origin', request.origin).set('Cookie', credentials.cookie).send(payload)).status).toBe(403);
   expect((await anonymous(app).post(endpoint).set('Origin', 'https://untrusted.example').set('Cookie', credentials.cookie).set('X-CSRF-Token', credentials.csrf).send(payload)).status).toBe(403);
   await db.updateAccount(credentials.account.id, { role: 'viewer' });
-  expect((await request(app).get('/api/meals')).status).toBe(200);
+  expect((await request(app).get('/api/meals')).status).toBe(403);
   expect((await submit(payload)).status).toBe(403);
   expect(await db.listMeals()).toEqual([]);
   await db.updateAccount(credentials.account.id, { role: 'editor' });

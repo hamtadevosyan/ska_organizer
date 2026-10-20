@@ -21,9 +21,11 @@ test('administrator creates an account, first sign-in changes its password, and 
   await page.getByLabel('New password', { exact: true }).fill('Browser changed passphrase 20!');
   await page.getByLabel('Confirm new password', { exact: true }).fill('Browser changed passphrase 20!');
   await page.getByRole('button', { name: 'Save password', exact: true }).click();
-  await page.getByRole('link', { name: 'Meals', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Save Menu' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Meal Setup' })).toBeDisabled();
+  await expect(page).toHaveURL(/\/classroom$/);
+  await expect(page.getByRole('button', { name: 'Generate Menu', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Meal Setup', exact: true })).toHaveCount(0);
+  await page.goto('/meals');
+  await expect(page).toHaveURL(/\/classroom$/);
   await expect(page.getByRole('link', { name: 'Accounts', exact: true })).toHaveCount(0);
   const session = await page.request.get(`${api}/auth/session`);
   const csrf = (await session.json()).csrfToken;

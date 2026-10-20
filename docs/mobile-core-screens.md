@@ -84,8 +84,8 @@ test installation. Check 320/375/390/430 px phone widths, a tablet and desktop.
 2. Children: filter/search, view a profile and its history, open Edit, cancel,
    then save a synthetic change. Names, dates and actions must remain reachable
    without moving the main page sideways.
-3. Staff: search/filter and edit a synthetic record as admin. On an editor/viewer
-   account, confirm the existing restriction on staff changes still applies.
+3. Staff: search/filter and edit a synthetic record as admin. On an editor account, confirm staff changes remain restricted. Class viewers
+   must be redirected to the class area and cannot read staff APIs.
 4. Inventory: open a group, receive a synthetic purchase, record usage, and open
    movement/purchase history. Check optional details and pagination with long
    names/locations. Reports and planner views must not change quantities.

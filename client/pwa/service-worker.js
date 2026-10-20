@@ -4,17 +4,26 @@ const CACHE_NAME = '__SKAO_CACHE_NAME__';
 const CACHE_PREFIX = 'skao-static-v1-';
 const files = new Map(STATIC_FILES.map(file => [file.url, file]));
 const pages = new Set(['/', '/index.html', '/dashboard', '/attendance', '/children',
-  '/rooms', '/inventory', '/activities', '/schedule', '/meals', '/staff', '/reports', '/accounts']);
+  '/rooms', '/inventory', '/activities', '/schedule', '/meals', '/staff', '/reports', '/accounts',
+  '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals', '/classroom/attendance']);
 
 async function staticResponse(file) {
   const response = await fetch(new Request(new URL(file.url, self.location.origin), {
     credentials: 'omit', cache: 'no-store', redirect: 'error',
   }));
   if (!response.ok || response.type === 'opaque' || response.redirected) throw new Error('Static file unavailable.');
-  const digest = await crypto.subtle.digest('SHA-256', await response.clone().arrayBuffer());
+  // Read exactly once; verification and caching use the same immutable bytes.
+  // Avoid keeping a cloned stream branch alive across asynchronous hashing.
+  const bytes = await response.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
   if (hex !== file.sha256) throw new Error('Static file does not match this build.');
-  return response;
+  const headers = new Headers(response.headers);
+  // Fetch has already decoded transport compression; these headers describe
+  // the wire representation, not the verified bytes in this new response.
+  headers.delete('Content-Encoding');
+  headers.delete('Content-Length');
+  return new Response(bytes, { status: response.status, statusText: response.statusText, headers });
 }
 
 self.addEventListener('install', event => {

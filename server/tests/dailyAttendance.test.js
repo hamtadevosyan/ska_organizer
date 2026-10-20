@@ -132,7 +132,7 @@ test('permissions and CSRF protect mutations, and an audit failure rolls back an
   expect((await rawRequest(app).get(endpoint + '/daily')).status).toBe(401);
   expect((await rawRequest(app).post(endpoint + '/checkin').set('Origin', request.origin).set('Cookie', request.credentials().cookie).send({ childId: child.id, roomId: room.id })).status).toBe(403);
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  await call('get', '/daily');
+  await call('get', '/daily', undefined, 403);
   await call('post', '/checkin', { childId: child.id, roomId: room.id }, 403);
   await db.updateAccount(request.credentials().account.id, { role: 'editor' });
   jest.spyOn(db, 'appendAudit').mockRejectedValueOnce(new Error('Synthetic audit failure'));

@@ -291,7 +291,7 @@ test('320px nonzero archive retains balances and saved history while removing st
   for (const item of items) await expect(destination.locator(`option[value="${item.id}"]`)).toHaveCount(0);
 });
 
-test('viewers inspect retained group operations and archived history but cannot preview or commit removal', async ({ page, browser }) => {
+test('class viewers cannot inspect retained group operations or archived history', async ({ page, browser }) => {
   const http = await authenticatedApi(page), id = suffix();
   const archivedGroup = await group(http, 'Removal viewer archive ' + id);
   const item = await stock(http, archivedGroup, 'Removal viewer retained item ' + id, '2');
@@ -322,13 +322,15 @@ test('viewers inspect retained group operations and archived history but cannot 
     const headers = { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken };
     await viewer.goto('/inventory');
     await expect(viewer.getByRole('button', { name: /^Remove group / })).toHaveCount(0);
-    await viewer.getByRole('button', { name: 'Archived inventory', exact: true }).click();
-    await viewer.getByRole('button', { name: 'Open group ' + archivedGroup.name, exact: true }).click();
-    await expect(viewer.getByText(item.name, { exact: true })).toBeVisible();
+    await expect(viewer).toHaveURL(/\/classroom$/);
+    await expect(viewer.getByRole('button', { name: 'Archived inventory', exact: true })).toHaveCount(0);
+    await expect(viewer.getByText(item.name, { exact: true })).toHaveCount(0);
     await expect(viewer.getByRole('button', { name: 'Add item', exact: true })).toHaveCount(0);
     await viewer.goto('/inventory/group-operations/' + operation.id);
-    await expect(viewer.getByRole('main')).toContainText(archivedGroup.name);
-    expect((await viewer.request.get(inventory + '/group-operations/' + operation.id, { headers })).status()).toBe(200);
+    await expect(viewer).toHaveURL(/\/classroom$/);
+    await expect(viewer.getByRole('main')).not.toContainText(archivedGroup.name);
+    expect((await viewer.request.get(inventory + '/group-operations/' + operation.id, { headers })).status()).toBe(403);
+    expect((await viewer.request.get(inventory + '/items?archived=true', { headers })).status()).toBe(403);
     expect((await viewer.request.post(removalPath(active) + '-preview', { headers, data: {
       action: 'delete', contextVersion: activeContext.contextVersion,
     } })).status()).toBe(403);

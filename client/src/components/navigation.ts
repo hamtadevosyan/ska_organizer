@@ -22,14 +22,26 @@ const navigation = {
 } satisfies Record<string, NavigationItem>;
 
 const allItems: NavigationItem[] = Object.values(navigation);
+const classroomItems: NavigationItem[] = [
+  { to: '/classroom', label: 'My class', icon: House },
+  { to: '/classroom/children', label: 'Children', icon: Users },
+  { to: '/classroom/activities', label: 'Activities', icon: Palette },
+  { to: '/classroom/meals', label: 'Meals', icon: Utensils },
+];
 export const primaryNavigation: NavigationItem[] = [
   navigation.dashboard, navigation.attendance, navigation.activities, navigation.meals,
 ];
 
 export function getNavigationItems(role?: Role) {
+  if (role === 'teacher') return [...classroomItems, { to: '/classroom/attendance', label: 'Class attendance', icon: ClipboardCheck }];
+  if (role === 'viewer') return classroomItems;
   return allItems.filter((item) => !item.adminOnly || role === 'admin');
 }
 
+export function getPrimaryNavigationItems(role?: Role) {
+  return role === 'teacher' ? [classroomItems[0], { to: '/classroom/attendance', label: 'Attendance', icon: ClipboardCheck }, classroomItems[2], classroomItems[3]] : role === 'viewer' ? classroomItems : primaryNavigation;
+}
+
 export function getMoreItems(role?: Role) {
-  return getNavigationItems(role).filter((item) => !primaryNavigation.some((primary) => primary.to === item.to));
+  return getNavigationItems(role).filter((item) => !getPrimaryNavigationItems(role).some((primary) => primary.to === item.to));
 }

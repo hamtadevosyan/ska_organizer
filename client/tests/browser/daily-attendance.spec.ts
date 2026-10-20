@@ -30,7 +30,7 @@ test('check in by room, reload, correct a visit with history and check out throu
   const form = page.getByRole('region', { name: 'Attendance record', exact: true });
   await expect(form.getByText('No corrections recorded.')).toBeVisible();
   await form.getByRole('checkbox', { name: 'Void mistaken or duplicate visit', exact: true }).check();
-  await form.getByLabel('Correction reason', { exact: true }).fill('Synthetic visit entered for the wrong arrival.');
+  await form.getByRole('textbox', { name: 'Correction reason', exact: true }).fill('Synthetic visit entered for the wrong arrival.');
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await form.getByRole('button', { name: 'Save correction', exact: true }).click();
   await expect(page.getByText('Attendance correction saved with its history.')).toBeVisible();

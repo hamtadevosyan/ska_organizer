@@ -1,0 +1,15 @@
+.child-safety { min-width: 0; padding: clamp(14px, 3vw, 24px); border: 1px solid #f1cbd6; border-radius: 20px; background: #fffafb; overflow-wrap: anywhere; }
+.child-safety * { min-width: 0; box-sizing: border-box; }
+.child-safety header { display: flex; gap: 12px; align-items: center; color: #863657; margin-bottom: 14px; }
+.child-safety h3 { font-size: 1.3rem; font-weight: 800; }.child-safety h4 { font-weight: 750; margin-top: 16px; }
+.child-safety p { margin: 8px 0; }.safety-review, .safety-note { font-size: .9rem; color: #655a6c; }
+.safety-allergy { display: flex; align-items: flex-start; gap: 10px; padding: 16px; border: 1px solid #e9b7ae; border-radius: 14px; background: #fff0db; margin: 14px 0; }
+.safety-allergy.is-recorded { background: #fff0f0; border-color: #e49a9f; }.safety-allergy.is-none { background: #f0edff; border-color: #d6cbf5; }
+.safety-allergy > svg { flex-shrink: 0; }.child-safety dl { display: grid; gap: 12px; }.child-safety dt { color: #655a6c; font-size: .9rem; }.child-safety dd { white-space: pre-wrap; font-weight: 600; }
+.child-safety li { padding: 10px 0; border-bottom: 1px solid #eee1e8; }.safety-phone { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.child-safety label { display: block; margin: 12px 0; font-weight: 600; }.child-safety input:not([type=checkbox]), .child-safety textarea, .child-safety select { display: block; width: 100%; min-height: 44px; border: 1px solid #c9bdd0; border-radius: 10px; padding: 10px; background: white; font-weight: 400; margin-top: 5px; }
+.child-safety button { min-height: 44px; border: 1px solid #cbb4d9; border-radius: 12px; background: white; padding: 10px 14px; margin: 8px 8px 0 0; font-weight: 650; }.child-safety button:disabled { opacity: .55; }
+.child-safety :focus-visible { outline: 3px solid #8457bb; outline-offset: 2px; }.safety-contact-editor { border: 1px solid #dfd0e4; border-radius: 12px; padding: 12px; margin-top: 16px; }.safety-contact-editor > div + div { margin-top: 16px; border-top: 1px solid #dfd0e4; }
+.child-safety .safety-ack { display: flex; align-items: flex-start; gap: 10px; }.safety-ack input { width: 22px; height: 22px; flex-shrink: 0; }
+
+.child-safety a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; max-width: 100%; color: #6742a3; text-decoration: underline; }

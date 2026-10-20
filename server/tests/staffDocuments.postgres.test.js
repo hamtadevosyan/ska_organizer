@@ -91,7 +91,8 @@ test('the additive staff migration preserves pre-existing staff and blank forms 
         await connection.getQueryInterface().bulkInsert({ tableName: 'SequelizeMeta', schema },
           [{ name: filename.slice(0, -3) }], { transaction });
       }
-      await connection.query(`INSERT INTO "${schema}"."Accounts" SELECT * FROM "${source}"."Accounts" WHERE id = $1`,
+      const columns = '(id, username, "displayName", "passwordHash", role, disabled, "mustChangePassword", "createdAt", "updatedAt", "documentAccess")';
+      await connection.query(`INSERT INTO "${schema}"."Accounts" ${columns} SELECT ${columns.slice(1, -1)} FROM "${source}"."Accounts" WHERE id = $1`,
         { bind: [actor.id], transaction });
       await connection.query(`INSERT INTO "${schema}"."StaffMembers" (id, name, role, active, "roomId", version, "createdAt", "updatedAt")
         VALUES ($1, 'Synthetic existing employee', 'Teacher', true, NULL, 1, $2, $2)`, { bind: [staffId, now], transaction });
@@ -102,7 +103,7 @@ test('the additive staff migration preserves pre-existing staff and blank forms 
         VALUES ($1, $2, 1, 'synthetic-existing.png', 'image/png', $3, $4, $5, $6, $7, $8, $9, $10, $4)`,
       { bind: [revisionId, formId, content.length, checksum, content, now, actor.id, actor.username, randomUUID(), 'Synthetic old request'], transaction });
     });
-    expect(await migrate(connection, schema)).toEqual(['020-staff-documents', '021-purchasing-lists', '022-purchase-batches', '023-inventory-group-lifecycle']);
+    expect(await migrate(connection, schema)).toEqual(['020-staff-documents', '021-purchasing-lists', '022-purchase-batches', '023-inventory-group-lifecycle', '024-classroom-account-scope', '025-teacher-care-access', '026-staff-account-links']);
     const [staff] = await connection.query(`SELECT id, name FROM "${schema}"."StaffMembers"`);
     expect(staff).toEqual([{ id: staffId, name: 'Synthetic existing employee' }]);
     const [forms] = await connection.query(`SELECT id, audience, "currentRevisionId", "expirationRequired" FROM "${schema}"."RegistrationForms"`);

@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:browser": "playwright test",
+    "test:browser": "node scripts/run-browser-tests.mjs",
+    "test:browser:runner": "node --test scripts/run-browser-tests.test.mjs",
     "test:pwa": "node --test tests/pwa/*.test.mjs",
     "test:browser:pwa": "playwright test --config playwright.pwa.config.ts"
   },

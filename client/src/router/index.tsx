@@ -15,8 +15,21 @@ import Activities from "../pages/Activities";
 import Meals from "../pages/Meals";
 import Staff from "../pages/Staff";
 import Reports from "../pages/Reports";
+import Classroom from "../pages/Classroom";
+import TeacherCare from "../pages/TeacherCare";
+import { useAuth } from "../auth/context";
 
 export default function AppRoutes() {
+  const { account } = useAuth();
+  // Resolve viewer routes before any operational page mounts or requests data.
+  if ((account?.role === 'viewer' || account?.role === 'teacher')) return <Routes>
+    <Route path="/classroom" element={<Classroom section="overview" />} />
+    <Route path="/classroom/children" element={account.role === 'teacher' ? <TeacherCare section="children" /> : <Classroom section="children" />} />
+    {account.role === 'teacher' && <Route path="/classroom/attendance" element={<TeacherCare section="attendance" />} />}
+    <Route path="/classroom/activities" element={<Classroom section="activities" />} />
+    <Route path="/classroom/meals" element={<Classroom section="meals" />} />
+    <Route path="*" element={<Navigate to="/classroom" replace />} />
+  </Routes>;
   return (
     <Routes>
       <Route path="/accounts" element={<Accounts />} />
@@ -36,6 +49,7 @@ export default function AppRoutes() {
       <Route path="/meals" element={<Meals />} />
       <Route path="/staff" element={<Staff />} />
       <Route path="/reports" element={<Reports />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }

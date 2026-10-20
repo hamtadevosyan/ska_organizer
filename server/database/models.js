@@ -133,6 +133,13 @@ module.exports = (sequelize) => {
     photoConsent: DataTypes.BOOLEAN, notes: DataTypes.TEXT, roomId: DataTypes.STRING,
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   });
+  const ChildSafetyProfile = sequelize.define('ChildSafetyProfile', {
+    childId: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
+    details: { type: DataTypes.JSONB, allowNull: false },
+    version: { type: DataTypes.INTEGER, allowNull: false },
+    reviewedAt: { type: DataTypes.DATE, allowNull: false },
+    reviewedBy: { type: DataTypes.STRING, allowNull: false },
+  }, { timestamps: false });
   const ChildDocument = sequelize.define('ChildDocument', {
     id: id(), childId: { type: DataTypes.STRING, allowNull: false },
     title: { type: DataTypes.STRING(160), allowNull: false },
@@ -267,6 +274,8 @@ module.exports = (sequelize) => {
     displayName: { type: DataTypes.STRING(100), allowNull: false },
     passwordHash: { type: DataTypes.TEXT, allowNull: false },
     role: { type: DataTypes.STRING(16), allowNull: false },
+    staffMemberId: { type: DataTypes.STRING, allowNull: true, defaultValue: null, unique: true },
+    roomId: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
     documentAccess: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'none' },
     disabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
@@ -285,5 +294,5 @@ module.exports = (sequelize) => {
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
-    ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
+    ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
 };

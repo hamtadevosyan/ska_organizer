@@ -106,6 +106,6 @@ test('group validation, permissions and audit rollback protect group creation', 
   const created = await group();
   expect(await db.listAudit()).toEqual(expect.arrayContaining([expect.objectContaining({ action: 'inventory.group.create', entityId: created.id })]));
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  expect((await request(app).get('/api/inventory/groups')).status).toBe(200);
+  expect((await request(app).get('/api/inventory/groups')).status).toBe(403);
   expect((await request(app).post('/api/inventory/groups').send({ name: 'Not allowed', requestId: randomUUID() })).status).toBe(403);
 });

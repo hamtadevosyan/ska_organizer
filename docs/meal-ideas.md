@@ -116,4 +116,4 @@ meal metadata and one to fifty ingredient rows. An existing row supplies
 `ingredientId` and `quantity`; a new row supplies `name`, `unit` and `quantity`.
 It runs under the existing catalog transaction and authorization/audit policy,
 and requires no database migration. Administrators and editors can save;
-viewers retain read-only access.
+Class viewers cannot access the meal catalog, imports or generation. Their class area shows saved shared academy meal names only.

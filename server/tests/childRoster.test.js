@@ -162,8 +162,8 @@ test('roster permissions and audit attribution use the acting account', async ()
     expect.objectContaining({ action: 'child.enrollment', actorId: account.id, entityId: child.id }),
   ]));
   await db.updateAccount(account.id, { role: 'viewer' });
-  expect((await request(app).get('/api/children?active=all')).status).toBe(200);
-  expect((await request(app).get('/api/children/' + child.id + '/profile')).status).toBe(200);
+  expect((await request(app).get('/api/children?active=all')).status).toBe(403);
+  expect((await request(app).get('/api/children/' + child.id + '/profile')).status).toBe(403);
   expect((await request(app).put('/api/children/' + child.id).send({ lastName: 'Forbidden' })).status).toBe(403);
   expect((await request(app).put('/api/children/' + child.id + '/enrollment').send({ active: true })).status).toBe(403);
 });

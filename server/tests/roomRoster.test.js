@@ -155,22 +155,21 @@ test('room summaries, filtered rosters and child profiles require sign-in', asyn
   }
 });
 
-test('viewers can read a room roster and profile but cannot change its children, assignments or settings', async () => {
+test('class viewers cannot use global room rosters, profiles or modifications', async () => {
   const target = await room('Viewer class');
   const other = await room('Viewer destination');
   const enrolled = await child(target.id);
   const { account } = request.credentials();
   await db.updateAccount(account.id, { role: 'viewer' });
 
-  expect(ids(await roster(target.id))).toEqual([enrolled.id]);
-  expect((await summary(target.id)).assignedChildCount).toBe(1);
-  expect((await request(app).get('/api/children/' + enrolled.id + '/profile')).status).toBe(200);
+  expect((await request(app).get('/api/children').query({ roomId: target.id })).status).toBe(403);
+  expect((await request(app).get('/api/rooms/' + target.id)).status).toBe(403);
+  expect((await request(app).get('/api/children/' + enrolled.id + '/profile')).status).toBe(403);
   expect((await request(app).put('/api/children/' + enrolled.id).send({ firstName: 'Forbidden' })).status).toBe(403);
   expect((await request(app).put('/api/children/' + enrolled.id + '/room').send({ roomId: other.id })).status).toBe(403);
   expect((await request(app).put('/api/children/' + enrolled.id + '/enrollment').send({ active: false })).status).toBe(403);
   expect((await request(app).put('/api/rooms/' + target.id).send({ capacity: 1 })).status).toBe(403);
   expect(await db.getChildById(enrolled.id)).toMatchObject({ id: enrolled.id, firstName: 'Synthetic', roomId: target.id, active: true });
-  expect(ids(await roster(target.id))).toEqual([enrolled.id]);
-  expect(ids(await roster(other.id))).toEqual([]);
-  expect(await summary(target.id)).toMatchObject({ assignedChildCount: 1, capacity: 4 });
+  expect(await db.getRoomById(target.id)).toMatchObject({ capacity: 4 });
+  expect(await db.getChildById(enrolled.id)).toMatchObject({ roomId: target.id });
 });

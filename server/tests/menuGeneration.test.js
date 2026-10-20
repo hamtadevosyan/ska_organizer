@@ -145,7 +145,7 @@ test('generation remains protected by sign-in and read-only for viewer accounts'
   expect(anonymous.status).toBe(401);
   await completeCatalog();
   await db.updateAccount(request.credentials().account.id, { role: 'viewer' });
-  await generate();
+  await generate(403);
   const attempt = await request(app).put(PLAN).send({ previewToken: 'invented' });
   expect(attempt.status).toBe(403);
   expect(await db.getWeeklyPlan('2026-10-19')).toBeNull();
