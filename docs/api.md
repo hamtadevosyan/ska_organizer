@@ -50,3 +50,9 @@ records that ID, method, status and category. Report that ID when diagnosing an
 error; do not attach credentials or raw private request bodies. Read-only health
 probes do not bypass authorization on any operational route. Responses use
 `Cache-Control: no-store`.
+
+### Linked staff accounts (SKAO-111)
+
+Administrator account create/update accepts nullable `staffMemberId`. Responses include `staffMemberId` and minimal `linkedStaff` (`id`, `name`, `active`, `roomId`). A linked Teacher or Class viewer derives `roomId` from Staff; contradictory supplied classes are rejected. Another account cannot reuse the same employee. Unlink explicitly with `staffMemberId: null`.
+
+`GET /api/admin/staff-options` returns all employees (including inactive) with `id`, `name`, `jobRole`, `active`, `roomId`, `roomName` and nullable minimal linked `account` (`id`, `username`, `role`, `disabled`). It is administrator-only and excludes passwords, sessions, files and clinical details. Staff class/status updates synchronize linked accounts and revoke sessions in the same audited transaction. See `docs/staff-account-links.md`.

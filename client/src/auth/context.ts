@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 export type Role = 'admin' | 'editor' | 'viewer' | 'teacher';
 export type DocumentAccess = 'none' | 'view' | 'edit';
-export type Account = { id: string; username: string; displayName: string; role: Role; disabled: boolean; mustChangePassword: boolean; documentAccess?: DocumentAccess; roomId?: string | null };
+export type Account = { id: string; username: string; displayName: string; role: Role; disabled: boolean; mustChangePassword: boolean; documentAccess?: DocumentAccess; roomId?: string | null; staffMemberId?: string | null; linkedStaff?: { id: string; name: string; active: boolean; roomId: string | null } | null };
 export type AuthState = {
   account: Account | null; ready: boolean; notice: string; serverUnavailable: boolean;
   signIn: (username: string, password: string, rememberMe?: boolean) => Promise<void>;

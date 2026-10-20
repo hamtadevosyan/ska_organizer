@@ -25,6 +25,7 @@ const migrations = [
   { name: '023-inventory-group-lifecycle', ...require('./migrations/023-inventory-group-lifecycle') },
   { name: '024-classroom-account-scope', ...require('./migrations/024-classroom-account-scope') },
   { name: '025-teacher-care-access', ...require('./migrations/025-teacher-care-access') },
+  { name: '026-staff-account-links', ...require('./migrations/026-staff-account-links') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

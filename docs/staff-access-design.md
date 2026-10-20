@@ -2,7 +2,7 @@
 
 Status: proposal for follow-up work, including SKAO-106. SKAO-111 implements assigned **Class viewer** and **Teacher** presets; facility-wide viewer and clock/badge presets remain proposals.
 
-Keep an employee record, a job title, an application account and a clock credential separate. A cleaner may need a clock credential without access to children or planning. An employee can exist without an application sign-in. An account's class scope must be explicitly assigned rather than inferred from names or job titles.
+Keep an employee record, a job title, an application account and a clock credential separate. A cleaner may need a clock credential without access to children or planning. An employee can exist without an application sign-in. An account's class scope must be explicitly assigned rather than inferred from names or job titles. SKAO-111 now supports an optional one-to-one staff/account link: linked Teacher and Class viewer accounts follow the staff record's class. See `staff-account-links.md` for implemented behavior; badge and payroll permissions below remain proposals.
 
 | Proposed preset | Read scope | Allowed changes |
 |---|---|---|

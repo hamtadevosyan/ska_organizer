@@ -4,7 +4,7 @@
 .ska-classroom h2 { font-size: 1.3rem; font-weight: 750; margin-bottom: 12px; }
 .ska-classroom h3 { font-size: 1.05rem; font-weight: 700; }
 .ska-classroom p { margin: 8px 0; overflow-wrap: anywhere; }
-.ska-classroom-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 24px; background: linear-gradient(120deg, #eee3ff, #e2efff 65%, #ffedd4); border: 1px solid #ded6f3; border-radius: 24px; margin-bottom: 20px; }
+.ska-classroom-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 24px; background: linear-gradient(120deg, #eee3ff, #e2efff 65%, #ffedd4); border: 1px solid #ded6f3; border-radius: 24px; margin-bottom: 20px; }
 .ska-classroom-hero > div:nth-child(2) { flex: 1; }
 .ska-classroom-icon { padding: 14px; border-radius: 18px; background: white; color: #8451ca; }
 .ska-classroom-eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .72rem; font-weight: 700; color: #6b458d; }
@@ -26,3 +26,5 @@
 .ska-classroom-menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; margin-top: 20px; }
 .ska-classroom-menu article { padding: 16px; background: #fff8ec; border-radius: 16px; border: 1px solid #f4e3c3; }
 @media (max-width: 390px) { .ska-classroom-hero { padding: 16px; gap: 10px; } .ska-classroom-icon { padding: 10px; } .ska-classroom-hero > button { width: 100%; } .ska-classroom-week > button { flex: 1; } .ska-classroom-week > label { flex-basis: 100%; order: -1; } }
+
+@media (max-width: 600px) { .ska-classroom-hero { grid-template-columns: auto minmax(0, 1fr); padding: 16px; } .ska-classroom-hero > button { grid-column: 1 / -1; width: 100%; } .ska-classroom-hero h1, .ska-classroom-eyebrow { overflow-wrap: normal; word-break: normal; } }

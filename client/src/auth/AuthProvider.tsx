@@ -7,7 +7,7 @@ import type { Account } from './context';
 import { authError, isServerUnavailable, onServerUnavailable, onSessionExpired, replaceSession } from './transport';
 
 type Session = { account: Account; csrfToken: string };
-const accountScope = (account: Account) => JSON.stringify([account.id, account.role, account.roomId ?? null]);
+const accountScope = (account: Account) => JSON.stringify([account.id, account.role, account.roomId ?? null, account.staffMemberId ?? null]);
 const url = `${API_BASE_URL}/api/auth`;
 const announce = () => { try { localStorage.setItem('skao-account-changed', `${Date.now()}-${Math.random()}`); } catch { /* Optional cross-tab notification. */ } };
 export default function AuthProvider({ children }: { children: ReactNode }) {

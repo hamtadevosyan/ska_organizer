@@ -60,10 +60,10 @@ if "$inventory_only"; then
   browser_tests+=(-- tests/browser/inventory.spec.ts tests/browser/inventory-group-removal.spec.ts tests/browser/purchasing.spec.ts tests/browser/purchasing-list.spec.ts tests/browser/batch-receiving.spec.ts tests/browser/weekly-plans.spec.ts tests/browser/catalog-corrections.spec.ts)
 fi
 if "$access_only"; then
-  server_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/teacherCare.test.js)
-  postgres_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/classAccountScope.postgres.test.js tests/teacherCare.test.js tests/teacherCare.postgres.test.js tests/authenticationPersistence.postgres.test.js)
-  client_tests+=(-- src/auth/AuthFlow.test.tsx src/auth/transport.test.ts src/components/AppShell.test.tsx src/pages/Accounts.test.tsx src/pages/Classroom.test.tsx src/pages/TeacherCare.test.tsx src/components/children/ChildSafetyCard.test.tsx src/router/index.test.tsx)
-  browser_tests+=(-- tests/browser/classroom-access.spec.ts tests/browser/teacher-care.spec.ts tests/browser/authentication.spec.ts tests/browser/remembered-login.spec.ts)
+  server_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/teacherCare.test.js tests/staffAccountAccess.test.js tests/staff.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/classAccountScope.postgres.test.js tests/teacherCare.test.js tests/teacherCare.postgres.test.js tests/authenticationPersistence.postgres.test.js tests/staffAccountAccess.test.js tests/staffAccountLinks.postgres.test.js tests/staff.test.js)
+  client_tests+=(-- src/auth/AuthFlow.test.tsx src/auth/transport.test.ts src/components/AppShell.test.tsx src/pages/Accounts.test.tsx src/pages/Staff.test.tsx src/components/staff/StaffAccountAccess.test.tsx src/pages/Classroom.test.tsx src/pages/TeacherCare.test.tsx src/components/children/ChildSafetyCard.test.tsx src/router/index.test.tsx)
+  browser_tests+=(-- tests/browser/classroom-access.spec.ts tests/browser/teacher-care.spec.ts tests/browser/staff-account-links.spec.ts tests/browser/authentication.spec.ts tests/browser/remembered-login.spec.ts)
 fi
 
 current_step='Preflight'

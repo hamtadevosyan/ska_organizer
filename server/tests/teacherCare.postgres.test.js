@@ -32,8 +32,8 @@ test('025 upgrades populated024 without promoting viewers, losing sessions or ch
     });
     const read = name => connection.query(`SELECT * FROM ${quoted(name)} ORDER BY id`, { type: QueryTypes.SELECT });
     const accounts = await read('Accounts'); const sessions = await read('Sessions'); const children = await read('Children');
-    expect(await migrate(connection, schema)).toEqual(['025-teacher-care-access']);
-    expect(await read('Accounts')).toEqual(accounts); expect(await read('Sessions')).toEqual(sessions); expect(await read('Children')).toEqual(children);
+    expect(await migrate(connection, schema)).toEqual(['025-teacher-care-access', '026-staff-account-links']);
+    expect(await read('Accounts')).toEqual(accounts.map(account => ({ ...account, staffMemberId: null }))); expect(await read('Sessions')).toEqual(sessions); expect(await read('Children')).toEqual(children);
     expect(await connection.query(`SELECT * FROM ${quoted('ChildSafetyProfiles')}`, { type: QueryTypes.SELECT })).toEqual([]);
     await connection.query(`UPDATE ${quoted('Accounts')} SET role = 'teacher' WHERE id = 'viewer'`);
     await expect(connection.query(`UPDATE ${quoted('Accounts')} SET "roomId" = 'class' WHERE id = 'editor'`)).rejects.toMatchObject({ name: 'SequelizeDatabaseError' });

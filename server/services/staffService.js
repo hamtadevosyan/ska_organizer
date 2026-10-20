@@ -2,6 +2,7 @@ const db = require('./dbAdapter');
 const { problem } = require('./planValidation');
 const { requireRoom } = require('./roomService');
 const { validateStaff, staffId, staffQuery } = require('./staffValidation');
+const accountAccess = require('./staffAccountAccess');
 
 const summarize = (person, room) => ({
   ...person, room: room ? { id: room.id, name: room.name, active: room.active } : null,
@@ -40,9 +41,12 @@ exports.create = (payload) => db.withRoomLock(async () => {
   await checkRoom(values);
   return withRoom(await db.createStaff(values));
 });
-exports.update = (id, payload) => db.withRoomLock(async () => {
+exports.update = (id, payload) => db.withAuthLock(() => db.withRoomLock(async () => {
   const previous = await requireStaff(id);
   const values = validateStaff(payload, previous);
   await checkRoom(values, previous);
-  return withRoom(await db.updateStaff(id, values));
-});
+  await accountAccess.beforeStaffUpdate(previous, values);
+  const saved = await db.updateStaff(id, values);
+  await accountAccess.afterStaffUpdate(previous, saved);
+  return withRoom(saved);
+}));

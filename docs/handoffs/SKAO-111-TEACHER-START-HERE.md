@@ -6,18 +6,16 @@ This update adds a separate Teacher role. Class viewers stay read-only. Teachers
 
 Extract the ZIP into Downloads first. Preserve any local work shown by `git status --short`; do not reset or discard it.
 
-If the earlier SKAO-111 changes are already merged, or you have not applied them yet:
+Continue on the existing branch; do not create another branch:
 
 ```bash
 cd ~/workspace/ska_organizer
 git status --short
-git switch development
-git pull --ff-only origin development
-git switch -c feature/SKAO-111-teacher-access
+git switch feature/SKAO-111-class-access
 bash ~/Downloads/SKAO-111-teacher-access/apply-fix.sh
 ```
 
-If the earlier SKAO-111 is applied and committed on its own unmerged branch, create the new teacher branch from that branch instead of switching to development. The bundle accepts the earlier class-access version as well as the completed SKAO-59 base, with or without its session-test correction. It detects an already-applied update and refuses conflicting files before changing anything. If this new branch already exists, switch to it instead of creating it again.
+Preserve local edits. The installer checks compatibility before applying and does not reset files. The staff-account follow-up has its own ZIP and START_HERE instructions; apply it after this Teacher update.
 
 No dependency versions change. No commit, push, deployment, router setting or machine security setting is changed by applying the bundle.
 

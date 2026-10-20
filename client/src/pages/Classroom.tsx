@@ -70,7 +70,7 @@ export default function Classroom({ section = 'overview' }: { section?: Section 
   const Icon = icons[section];
   if ((account?.role !== 'viewer' && account?.role !== 'teacher')) return <p role="alert">Class viewer access is required.</p>;
   return <div className="ska-classroom ska-core-page">
-    <header className="ska-classroom-hero"><div className="ska-classroom-icon"><Icon size={30} aria-hidden="true" /></div><div><p className="ska-classroom-eyebrow">Your classroom, together</p><h1>{titles[section]}</h1><p>{overview?.state === 'assigned' ? overview.room?.name : 'A simple view of your assigned class.'}</p></div>
+    <header className="ska-classroom-hero"><div className="ska-classroom-icon"><Icon size={30} aria-hidden="true" /></div><div><p className="ska-classroom-eyebrow">{account?.role === 'teacher' ? 'Teacher · attendance & child safety' : 'Class viewer · view only'}</p><h1>{titles[section]}</h1><p>{overview?.state === 'assigned' ? overview.room?.name : 'A simple view of your assigned class.'}</p></div>
       <button type="button" onClick={() => setRevision(value => value + 1)} aria-label="Refresh class"><RefreshCw size={18} aria-hidden="true" />Refresh</button>
     </header>
     {serverUnavailable ? <p role="alert" className="ska-classroom-card">Your class is unavailable while the connection is interrupted. Reconnect to load current information.</p>

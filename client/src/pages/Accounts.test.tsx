@@ -155,3 +155,33 @@ test('administrator creates a Teacher with an explicit class and no document gra
   fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/accounts'), expect.objectContaining({ role: 'teacher', roomId: 'rainbow', documentAccess: 'none' })));
 });
+
+test('linking an employee supplies the Teacher class while keeping the permission choice explicit', async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: { data: String(url).endsWith('/staff-options')
+    ? [{ id: 'employee', name: 'Staff Example', jobRole: 'Teacher', active: true, roomId: 'rainbow', roomName: 'Rainbow class', account: null }]
+    : String(url).endsWith('/rooms') ? [activeClass] : String(url).includes('/accounts') ? [testAccount, editor] : [] } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { data: editor } });
+  render(<SignedIn><Accounts /></SignedIn>);
+  await waitFor(() => expect(screen.getByLabelText('Staff member', { exact: true })).toBeEnabled());
+  fireEvent.change(screen.getByLabelText('Staff member', { exact: true }), { target: { value: 'employee' } });
+  expect(screen.getByLabelText('Access', { exact: true })).toHaveValue('editor');
+  fireEvent.change(screen.getByLabelText('Access', { exact: true }), { target: { value: 'teacher' } });
+  expect(screen.queryByLabelText('Assigned class', { exact: true })).not.toBeInTheDocument();
+  expect(screen.getByText(/Linked class: Rainbow class/)).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Username', { exact: true }), { target: { value: 'staff-login' } });
+  fireEvent.change(screen.getByLabelText('Display name', { exact: true }), { target: { value: 'Staff Example' } });
+  fireEvent.change(screen.getByLabelText('Temporary password', { exact: true }), { target: { value: 'Synthetic long password 20!' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/accounts'), expect.objectContaining({ staffMemberId: 'employee', role: 'teacher', roomId: 'rainbow' })));
+});
+
+test('already linked and inactive employees cannot be assigned to a second login', async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: { data: String(url).endsWith('/staff-options')
+    ? [{ id: 'linked', name: 'Linked Person', jobRole: 'Teacher', active: true, roomId: null, roomName: null, account: { id: editor.id, username: editor.username, role: 'editor', disabled: false } },
+      { id: 'inactive', name: 'Inactive Person', jobRole: 'Teacher', active: false, roomId: null, roomName: null, account: null }]
+    : String(url).includes('/accounts') ? [testAccount, editor] : [] } }));
+  render(<SignedIn><Accounts /></SignedIn>);
+  await screen.findByRole('option', { name: 'Linked Person · Teacher — Already linked' });
+  expect(screen.getByRole('option', { name: 'Linked Person · Teacher — Already linked' })).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Inactive Person · Teacher — Inactive' })).toBeDisabled();
+});

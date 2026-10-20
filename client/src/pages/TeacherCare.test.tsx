@@ -47,10 +47,10 @@ test('an administrator-review visit disables both attendance actions', async () 
   render(view()); expect(await screen.findByText('Attendance needs administrator review.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Check in Ari' })).toBeDisabled(); expect(screen.getByRole('button', { name: 'Check out Ari' })).toBeDisabled();
 });
-test('children view opens the selected safety card without attendance or global-profile actions', async () => {
+test('children view offers attendance and the selected safety card without global-profile actions', async () => {
   render(view(account, 'children')); fireEvent.click(await screen.findByRole('button', { name: 'Health & emergency' }));
   expect(screen.getByText('Safety card for Ari Example')).toBeVisible();
-  expect(axios.get).not.toHaveBeenCalled(); expect(screen.queryByRole('button', { name: 'Check in Ari' })).not.toBeInTheDocument();
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/classroom/attendance'), expect.anything()); expect(screen.getByRole('button', { name: 'Check in Ari' })).toBeEnabled();
 });
 test.each(['unassigned', 'unavailable'])('%s class shows no records or attendance actions', async state => {
   vi.mocked(axios.get).mockResolvedValue({ data: { data: { ...roster, state, room: null, rows: [] } } });

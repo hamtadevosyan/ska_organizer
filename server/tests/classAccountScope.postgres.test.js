@@ -40,8 +40,8 @@ test('024 preserves populated 023 records, revokes only old viewer sessions, and
     const read = async (name) => (await connection.query(`SELECT * FROM ${quote(name)} ORDER BY id`))[0];
     const beforeAccounts = await read('Accounts'); const beforeRooms = await read('Rooms');
     const beforeIngredients = await read('Ingredients'); const beforeSessions = await read('Sessions');
-    expect(await migrate(connection, schema)).toEqual(['024-classroom-account-scope', '025-teacher-care-access']);
-    expect((await read('Accounts')).map(({ roomId, ...person }) => person)).toEqual(beforeAccounts);
+    expect(await migrate(connection, schema)).toEqual(['024-classroom-account-scope', '025-teacher-care-access', '026-staff-account-links']);
+    expect((await read('Accounts')).map(({ roomId, staffMemberId, ...person }) => person)).toEqual(beforeAccounts);
     expect((await read('Accounts')).every((person) => person.roomId === null)).toBe(true);
     expect(await read('Rooms')).toEqual(beforeRooms); expect(await read('Ingredients')).toEqual(beforeIngredients);
     expect(await read('Sessions')).toEqual(beforeSessions.filter((session) => session.accountId !== 'synthetic-viewer'));

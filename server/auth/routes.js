@@ -24,7 +24,8 @@ router.post('/password', async (req, res) => {
 });
 const admin = express.Router();
 admin.use(requireSession, requireAdmin);
-admin.get('/accounts', async (req, res) => res.json({ data: (await db.listAccounts()).map(auth.publicAccount) }));
+admin.get('/accounts', async (req, res) => res.json({ data: await auth.listAccounts(req.sessionToken) }));
+admin.get('/staff-options', async (req, res) => res.json({ data: await auth.staffOptions(req.sessionToken) }));
 admin.post('/accounts', async (req, res) => res.status(201).json({ data: await auth.createAccount(req.sessionToken, req.body || {}) }));
 admin.put('/accounts/:id', async (req, res) => res.json({ data: await auth.updateAccount(req.sessionToken, req.params.id, req.body || {}) }));
 admin.post('/accounts/:id/password', async (req, res) => {
