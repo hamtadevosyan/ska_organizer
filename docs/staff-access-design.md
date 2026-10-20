@@ -1,6 +1,6 @@
 # Proposed staff access and badge clock
 
-Status: proposal for follow-up work, including SKAO-106. SKAO-111 implements only the assigned **Class viewer** preset.
+Status: proposal for follow-up work, including SKAO-106. SKAO-111 implements assigned **Class viewer** and **Teacher** presets; facility-wide viewer and clock/badge presets remain proposals.
 
 Keep an employee record, a job title, an application account and a clock credential separate. A cleaner may need a clock credential without access to children or planning. An employee can exist without an application sign-in. An account's class scope must be explicitly assigned rather than inferred from names or job titles.
 
@@ -9,6 +9,7 @@ Keep an employee record, a job title, an application account and a clock credent
 | Administrator | Authorized facility administration | Accounts and authorized operational administration |
 | Editor | Authorized facility operations | Operational editing; sensitive employee/document access remains separately controlled |
 | Class viewer (implemented) | One assigned active class's minimal overview, names, saved activities and shared meal names | Own password/session only |
+| Teacher (implemented) | One active assigned class, essential reviewed safety cards and current attendance | Today’s scoped check-in/out; own password/session |
 | Facility viewer | Explicitly approved facility operational information | Own password/session only; no generation or draft mutation |
 | Time clock only | Own current clock state and approved personal time history | Own clock in/out only |
 

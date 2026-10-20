@@ -7,7 +7,7 @@ import { getNavigationItems } from './navigation';
 export default function Sidebar() {
   const { account } = useAuth();
   return <aside className="app-sidebar print:hidden">
-    <Link to={account?.role === 'viewer' ? '/classroom' : '/dashboard'} className="app-brand-link" aria-label="Smart Kids Academy home"><AcademyBrand /></Link>
+    <Link to={(account?.role === 'viewer' || account?.role === 'teacher') ? '/classroom' : '/dashboard'} className="app-brand-link" aria-label="Smart Kids Academy home"><AcademyBrand /></Link>
     <p className="ska-kicker sidebar-label">Your workspace</p>
     <nav aria-label="Desktop navigation" className="desktop-navigation">
       {getNavigationItems(account?.role).map((item) => <NavLink key={item.to} to={item.to} end={item.to === '/classroom'}

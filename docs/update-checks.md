@@ -19,7 +19,8 @@ This is the reusable command for future updates. It uses the database settings f
 | 6 | Run the PostgreSQL suites using `TEST_DATABASE_URL` |
 | 7 | Run all client component tests |
 | 8 | Run the client production build and lint |
-| 9 | Check browser-runner selection, then run browser tests with isolated mock backend and Vite test servers |
+| 9 | Check static PWA privacy and browser-runner selection, then run browser tests with isolated mock backend and Vite test servers |
+| 10 | Run production-build PWA checks (focused Teacher privacy for `--access`; omitted for `--inventory`) |
 
 Archive verification checks readability, not a full restore. Each run creates a uniquely named backup and prints its location. Previous backups are retained, including when a migration or test fails.
 
@@ -37,7 +38,7 @@ This runs the same backup and migration steps, but limits API, PostgreSQL, compo
 
 ## Focused class access checks
 
-For SKAO-111 account assignments, session revocation and class isolation:
+For SKAO-111 account assignments, session revocation, class isolation, teacher safety cards and attendance:
 
 ```bash
 bash scripts/check-update.sh --access

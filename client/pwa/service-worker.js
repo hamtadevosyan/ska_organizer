@@ -4,7 +4,8 @@ const CACHE_NAME = '__SKAO_CACHE_NAME__';
 const CACHE_PREFIX = 'skao-static-v1-';
 const files = new Map(STATIC_FILES.map(file => [file.url, file]));
 const pages = new Set(['/', '/index.html', '/dashboard', '/attendance', '/children',
-  '/rooms', '/inventory', '/activities', '/schedule', '/meals', '/staff', '/reports', '/accounts']);
+  '/rooms', '/inventory', '/activities', '/schedule', '/meals', '/staff', '/reports', '/accounts',
+  '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals', '/classroom/attendance']);
 
 async function staticResponse(file) {
   const response = await fetch(new Request(new URL(file.url, self.location.origin), {

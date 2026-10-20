@@ -23,6 +23,8 @@ vi.mock('../pages/Staff', () => ({ default: () => { mounted('staff'); return <p>
 vi.mock('../pages/Reports', () => ({ default: () => { mounted('reports'); return <p>Operational page</p>; } }));
 vi.mock('../pages/Classroom', () => ({ default: ({ section }: { section: string }) => <h1>Class {section}</h1> }));
 
+vi.mock('../pages/TeacherCare', () => ({ default: ({ section }: { section: string }) => <h1>Teacher {section}</h1> }));
+
 function CurrentPath() { return <output aria-label="Current path">{useLocation().pathname}</output>; }
 
 test.each(['/dashboard', '/children', '/rooms/another-class', '/attendance', '/activities', '/meals', '/staff', '/inventory', '/purchasing', '/receiving', '/reports', '/accounts', '/registration-forms', '/unknown'])('Class viewer deep link %s redirects before mounting an operational page', async path => {
@@ -49,4 +51,16 @@ test.each(['admin', 'editor'] as const)('%s retains the ordinary operational rou
   render(<SignedIn account={{ ...testAccount, role }}><MemoryRouter initialEntries={['/staff']}><AppRoutes /></MemoryRouter></SignedIn>);
   expect(screen.getByText('Operational page')).toBeVisible();
   expect(mounted).toHaveBeenCalledWith('staff');
+});
+
+
+test.each(['/staff', '/children', '/attendance', '/accounts', '/inventory'])('Teacher deep link %s cannot mount global management', async path => {
+  mounted.mockClear();
+  render(<SignedIn account={{ ...testAccount, role: 'teacher', roomId: 'own-class' }}><MemoryRouter initialEntries={[path]}><AppRoutes /><CurrentPath /></MemoryRouter></SignedIn>);
+  expect(await screen.findByRole('heading', { name: 'Class overview' })).toBeVisible();
+  expect(mounted).not.toHaveBeenCalled();
+});
+test.each(['children', 'attendance'])('Teacher opens scoped %s directly', section => {
+  render(<SignedIn account={{ ...testAccount, role: 'teacher', roomId: 'own-class' }}><MemoryRouter initialEntries={['/classroom/' + section]}><AppRoutes /></MemoryRouter></SignedIn>);
+  expect(screen.getByRole('heading', { name: 'Teacher ' + section })).toBeVisible();
 });

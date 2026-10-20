@@ -8,14 +8,14 @@ const { validateWeekStart } = require('./planValidation');
 const scoped = (token, read) => db.withAuthLock(() => db.withRoomLock(async () => {
   const account = await auth.sessionAccount(token, { touch: true });
   auth.operationalPermission(account, false);
-  if (account.role !== 'viewer') throw auth.problem('This view is available to Class viewer accounts.', 403, 'CLASSROOM_VIEWER_ONLY');
+  if (!['viewer', 'teacher'].includes(account.role)) throw auth.problem('This view is available to Class viewer and Teacher accounts.', 403, 'CLASSROOM_VIEWER_ONLY');
   const assigned = account.roomId == null ? null : await db.getRoomById(account.roomId);
   const state = account.roomId == null ? 'unassigned' : assigned?.active ? 'assigned' : 'unavailable';
   const room = state === 'assigned' ? {
     id: assigned.id, name: assigned.name, ageMinMonths: assigned.ageMinMonths ?? null,
     ageMaxMonths: assigned.ageMaxMonths ?? null, capacity: assigned.capacity ?? null,
   } : null;
-  return read({ state, room });
+  return read({ state, room }, account);
 }));
 
 function queryKeys(query, allowed) {
@@ -76,3 +76,7 @@ exports.meals = (token, query = {}) => {
     return { ...scope, weekStart, hasPlan: !!plan, version: plan?.version ?? 0, savedAt: plan?.savedAt ?? null, scope: 'facility', week };
   });
 };
+
+exports.withScope = scoped;
+exports.activeChildren = activeChildren;
+exports.publicChild = child;

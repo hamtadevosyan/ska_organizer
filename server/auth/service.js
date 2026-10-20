@@ -10,7 +10,7 @@ const csrfToken = (token) => createHmac('sha256', token).update('skao-csrf-v1').
 const documentAccess = (account) => account.role === 'admin' ? 'edit' : 'none';
 const publicAccount = (account) => {
   const { id, username, displayName, role, disabled, mustChangePassword, createdAt, updatedAt } = account;
-  return { id, username, displayName, role, roomId: role === 'viewer' ? account.roomId ?? null : null,
+  return { id, username, displayName, role, roomId: ['viewer', 'teacher'].includes(role) ? account.roomId ?? null : null,
     disabled, mustChangePassword, documentAccess: documentAccess(account), createdAt, updatedAt };
 };
 const audit = (actor, action, entityId = null) => db.appendAudit({
@@ -23,7 +23,7 @@ function accountValues(input) {
   const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : '';
   if (!/^[a-z0-9._-]{3,64}$/.test(username)) throw problem('Username must be 3–64 letters, numbers, periods, underscores or hyphens.');
   if (!displayName || displayName.length > 100) throw problem('Display name must be between 1 and 100 characters.');
-  if (!['admin', 'editor', 'viewer'].includes(input.role)) throw problem('Choose administrator, editor or Class viewer access.');
+  if (!['admin', 'editor', 'viewer', 'teacher'].includes(input.role)) throw problem('Choose administrator, editor, Class viewer or Teacher access.');
   return { username, displayName, role: input.role };
 }
 function documentAccessValue(value, role) {
@@ -32,9 +32,9 @@ function documentAccessValue(value, role) {
   return 'none'; // Administrator access is inherent in the role, never a transferable grant.
 }
 async function classroomAssignment(input, role, previous = null) {
-  const roomId = input.roomId === undefined ? (role === 'viewer' ? previous : null) : input.roomId;
-  if (roomId !== null && (typeof roomId !== 'string' || !roomId.trim() || roomId !== roomId.trim() || roomId.length > 255 || role !== 'viewer')) {
-    throw problem('Choose a valid class assignment for a Class viewer account.', 400, 'CLASS_ASSIGNMENT_INVALID');
+  const roomId = input.roomId === undefined ? (['viewer', 'teacher'].includes(role) ? previous : null) : input.roomId;
+  if (roomId !== null && (typeof roomId !== 'string' || !roomId.trim() || roomId !== roomId.trim() || roomId.length > 255 || !['viewer', 'teacher'].includes(role))) {
+    throw problem('Choose a valid class assignment for a Class viewer or Teacher account.', 400, 'CLASS_ASSIGNMENT_INVALID');
   }
   if (roomId !== null) {
     const room = await db.getRoomById(roomId);

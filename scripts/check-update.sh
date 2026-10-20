@@ -12,7 +12,7 @@ Back up the configured database, verify the archive, apply pending migrations,
 then run server tests, PostgreSQL tests, client tests, build, lint and browser tests.
 
   --inventory        Run inventory, purchasing and related planner suites.
-  --access           Run class access and account isolation suites.
+  --access           Run class access, teacher safety and attendance suites.
   --dry-run          Print the steps without reading credentials or running them.
   --backup-dir DIR   Backup directory (default: ~/ska_backups).
   --help             Show this help.
@@ -60,10 +60,10 @@ if "$inventory_only"; then
   browser_tests+=(-- tests/browser/inventory.spec.ts tests/browser/inventory-group-removal.spec.ts tests/browser/purchasing.spec.ts tests/browser/purchasing-list.spec.ts tests/browser/batch-receiving.spec.ts tests/browser/weekly-plans.spec.ts tests/browser/catalog-corrections.spec.ts)
 fi
 if "$access_only"; then
-  server_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js)
-  postgres_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/classAccountScope.postgres.test.js tests/authenticationPersistence.postgres.test.js)
-  client_tests+=(-- src/auth/AuthFlow.test.tsx src/auth/transport.test.ts src/components/AppShell.test.tsx src/pages/Accounts.test.tsx src/pages/Classroom.test.tsx)
-  browser_tests+=(-- tests/browser/classroom-access.spec.ts tests/browser/authentication.spec.ts tests/browser/remembered-login.spec.ts)
+  server_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/teacherCare.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/classAccountScope.postgres.test.js tests/teacherCare.test.js tests/teacherCare.postgres.test.js tests/authenticationPersistence.postgres.test.js)
+  client_tests+=(-- src/auth/AuthFlow.test.tsx src/auth/transport.test.ts src/components/AppShell.test.tsx src/pages/Accounts.test.tsx src/pages/Classroom.test.tsx src/pages/TeacherCare.test.tsx src/components/children/ChildSafetyCard.test.tsx src/router/index.test.tsx)
+  browser_tests+=(-- tests/browser/classroom-access.spec.ts tests/browser/teacher-care.spec.ts tests/browser/authentication.spec.ts tests/browser/remembered-login.spec.ts)
 fi
 
 current_step='Preflight'
@@ -192,8 +192,14 @@ run_in 'PostgreSQL tests (separate test database)' server env NODE_ENV=developme
 run_in 'Client component tests' client env NODE_ENV=test "${client_tests[@]}"
 run_in 'Client production build' client env NODE_ENV=production npm run build
 run_in 'Client lint' client npm run lint
+run_in 'Static PWA privacy checks' client npm run test:pwa
 run_in 'Browser runner tests' client npm run test:browser:runner
 run_in 'Browser tests (isolated test servers)' client env NODE_ENV=test "${browser_tests[@]}"
+if ! "$inventory_only"; then
+  pwa_browser_tests=(npm run test:browser:pwa)
+  if "$access_only"; then pwa_browser_tests+=(-- tests/pwa-browser/teacher-safety-caching.spec.ts); fi
+  run_in 'PWA browser privacy checks (production build)' client env NODE_ENV=test "${pwa_browser_tests[@]}"
+fi
 
 if "$dry_run"; then
   printf '\nDry run complete. Run again without --dry-run to execute these steps.\n'

@@ -22,8 +22,20 @@ function harness() {
       if (!stores.has(name)) stores.set(name, new Map());
       const store = stores.get(name);
       return {
-        match: async request => store.get(key(request))?.clone(),
-        put: async (request, response) => { store.set(key(request), response.clone()); },
+        match: async request => {
+          const saved = store.get(key(request));
+          if (!saved) return undefined;
+          return new Response(saved.bytes.slice(), {
+            status: saved.status, statusText: saved.statusText, headers: saved.headers,
+          });
+        },
+        put: async (request, response) => {
+          // Cache.put consumes the supplied body and stores a snapshot. Keep
+          // bytes here, not long-lived Node Response streams and clone branches.
+          const saved = { status: response.status, statusText: response.statusText,
+            headers: [...response.headers], bytes: new Uint8Array(await response.arrayBuffer()) };
+          store.set(key(request), saved);
+        },
       };
     },
     keys: async () => [...stores.keys()],
@@ -52,12 +64,48 @@ function harness() {
     events.get('fetch')({ request, respondWith: promise => { response = promise; } });
     return { request, response };
   }
-  return { lifecycle, dispatch, stores, calls,
+  return { lifecycle, dispatch, stores, calls, caches,
     network: fn => { serve = fn; },
     reads: () => cacheReads, claimed: () => claimed,
     keys: () => [...(stores.get(cacheName)?.keys() || [])],
   };
 }
+
+test('the cache fixture consumes a body without cloning and snapshots response metadata', async () => {
+  const sw = harness();
+  const cache = await sw.caches.open('fixture-cache');
+  const response = new Response('Synthetic public bytes', {
+    status: 200, statusText: 'OK', headers: { 'Content-Type': 'text/plain', 'X-Build': 'original' },
+  });
+  Object.defineProperty(response, 'clone', { value() {
+    throw new TypeError('Response.clone: Body has already been consumed.');
+  } });
+  await cache.put('/fixture.txt', response);
+  assert.equal(response.bodyUsed, true);
+  response.headers.set('X-Build', 'changed after put');
+  const saved = await cache.match('/fixture.txt');
+  assert.equal(saved.status, 200);
+  assert.equal(saved.statusText, 'OK');
+  assert.equal(saved.headers.get('content-type'), 'text/plain');
+  assert.equal(saved.headers.get('x-build'), 'original');
+  assert.equal(await saved.text(), 'Synthetic public bytes');
+});
+
+test('the cache fixture returns independent fresh bodies without retaining response streams', async () => {
+  const sw = harness();
+  const cache = await sw.caches.open('fixture-cache');
+  await cache.put('/fixture.txt', new Response('Synthetic public bytes'));
+  const first = await cache.match('/fixture.txt');
+  const second = await cache.match('/fixture.txt');
+  assert.notEqual(first, second);
+  assert.equal(await first.text(), 'Synthetic public bytes');
+  assert.equal(second.bodyUsed, false);
+  const bytes = new Uint8Array(await second.arrayBuffer());
+  bytes.fill(0);
+  if (typeof globalThis.gc === 'function') globalThis.gc();
+  assert.equal(await (await cache.match('/fixture.txt')).text(), 'Synthetic public bytes');
+  assert.equal(await cache.match('/missing.txt'), undefined);
+});
 
 test('the generated worker lists only exact public build files with matching hashes', () => {
   assert.ok(manifest.length > 1);
@@ -143,6 +191,18 @@ test('a bad build response prevents installation instead of persisting unexpecte
   sw.network(async () => new Response(JSON.stringify({ child: 'Synthetic private record' })));
   await assert.rejects(sw.lifecycle('install'), /does not match/);
   assert.deepEqual(sw.keys(), []);
+});
+
+test('class pages can reload the public shell offline without caching class URLs or intercepting clinical APIs', async () => {
+  const sw = harness(); await sw.lifecycle('install'); const before = sw.keys();
+  sw.network(async () => { throw new Error('Synthetic offline connection'); });
+  for (const path of ['/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals', '/classroom/attendance']) {
+    assert.equal(await (await sw.dispatch(path, {}, true).response).text(), bodies.get('/index.html').toString());
+  }
+  for (const path of ['/api/classroom/attendance', '/api/classroom/children/child/safety', '/api/children/child/safety']) {
+    assert.equal(sw.dispatch(path, {}, true).response, undefined);
+  }
+  assert.deepEqual(sw.keys(), before);
 });
 
 test('activation removes only obsolete SKA static caches and claims clients after install', async () => {

@@ -150,3 +150,15 @@ test('a failed sign-out remains actionable and reports the error inside More', a
   expect(dialog.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   expect(signOut).toHaveBeenCalledOnce();
 });
+
+
+test('Teacher navigation exposes scoped attendance and children without management links', () => {
+  setup('/classroom/attendance', 'teacher');
+  const primary = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
+  expect(primary.getByRole('link', { name: 'Attendance' })).toHaveAttribute('href', '/classroom/attendance');
+  expect(primary.getByRole('link', { name: 'Attendance' })).toHaveAttribute('aria-current', 'page');
+  fireEvent.click(primary.getByRole('button', { name: 'More' }));
+  const more = within(screen.getByRole('dialog'));
+  expect(more.getByRole('link', { name: 'Children' })).toHaveAttribute('href', '/classroom/children');
+  for (const name of ['Staff', 'Inventory', 'Accounts', 'Reports', 'Registration forms']) expect(more.queryByRole('link', { name })).not.toBeInTheDocument();
+});

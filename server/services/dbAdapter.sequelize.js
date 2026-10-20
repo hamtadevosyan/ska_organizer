@@ -481,3 +481,7 @@ exports.listAudit = ({ limit = 50, offset = 0, actions } = {}) => list('AuditEve
   ...(actions ? { where: { action: { [Op.in]: actions } } } : {}),
   order: [['occurredAt', 'DESC'], ['id', 'DESC']], limit, offset,
 });
+
+exports.getChildSafetyProfile = (childId) => get('ChildSafetyProfile', childId);
+exports.saveChildSafetyProfile = async (values) => await exports.getChildSafetyProfile(values.childId)
+  ? update('ChildSafetyProfile', values.childId, values) : create('ChildSafetyProfile', values);

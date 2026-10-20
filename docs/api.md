@@ -22,6 +22,7 @@ for these rules. Do not put a password, session cookie or CSRF token in a URL.
 | Health | `GET /api/health`, `GET /api/ready` | Process/storage status only; no account or record data |
 | Accounts/audit | `/api/auth/*`, `/api/admin/accounts`, `/api/admin/audit` | [Authentication](authentication.md) |
 | Class viewer | `/api/classroom`, `/api/classroom/children`, `/api/classroom/activities`, `/api/classroom/meals` | [Class access](classroom-access.md) |
+| Teacher care | `/api/classroom/attendance`, `/api/classroom/children/:id/safety`, scoped attendance actions; `/api/children/:id/safety` for admin/editor | [Teacher care access](teacher-care-access.md) |
 | Dashboard | `GET /api/dashboard` | [Dashboard](dashboard.md) |
 | Rooms | `/api/rooms`, `/api/rooms/:id` | [Rooms and classes](rooms-and-classes.md) |
 | Children | `/api/children`, `/api/children/:id/profile` | [Child roster](child-roster.md) |

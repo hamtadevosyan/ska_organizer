@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 // Each invocation starts a new, ordinary isolated fixture. Authentication-heavy
 // files must not share one process-wide login budget with the entire suite.
 const isolatedFiles = new Set([
-  'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts',
+  'teacher-care.spec.ts', 'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts',
   'remembered-login.spec.ts', 'child-documents.spec.ts', 'staff-compliance.spec.ts',
   'batch-receiving.spec.ts', 'purchasing-list.spec.ts', 'inventory-group-removal.spec.ts',
 ]);

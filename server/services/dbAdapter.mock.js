@@ -7,7 +7,7 @@ const { amount } = require('./inventoryValidation');
 const mock = {
   rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
-  children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
+  childSafetyProfiles: {}, children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
   staffDocuments: [], staffDocumentRevisions: [], staffDocumentSettings: null,
   attendance: [], attendanceCorrections: [],
   activities: [],
@@ -83,6 +83,8 @@ const withTransaction = (fn) => {
 };
 module.exports = {
   health: async () => {},
+  getChildSafetyProfile: async (childId) => structuredClone(mock.childSafetyProfiles[childId] || null),
+  saveChildSafetyProfile: async (profile) => { mock.childSafetyProfiles[profile.childId] = structuredClone(profile); return structuredClone(profile); },
   withTransaction, withCatalogLock: withTransaction, withAuthLock: withTransaction, withRoomLock: withTransaction, withInventoryLock: withTransaction, withPurchasingLock: withTransaction,
   listInventoryGroups: async (options) => structuredClone(filteredGroups(options)),
   inventoryGroupCounts: async (options = {}) => mock.inventoryGroups.map((group) => {
@@ -251,7 +253,7 @@ module.exports = {
     mock.scheduleWeeks = [];
     mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryGroupOperations = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = []; mock.purchaseBatches = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
-    mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
+    mock.childSafetyProfiles = {}; mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
     mock.registrationForms = []; mock.registrationFormRevisions = [];
     mock.staffDocuments = []; mock.staffDocumentRevisions = []; mock.staffDocumentSettings = null;
     mock.attendance = [];

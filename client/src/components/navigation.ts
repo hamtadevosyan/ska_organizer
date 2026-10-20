@@ -33,12 +33,13 @@ export const primaryNavigation: NavigationItem[] = [
 ];
 
 export function getNavigationItems(role?: Role) {
+  if (role === 'teacher') return [...classroomItems, { to: '/classroom/attendance', label: 'Class attendance', icon: ClipboardCheck }];
   if (role === 'viewer') return classroomItems;
   return allItems.filter((item) => !item.adminOnly || role === 'admin');
 }
 
 export function getPrimaryNavigationItems(role?: Role) {
-  return role === 'viewer' ? classroomItems : primaryNavigation;
+  return role === 'teacher' ? [classroomItems[0], { to: '/classroom/attendance', label: 'Attendance', icon: ClipboardCheck }, classroomItems[2], classroomItems[3]] : role === 'viewer' ? classroomItems : primaryNavigation;
 }
 
 export function getMoreItems(role?: Role) {

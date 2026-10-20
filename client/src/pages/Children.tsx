@@ -32,7 +32,7 @@ export default function Children() {
   const [profileId, setProfileId] = useState('');
   const [openAddDocuments, setOpenAddDocuments] = useState(false);
   const [documentWork, setDocumentWork] = useState<DocumentWork>({ dirty: false, busy: false });
-  const leaveProfile = () => !documentWork.busy && (!documentWork.dirty || window.confirm('Discard the unsaved document changes?'));
+  const leaveProfile = () => !documentWork.busy && (!documentWork.dirty || window.confirm('Discard the unsaved child profile changes?'));
   function viewProfile(id: string) { if (id === profileId || !leaveProfile()) return; setDocumentWork({ dirty: false, busy: false }); setOpenAddDocuments(false); setProfileId(id); }
   useEffect(() => {
     const controller = new AbortController();

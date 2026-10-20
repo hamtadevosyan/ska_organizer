@@ -54,6 +54,7 @@ For automation, the bootstrap command also accepts `--password-stdin`, with the 
 |---|---|---|
 | Administrator | Read and write | Create accounts, change access, disable/re-enable, reset passwords, read audit |
 | Editor | Read and write | No access |
+| Teacher (`teacher`) | Assigned class: saved plans, basic names, essential safety cards and current attendance actions | No access |
 | Class viewer (`viewer`) | Assigned active class only: basic children names, saved activities, shared academy meal names | No access |
 
 Class viewers use a dedicated class area. Every legacy operational route is denied, including draft generation and previews. An unassigned or unavailable class shows no records. The server reads the live account and class for every class request; callers cannot choose a different class. See [Class access](classroom-access.md).
@@ -108,7 +109,7 @@ All responses containing authentication state have `Cache-Control: no-store`. No
 | `PUT /api/admin/accounts/:id` | Administrator + CSRF; `{displayName,role,disabled,roomId?}` |
 | `POST /api/admin/accounts/:id/password` | Administrator + CSRF; `{password}`; 204 |
 | `GET /api/admin/audit?limit=25&offset=0` | Administrator; newest events first; maximum 100 per page |
-| `/api/classroom` and its child routes | Class viewer, assigned active class; saved read-only projections |
+| `/api/classroom` and its child routes | Class viewer or Teacher, assigned active class; Teacher attendance/safety are separate bounded endpoints |
 | Other operational `/api/*` endpoints | Editor or administrator who has changed their temporary password |
 
 Errors use `{error:{message,code}}` where applicable: HTTP 401 for missing/expired sessions, HTTP 403 for insufficient permission or invalid Origin/CSRF, HTTP 429 for sign-in limits. A temporary-password account receives `PASSWORD_CHANGE_REQUIRED` until its password is changed. Domain validation errors retain their existing field details. Internal failures return a generic message without database or credential details.
@@ -175,3 +176,7 @@ Automated checks: `npm test -- --silent` in server, `npm run test:postgres -- --
 ## Class account migration (SKAO-111)
 
 Migration `024-classroom-account-scope` adds nullable `Accounts.roomId` with a room foreign key and a role constraint. It revokes existing Class viewer sessions once; the next live authorization check signs them out and clears the old protected view. Administrator and editor sessions, accounts, passwords and operational records are preserved. Existing viewers have no inferred class. An administrator must assign an active class in Accounts before they can see records. Repeating the migration does not revoke newly issued sessions. Class changes revoke ordinary and remembered sessions.
+
+## Teacher care access
+
+Teacher is a separate explicitly assigned class role. It does not grant legacy operational API access, planning, private documents or medical editing. Administrators maintain reviewed safety summaries; editors can read them. See [Teacher attendance and safety](teacher-care-access.md) for migration 025, permitted fields, audit behavior and workflows. Existing Class viewers are not promoted.

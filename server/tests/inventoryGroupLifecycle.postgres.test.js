@@ -75,7 +75,7 @@ test('migration 023 preserves populated 022 stock, group metadata and original h
     expect(before.purchasing[0].snapshot).toEqual(purchasingSnapshot);
     const [originalJson] = await connection.query(`SELECT "before"::text AS before_json, "after"::text AS after_json, request::text AS request_json FROM "${schema}"."InventoryMovements"`);
     const [originalPurchasingJson] = await connection.query(`SELECT snapshot::text AS snapshot_json FROM "${schema}"."PurchasingLists"`);
-    expect(await migrate(connection, schema)).toEqual(['023-inventory-group-lifecycle', '024-classroom-account-scope']);
+    expect(await migrate(connection, schema)).toEqual(['023-inventory-group-lifecycle', '024-classroom-account-scope', '025-teacher-care-access']);
     const groups = await read('InventoryGroups'); const items = await read('InventoryItems'); const movements = await read('InventoryMovements');
     expect(groups.map(({ version, archived, archivedAt, deletedAt, ...row }) => row)).toEqual(before.groups);
     expect(groups.every((row) => row.version === 1 && row.archived === false && row.archivedAt === null && row.deletedAt === null)).toBe(true);

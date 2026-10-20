@@ -133,6 +133,13 @@ module.exports = (sequelize) => {
     photoConsent: DataTypes.BOOLEAN, notes: DataTypes.TEXT, roomId: DataTypes.STRING,
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   });
+  const ChildSafetyProfile = sequelize.define('ChildSafetyProfile', {
+    childId: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
+    details: { type: DataTypes.JSONB, allowNull: false },
+    version: { type: DataTypes.INTEGER, allowNull: false },
+    reviewedAt: { type: DataTypes.DATE, allowNull: false },
+    reviewedBy: { type: DataTypes.STRING, allowNull: false },
+  }, { timestamps: false });
   const ChildDocument = sequelize.define('ChildDocument', {
     id: id(), childId: { type: DataTypes.STRING, allowNull: false },
     title: { type: DataTypes.STRING(160), allowNull: false },
@@ -286,5 +293,5 @@ module.exports = (sequelize) => {
   }, { timestamps: false });
   return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
-    ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
+    ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
 };

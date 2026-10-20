@@ -33,7 +33,7 @@ test('teacher creation has no document grant control and sends no access', async
 test('documentation policy remains administrator-only for every role selection', async () => {
   render(<SignedIn><Accounts /></SignedIn>);
   await waitFor(() => expect(screen.getByLabelText('Access', { exact: true })).toBeEnabled());
-  for (const role of ['viewer', 'admin', 'editor']) {
+  for (const role of ['viewer', 'teacher', 'admin', 'editor']) {
     fireEvent.change(screen.getByLabelText('Access', { exact: true }), { target: { value: role } });
     expect(screen.queryByLabelText('Child documents', { exact: true })).not.toBeInTheDocument();
     expect(screen.getByText('Child documents, registration forms and contracts are available only to administrators.')).toBeInTheDocument();
@@ -139,4 +139,19 @@ test('non-administrators do not fetch accounts or the class assignment list', ()
   render(<SignedIn account={viewer}><Accounts /></SignedIn>);
   expect(screen.getByRole('alert')).toHaveTextContent('Administrator access is required.');
   expect(axios.get).not.toHaveBeenCalled();
+});
+
+
+test('administrator creates a Teacher with an explicit class and no document grant', async () => {
+  classResponses(); vi.mocked(axios.post).mockResolvedValue({ data: { data: { ...viewer, role: 'teacher' } } });
+  render(<SignedIn><Accounts /></SignedIn>);
+  await waitFor(() => expect(screen.getByLabelText('Access', { exact: true })).toBeEnabled());
+  fireEvent.change(screen.getByLabelText('Access', { exact: true }), { target: { value: 'teacher' } });
+  await waitFor(() => expect(screen.getByLabelText('Assigned class', { exact: true })).toBeEnabled());
+  fireEvent.change(screen.getByLabelText('Assigned class', { exact: true }), { target: { value: 'rainbow' } });
+  fireEvent.change(screen.getByLabelText('Username', { exact: true }), { target: { value: 'new-teacher' } });
+  fireEvent.change(screen.getByLabelText('Display name', { exact: true }), { target: { value: 'New teacher' } });
+  fireEvent.change(screen.getByLabelText('Temporary password', { exact: true }), { target: { value: 'Synthetic long password 20!' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/accounts'), expect.objectContaining({ role: 'teacher', roomId: 'rainbow', documentAccess: 'none' })));
 });

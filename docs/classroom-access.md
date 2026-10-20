@@ -23,7 +23,7 @@ The API uses the session account's live assignment. Caller-supplied room IDs, he
 | `GET /api/classroom/activities?weekStart=YYYY-MM-DD` | Saved assigned-class week, version and time entries with activity name, description and duration |
 | `GET /api/classroom/meals?weekStart=YYYY-MM-DD` | Saved facility week, version and weekday meal names/types/slots; `scope: facility` |
 
-Weekly queries require a Monday date. Missing saved plans return `hasPlan: false` and empty entries; reading never generates a plan or consults legacy draft defaults. No recipe, count, inventory or shopping fields are projected. HEAD has the same authorization as GET. Non-read methods are denied. Administrator/editor accounts use their existing operational screens rather than this viewer-only projection.
+Weekly queries require a Monday date. Missing saved plans return `hasPlan: false` and empty entries; reading never generates a plan or consults legacy draft defaults. No recipe, count, inventory or shopping fields are projected. HEAD has the same authorization as GET. Non-read methods are denied. Administrator/editor accounts use their existing operational screens rather than these class-account projections.
 
 The client clears class data during scope changes, refreshes, authorization failures and outages. It aborts obsolete requests and rejects responses for a different class. Focus, visibility and periodic checks refresh live access. Old management links redirect before management components mount. Signing out clears the protected view.
 
@@ -32,3 +32,7 @@ The client clears class data during scope changes, refreshes, authorization fail
 Run `bash scripts/check-update.sh --access` after stopping normal servers. It backs up and migrates before running the focused checks. Run `bash scripts/check-update.sh` before merging. Test two synthetic classes and verify each viewer cannot see the other's names or activities, old management links redirect, and reassignment signs the viewer out. Confirm unassigned and archived classes reveal no records and administrator/editor workflows remain available.
 
 Facility-wide read-only, time-clock-only access and badge authentication are proposed separately in [Staff access design](staff-access-design.md). They are not granted by this preset.
+
+## Teacher extension
+
+The separate Teacher role may use these saved class projections and adds scoped attendance and reviewed safety cards. Class viewer permissions remain unchanged. See [Teacher care access](teacher-care-access.md).

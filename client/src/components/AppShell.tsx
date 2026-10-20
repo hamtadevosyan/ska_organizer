@@ -24,7 +24,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     const labels: Record<string, string> = { dashboard: 'Home', attendance: 'Attendance', activities: 'Activities', meals: 'Meals',
       children: 'Children', rooms: 'Rooms & Classes', inventory: 'Inventory', purchasing: 'Purchasing', receiving: 'Receive purchases', staff: 'Staff', reports: 'Reports', accounts: 'Accounts' };
     const classroomLabels: Record<string, string> = { '/classroom': 'My class', '/classroom/children': 'Class children',
-      '/classroom/activities': 'Class activities', '/classroom/meals': 'Class meals' };
+      '/classroom/activities': 'Class activities', '/classroom/meals': 'Class meals', '/classroom/attendance': 'Class attendance' };
     document.title = `Smart Kids Academy · ${classroomLabels[location.pathname] || labels[location.pathname.split('/')[1]] || 'Home'}`;
   }, [location.pathname]);
   useEffect(() => {
