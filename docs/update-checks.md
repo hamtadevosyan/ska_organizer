@@ -92,3 +92,5 @@ npm run test:postgres -- --runTestsByPath tests/activityPlanner.test.js
 ```
 
 After that passes, rerun the full update script to complete any checks that were stopped by the earlier failure.
+
+SKAO-106 adds `bash scripts/check-update.sh --payroll` for employee clock, private payroll, staff-account links and focused mobile/desktop tests. Encryption-key initialization and recovery are documented in [payroll.md](payroll.md). The test fixtures create disposable keys, never read the production payroll key.

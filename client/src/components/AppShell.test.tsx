@@ -65,17 +65,18 @@ test.each(['admin', 'editor'] as const)('More and desktop preserve %s account vi
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const more = within(screen.getByRole('navigation', { name: 'More navigation' }));
   expect(more.getAllByRole('link').map((link) => link.textContent)).toEqual([
-    'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Receipts', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
+    'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Receipts', 'Staff', ...(role === 'admin' ? ['Staff pay & time'] : []), 'My time', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
   ]);
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
 });
 
-test('Class viewer navigation contains only its four class pages and account actions', () => {
+test('Class viewer navigation contains class pages, personal clock and account actions', () => {
   setup('/classroom/children', 'viewer');
   for (const name of ['Desktop navigation', 'Mobile navigation']) {
     const nav = within(screen.getByRole('navigation', { name }));
     expect(nav.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual([
       '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals',
+      ...(name === 'Desktop navigation' ? ['/my-time'] : []),
     ]);
     expect(nav.getByRole('link', { name: 'Children' })).toHaveAttribute('aria-current', 'page');
     expect(nav.getByRole('link', { name: 'My class' })).not.toHaveAttribute('aria-current');
@@ -85,7 +86,7 @@ test('Class viewer navigation contains only its four class pages and account act
   expect(document.querySelector('.app-breadcrumb strong')).toHaveTextContent('Children');
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const dialog = within(screen.getByRole('dialog', { name: 'More' }));
-  expect(dialog.queryAllByRole('link')).toHaveLength(0);
+  expect(dialog.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/my-time']);
   expect(dialog.getByRole('button', { name: 'Change password' })).toBeEnabled();
   expect(dialog.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   expect(dialog.getByText('Class viewer')).toBeVisible();

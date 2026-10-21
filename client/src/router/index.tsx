@@ -19,10 +19,14 @@ import Classroom from "../pages/Classroom";
 import TeacherCare from "../pages/TeacherCare";
 import { useAuth } from "../auth/context";
 
+import Payroll from "../pages/Payroll";
+import MyTime from "../pages/MyTime";
+
 export default function AppRoutes() {
   const { account } = useAuth();
   // Resolve viewer routes before any operational page mounts or requests data.
   if ((account?.role === 'viewer' || account?.role === 'teacher')) return <Routes>
+    <Route path="/my-time" element={<MyTime />} />
     <Route path="/classroom" element={<Classroom section="overview" />} />
     <Route path="/classroom/children" element={account.role === 'teacher' ? <TeacherCare section="children" /> : <Classroom section="children" />} />
     {account.role === 'teacher' && <Route path="/classroom/attendance" element={<TeacherCare section="attendance" />} />}
@@ -32,6 +36,8 @@ export default function AppRoutes() {
   </Routes>;
   return (
     <Routes>
+      <Route path="/my-time" element={<MyTime />} />
+      <Route path="/payroll" element={<Payroll />} />
       <Route path="/accounts" element={<Accounts />} />
       <Route path="/registration-forms" element={<RegistrationForms />} />
       <Route path="/rooms" element={<Rooms />} />

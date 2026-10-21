@@ -27,12 +27,16 @@ staffDocuments.mountUploads(app);
 // authorize before accepting their bounded, larger request bodies.
 app.use('/api/purchasing', requireSession, requireOperationalAccess,
   express.json({ limit: '1mb' }), require('./routes/purchasing'));
+// Authorize private payroll uploads before accepting bounded file bodies.
+const payroll = require('./routes/payroll');
+app.use('/api/payroll', requireSession, require('./auth/middleware').requireAdmin, express.json({ limit: '7mb' }), payroll.admin);
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);
 app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api/children/:childId/safety', requireSession, require('./routes/childSafety'));
+app.use('/api/time-clock', payroll.self);
 app.use('/api/classroom', requireSession, require('./routes/classroom'));
 app.use('/api', requireSession, requireOperationalAccess);
 app.use('/api/registration-forms', registrationForms.router);

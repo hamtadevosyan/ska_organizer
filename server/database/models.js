@@ -292,7 +292,8 @@ module.exports = (sequelize) => {
     id: id(), actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64),
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
-  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
+  const PayrollRecord = sequelize.define('PayrollRecord', { id: id(), staffId: { type: DataTypes.STRING, allowNull: false }, kind: { type: DataTypes.STRING(16), allowNull: false }, ciphertext: { type: DataTypes.TEXT, allowNull: false }, version: { type: DataTypes.INTEGER, allowNull: false } });
+  return { PayrollRecord, Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
     ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
 };

@@ -13,6 +13,8 @@ import grp
 import ipaddress
 import json
 import os
+import secrets
+import stat
 from pathlib import Path
 import pwd
 import re
@@ -192,7 +194,8 @@ def read_source_environment(repo, node):
 
 def server_environment(cfg):
     return {**cfg['environment'], 'NODE_ENV': 'production', 'DB_ADAPTER': 'sequelize',
-            'BIND_HOST': '127.0.0.1', 'PORT': '3001', 'APP_ORIGINS': 'https://' + cfg['domain']}
+            'BIND_HOST': '127.0.0.1', 'PORT': '3001', 'APP_ORIGINS': 'https://' + cfg['domain'],
+            'PAYROLL_KEY_FILE': str(CONF / 'payroll.key')}
 
 
 def environment_file(values):
@@ -677,8 +680,8 @@ def install(stage):
     if request['operation'] == 'setup':
         # Persist resumable setup settings before talking to the certificate authority.
         secure_write(CONF / 'config.json', json.dumps(cfg, indent=2) + '\n')
-        secure_write(CONF / 'server.env', environment_file(server_environment(cfg)))
         issue_certificate(cfg)
+    secure_write(CONF / 'server.env', environment_file(server_environment(cfg)))
     for template in (stage / 'templates').iterdir():
         destination = UNITS / template.name if template.suffix in ('.service', '.timer', '.target') else CONF / template.name
         secure_write(destination, render(template.read_text(), cfg), 0o644)
@@ -719,6 +722,41 @@ def doctor(cfg, wait=False):
     run(['openssl', 'x509', '-in', CONF / 'tls/fullchain.pem', '-noout', '-enddate'])
 
 
+def payroll_init(cfg):
+    """Initialize only an empty payroll vault; never replace a key after a restore."""
+    user = pwd.getpwnam('skao-api')
+    target = CONF / 'payroll.key'
+    exists = target.exists() or target.is_symlink()
+    if exists:
+        info = target.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != user.pw_uid or info.st_mode & 0o077:
+            raise Failure('The existing payroll key must be a regular private file owned by skao-api. It was not changed.')
+    code = """
+const db=require('./services/dbAdapter');
+(async()=>{await db.setup(process.env.DATABASE_URL,{schema:process.env.DB_SCHEMA||'public'});
+if(require('node:fs').existsSync(process.env.PAYROLL_KEY_FILE)){
+const vault=require('./services/payrollVault');vault.check();const first=await db.firstPayrollRecord();if(first)vault.open(first);
+}else if(await db.countPayrollRecords())throw Error('Restore the original payroll key.');
+})().catch(()=>{process.exitCode=1}).finally(()=>db.close());
+"""
+    result = subprocess.run([cfg['node'], '-e', code], cwd=ROOT / 'current/server',
+                            env={'PATH': SAFE_PATH, 'HOME': '/nonexistent', **server_environment(cfg)},
+                            user=user.pw_uid, group=user.pw_gid, extra_groups=[],
+                            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode:
+        raise Failure('Payroll initialization stopped. Verify migration 027 and database access. If encrypted payroll records exist, restore the original key; do not replace it. No key was changed.')
+    if not exists:
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400)
+        with os.fdopen(descriptor, 'w') as stream:
+            os.fchown(stream.fileno(), user.pw_uid, user.pw_gid)
+            stream.write(secrets.token_hex(32) + '\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+    secure_write(CONF / 'server.env', environment_file(server_environment(cfg)))
+    systemctl('restart', 'skao-api.service')
+    print('Payroll key verified and API restarted. Keep an offline protected backup of /etc/skao/native/payroll.key separately from database archives. Never commit or share it.')
+
+
 def management(command):
     cfg = configuration()
     if command in ('start', 'restart'):
@@ -734,6 +772,8 @@ def management(command):
         doctor(cfg)
     elif command == 'logs':
         run(['journalctl', '--no-pager', '-n', '100', *[arg for unit in SERVICES + ['skao-renew.service'] for arg in ('-u', unit)]])
+    elif command == 'payroll-init':
+        payroll_init(cfg)
     elif command == 'backup':
         backup(cfg)
     elif command in ('_renew', 'renew-test'):
@@ -760,6 +800,7 @@ def main():
     public = {'start': 'start local services and check HTTPS', 'stop': 'stop local services and release the sleep inhibitor',
               'restart': 'restart local services', 'status': 'check services, local DNS and trusted HTTPS',
               'logs': 'show recent service errors', 'backup': 'save a PostgreSQL archive',
+              'payroll-init': 'initialize or verify the private payroll key; never overwrite an existing key',
               'repair-ros-key': 'refresh an expired legacy ROS 2 Noble key after checking its fingerprint',
               'renew-test': 'test certificate renewal without installing a test certificate'}
     for name, help_text in public.items():

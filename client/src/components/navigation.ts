@@ -16,6 +16,8 @@ const navigation = {
   purchasing: { to: '/purchasing', label: 'Purchasing', icon: ShoppingCart },
   receiving: { to: '/receiving', label: 'Receipts', icon: PackageCheck },
   staff: { to: '/staff', label: 'Staff', icon: Users },
+  payroll: { to: '/payroll', label: 'Staff pay & time', icon: FileText, adminOnly: true },
+  clock: { to: '/my-time', label: 'My time', icon: ClipboardCheck },
   reports: { to: '/reports', label: 'Reports', icon: FileText },
   accounts: { to: '/accounts', label: 'Accounts', icon: Users, adminOnly: true },
   registrationForms: { to: '/registration-forms', label: 'Registration forms', icon: FileText, adminOnly: true },
@@ -33,8 +35,8 @@ export const primaryNavigation: NavigationItem[] = [
 ];
 
 export function getNavigationItems(role?: Role) {
-  if (role === 'teacher') return [...classroomItems, { to: '/classroom/attendance', label: 'Class attendance', icon: ClipboardCheck }];
-  if (role === 'viewer') return classroomItems;
+  if (role === 'teacher') return [...classroomItems, navigation.clock, { to: '/classroom/attendance', label: 'Class attendance', icon: ClipboardCheck }];
+  if (role === 'viewer') return [...classroomItems, navigation.clock];
   return allItems.filter((item) => !item.adminOnly || role === 'admin');
 }
 

@@ -485,3 +485,11 @@ exports.listAudit = ({ limit = 50, offset = 0, actions } = {}) => list('AuditEve
 exports.getChildSafetyProfile = (childId) => get('ChildSafetyProfile', childId);
 exports.saveChildSafetyProfile = async (values) => await exports.getChildSafetyProfile(values.childId)
   ? update('ChildSafetyProfile', values.childId, values) : create('ChildSafetyProfile', values);
+
+exports.getPayrollRecord = id => get('PayrollRecord', id);
+exports.listPayrollRecords = (staffId, kind) => list('PayrollRecord', { where: { staffId, ...(kind ? { kind } : {}) }, order: [['id', 'ASC']] });
+exports.savePayrollRecord = async row => (await get('PayrollRecord', row.id)) ? update('PayrollRecord', row.id, row) : create('PayrollRecord', row);
+
+exports.countPayrollRecords = () => model('PayrollRecord').count({ transaction: transactionContext.getStore() });
+
+exports.firstPayrollRecord = async () => plain(await model('PayrollRecord').findOne({ transaction: transactionContext.getStore() }));

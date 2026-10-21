@@ -5,7 +5,7 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
+  payrollRecords: [], rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   childSafetyProfiles: {}, children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
   staffDocuments: [], staffDocumentRevisions: [], staffDocumentSettings: null,
@@ -250,6 +250,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.payrollRecords = [];
     mock.scheduleWeeks = [];
     mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryGroupOperations = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = []; mock.purchaseBatches = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
@@ -714,3 +715,11 @@ Object.assign(module.exports, {
     return copy(mock.staffDocumentSettings);
   },
 });
+
+module.exports.getPayrollRecord = async id => structuredClone(mock.payrollRecords.find(row => row.id === id) || null);
+module.exports.listPayrollRecords = async (staffId, kind) => structuredClone(mock.payrollRecords.filter(row => row.staffId === staffId && (!kind || row.kind === kind)).sort((a, b) => a.id.localeCompare(b.id)));
+module.exports.savePayrollRecord = async row => { const i = mock.payrollRecords.findIndex(value => value.id === row.id); if (i < 0) mock.payrollRecords.push(structuredClone(row)); else mock.payrollRecords[i] = structuredClone(row); return structuredClone(row); };
+
+module.exports.countPayrollRecords = async () => mock.payrollRecords.length;
+
+module.exports.firstPayrollRecord = async () => structuredClone(mock.payrollRecords[0] || null);

@@ -36,6 +36,45 @@ class NativeTests(unittest.TestCase):
         (u.CONF / 'owner').write_text(u.MARKER)
         self.cfg = copy.deepcopy(CFG)
 
+    def test_payroll_environment_uses_fixed_service_key_outside_release(self):
+        self.assertEqual(u.server_environment(self.cfg)['PAYROLL_KEY_FILE'], str(u.CONF / 'payroll.key'))
+
+    def test_payroll_initialization_does_not_replace_a_key_when_database_verification_fails(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        target = u.CONF / 'payroll.key'
+        target.write_text('a' * 64 + '\n')
+        target.chmod(0o400)
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=1)), patch.object(u, 'systemctl') as service:
+            with self.assertRaises(u.Failure):
+                u.payroll_init(self.cfg)
+        self.assertEqual(target.read_text(), 'a' * 64 + '\n')
+        service.assert_not_called()
+
+    def test_payroll_initialization_creates_a_private_key_only_after_empty_vault_verification(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), patch.object(u, 'systemctl') as service:
+            u.payroll_init(self.cfg)
+            target = u.CONF / 'payroll.key'
+            original = target.read_text()
+            self.assertRegex(original, r'^[a-f0-9]{64}\n$')
+            self.assertEqual(target.stat().st_mode & 0o777, 0o400)
+            u.payroll_init(self.cfg)
+            self.assertEqual(target.read_text(), original)
+        self.assertIn('PAYROLL_KEY_FILE=', (u.CONF / 'server.env').read_text())
+        self.assertEqual(service.call_count, 2)
+
+    def test_payroll_initialization_refuses_symlinks_or_shared_permissions(self):
+        from types import SimpleNamespace
+        target = u.CONF / 'payroll.key'; target.write_text('synthetic'); target.chmod(0o644)
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run') as runner:
+            with self.assertRaises(u.Failure): u.payroll_init(self.cfg)
+            target.unlink(); target.symlink_to(u.CONF / 'missing-key')
+            with self.assertRaises(u.Failure): u.payroll_init(self.cfg)
+            runner.assert_not_called()
+
     def test_rfc1918_addresses_only_and_subnet_cannot_include_public_addresses(self):
         self.assertEqual(u.validate_network('192.168.50.20', 24, 'eth0')['cidr'], '192.168.50.0/24')
         for address, prefix in [('8.8.8.8', 24), ('127.0.0.1', 8), ('169.254.3.2', 16),
