@@ -43,17 +43,22 @@ test('clock writes need CSRF and one current version; retries cannot create dupl
   const person=await staff(), teacher=await actor('teacher',person); const body={action:'checkin',version:0,requestId:randomUUID()};
   expect((await http(app).post('/api/time-clock').set('Origin',fixture.origin).set('Cookie','skao_session='+teacher.token).send(body)).status).toBe(403);
   const results=await Promise.all([service.clock(teacher.token,body),service.clock(teacher.token,body)]); expect(results.filter(r=>r.replayed)).toHaveLength(1);
-  expect((await service.own(teacher.token)).sessions).toHaveLength(1);
+  expect((await service.own(teacher.token)).checkedIn).toBe(true);
+  expect(vault.open(await db.getPayrollRecord('ledger:'+person.id)).sessions).toHaveLength(1);
   await expect(service.clock(teacher.token,{...body,requestId:randomUUID()})).rejects.toMatchObject({status:409});
   await expect(service.clock(teacher.token,{...body,action:'checkout'})).rejects.toMatchObject({status:409});
 });
-test('paid rest remains paid, unpaid meals are recorded, and missing checkout blocks approval', async () => {
-  const {person,t,teacher}=await day(); await clock(teacher.token,'checkin'); advance(3600000); await clock(teacher.token,'paid-break'); advance(600000); await clock(teacher.token,'end-break');
-  await clock(teacher.token,'unpaid-break'); advance(1800000);
+test('legacy paid rest remains paid and unfinished breaks need manager correction, with no self-service break actions', async () => {
+  const {person,t,teacher}=await day(); await clock(teacher.token,'checkin'); advance(3600000);
+  await expect(clock(teacher.token,'paid-break')).rejects.toMatchObject({status:400});
+  let detail=await service.get(t,person.id); const session=detail.ledger.sessions.at(-1); const now=new Date().toISOString();
+  await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:null,breaks:[{start:now,end:null,paid:false}],voided:false,reason:'Synthetic legacy unfinished break'});
+  expect((await service.own(teacher.token)).needsReview).toBe(true); advance(1800000);
   await expect(clock(teacher.token,'checkout')).rejects.toMatchObject({status:409});
-  const d=await service.get(t,person.id); await expect(service.approve(t,person.id,{version:d.ledger.version,date:'2026-10-19',status:'approved',regularMillis:1,overtimeMillis:0,doubleMillis:0,adjustmentCents:0,rulesReviewed:true,reason:'Synthetic'})).rejects.toMatchObject({status:409});
-  await clock(teacher.token,'end-break'); advance(60000); const own=await clock(teacher.token,'checkout');
-  expect(own.days[0].unpaidMillis).toBe(1800000); expect(own.days[0].rawMillis-own.days[0].paidMillis).toBe(1800000);
+  detail=await service.get(t,person.id); await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:null,breaks:[{start:now,end:new Date().toISOString(),paid:false}],voided:false,reason:'Synthetic verified break end'});
+  advance(60000); await clock(teacher.token,'checkout'); detail=await service.get(t,person.id);
+  expect(detail.ledger.days[0].unpaidMillis).toBe(1800000); expect(detail.ledger.days[0].rawMillis-detail.ledger.days[0].paidMillis).toBe(1800000);
+  const own=await service.own(teacher.token);expect(Object.keys(own).sort()).toEqual(['checkedIn','needsReview','staff','timeZone','version']);
 });
 test('private fields are encrypted in storage, masked in responses and preserved on unrelated edits', async () => {
   const person=await staff(), t=await admin(); await configure(t,person.id);
@@ -86,7 +91,7 @@ test('a correction preserves original times and prior approval, blocks overlaps 
 test('an audit failure rolls back encrypted time, history, version and idempotency together', async () => {
   const person=await staff(), teacher=await actor('teacher',person); const audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic audit failure'));
   try { await expect(clock(teacher.token,'checkin')).rejects.toThrow('Synthetic audit failure'); } finally { audit.mockRestore(); }
-  expect(await db.getPayrollRecord('ledger:'+person.id)).toBeNull(); expect((await service.own(teacher.token)).sessions).toEqual([]);
+  expect(await db.getPayrollRecord('ledger:'+person.id)).toBeNull(); expect((await service.own(teacher.token)).checkedIn).toBe(false);
 });
 test('required payroll documents preserve every revision byte and private downloads reject foreign staff and viewers', async () => {
   const person=await staff(), t=await admin(); await configure(t,person.id); const bytes=fs.readFileSync(path.join(__dirname,'fixtures/child-documents/synthetic.png'));
@@ -102,4 +107,45 @@ test('missing/insecure/wrong keys fail closed without substituting empty private
   const person=await staff(), t=await admin(); await configure(t,person.id); const original=fs.readFileSync(key.key);
   fs.chmodSync(key.key,0o644); await expect(service.get(t,person.id)).rejects.toMatchObject({code:'PAYROLL_LOCKED'}); fs.chmodSync(key.key,0o600);
   fs.writeFileSync(key.key,randomBytes(32).toString('hex')); await expect(service.get(t,person.id)).rejects.toMatchObject({code:'PAYROLL_LOCKED'}); fs.writeFileSync(key.key,original);
+});
+
+test('extra hours notify admin/editor without exposing pay or tax data and confirmed work remains payable', async () => {
+  const {person,t,teacher}=await day(); await configure(t,person.id); await clock(teacher.token,'checkin'); advance(3600000); await clock(teacher.token,'checkout');
+  const editor=await actor('editor'); const list=await service.workTime(editor.token);const row=list.items.find(i=>i.staffId===person.id);
+  expect(row).toMatchObject({status:'pending',extraMillis:3600000,plannedMinutes:480});expect(JSON.stringify(list)).not.toMatch(/taxId|SYNTHETIC-TAX|bankAccount|rates|legalName/);
+  await expect(service.preview(t,person.id,{start:row.date,end:row.date})).resolves.toMatchObject({canFinalize:false});
+  await service.reviewWork(editor.token,person.id,{version:row.version,date:row.date,decision:'worked',reason:'Synthetic extra work verified'});
+  expect((await service.workTime(editor.token)).items[0].status).toBe('confirmed');
+  expect((await service.get(t,person.id)).ledger.days[0].paidMillis).toBe(9*3600000);
+  expect((await api(editor.token,'get','/payroll/staff/'+person.id)).status).toBe(403);
+  await expect(service.workTime(teacher.token)).rejects.toMatchObject({status:403});
+});
+test('a verified clock error preserves original checkout, renews approval and is attributed to the editor', async () => {
+  const {person,t,teacher}=await day(); let d=await service.get(t,person.id);const session=d.ledger.sessions[0];
+  await clock(teacher.token,'checkin');advance(3600000);await clock(teacher.token,'checkout');
+  // Correct the synthetic day to a single nine-hour clock session.
+  d=await service.get(t,person.id);await service.correct(t,person.id,{version:d.ledger.version,sessionId:d.ledger.sessions[1].id,start:d.ledger.sessions[1].start,end:d.ledger.sessions[1].end,breaks:[],voided:true,reason:'Synthetic duplicate'});
+  d=await service.get(t,person.id);await service.correct(t,person.id,{version:d.ledger.version,sessionId:session.id,start:session.start,end:new Date().toISOString(),breaks:[],voided:false,reason:'Synthetic late clockout'});
+  const editor=await actor('editor');const row=(await service.workTime(editor.token)).items[0];
+  await expect(service.reviewWork(editor.token,person.id,{version:row.version,date:row.date,decision:'clock-error',workEndedAt:session.end,noWorkAfterEnd:false,reason:'Synthetic'})).rejects.toMatchObject({status:400});
+  await service.reviewWork(editor.token,person.id,{version:row.version,date:row.date,decision:'clock-error',workEndedAt:session.end,noWorkAfterEnd:true,reason:'Verified employee stopped work at original departure'});
+  d=await service.get(t,person.id);expect(d.ledger.sessions[0].original.end).toBe(session.end);expect(d.ledger.history.some(h=>h.type==='clock-error-review'&&h.actorId===editor.account.id)).toBe(true);expect((await service.workTime(editor.token)).items[0].status).toBe('corrected');
+});
+test('daily hours are effective dated, entered in hours, and cannot alter the limit of an already-started day', async () => {
+  const {person,t}=await day();const editor=await actor('editor');
+  await service.schedule(editor.token,person.id,{version:0,effectiveOn:'2026-10-19',approvedHours:7.5,reason:'Synthetic new schedule'});
+  const list=await service.workTime(editor.token);expect(list.staff[0].entries[0].minutes).toBe(450);expect(list.items[0].plannedMinutes).toBe(480);
+  await expect(service.schedule(editor.token,person.id,{version:0,effectiveOn:'2026-10-19',approvedHours:8,reason:'Stale'})).rejects.toMatchObject({status:409});
+  await expect(service.schedule(t,person.id,{version:1,effectiveOn:'2026-10-18',approvedHours:8,reason:'Retroactive'})).rejects.toMatchObject({status:400});
+});
+test('work-time HTTP writes require CSRF and viewers cannot query or change the manager projection', async()=>{
+  const {person,t,teacher}=await day();await clock(teacher.token,'checkin');advance(3600000);await clock(teacher.token,'checkout');const editor=await actor('editor');
+  const list=await service.workTime(editor.token),row=list.items[0];const body={version:row.version,date:row.date,decision:'worked',reason:'Synthetic review'};
+  const path='/work-time/staff/'+person.id+'/review';
+  expect((await http(app).post('/api'+path).set('Origin',fixture.origin).set('Cookie','skao_session='+editor.token).send(body)).status).toBe(403);
+  expect((await api(teacher.token,'post',path,body)).status).toBe(403);expect((await api(teacher.token,'get','/work-time')).status).toBe(403);
+  const viewer=await actor('viewer',person);expect((await api(viewer.token,'get','/work-time')).status).toBe(403);
+  const audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic work review audit failure'));
+  try{await expect(service.reviewWork(editor.token,person.id,body)).rejects.toThrow('Synthetic work review audit failure');}finally{audit.mockRestore();}
+  expect((await service.workTime(t)).items[0].status).toBe('pending');
 });

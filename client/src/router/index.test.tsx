@@ -27,7 +27,7 @@ vi.mock('../pages/TeacherCare', () => ({ default: ({ section }: { section: strin
 
 function CurrentPath() { return <output aria-label="Current path">{useLocation().pathname}</output>; }
 
-test.each(['/dashboard', '/children', '/rooms/another-class', '/attendance', '/activities', '/meals', '/staff', '/inventory', '/purchasing', '/receiving', '/reports', '/accounts', '/registration-forms', '/unknown'])('Class viewer deep link %s redirects before mounting an operational page', async path => {
+test.each(['/dashboard', '/children', '/rooms/another-class', '/attendance', '/activities', '/meals', '/staff', '/inventory', '/purchasing', '/receiving', '/reports', '/accounts', '/registration-forms', '/work-time', '/payroll', '/unknown'])('Class viewer deep link %s redirects before mounting an operational page', async path => {
   mounted.mockClear();
   render(<SignedIn account={{ ...testAccount, role: 'viewer', roomId: 'own-class' }}><MemoryRouter initialEntries={[path]}>
     <AppRoutes /><CurrentPath />
@@ -54,7 +54,7 @@ test.each(['admin', 'editor'] as const)('%s retains the ordinary operational rou
 });
 
 
-test.each(['/staff', '/children', '/attendance', '/accounts', '/inventory'])('Teacher deep link %s cannot mount global management', async path => {
+test.each(['/staff', '/children', '/attendance', '/accounts', '/inventory', '/work-time', '/payroll'])('Teacher deep link %s cannot mount global management', async path => {
   mounted.mockClear();
   render(<SignedIn account={{ ...testAccount, role: 'teacher', roomId: 'own-class' }}><MemoryRouter initialEntries={[path]}><AppRoutes /><CurrentPath /></MemoryRouter></SignedIn>);
   expect(await screen.findByRole('heading', { name: 'Class overview' })).toBeVisible();

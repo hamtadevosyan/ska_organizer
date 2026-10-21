@@ -72,7 +72,7 @@ fi
 if "$payroll_only"; then
   server_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollMath.test.js tests/staffAccountAccess.test.js tests/authentication.test.js)
   postgres_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollMath.test.js tests/payroll.postgres.test.js tests/childDocuments.postgres.test.js tests/staffAccountLinks.postgres.test.js tests/staffAccountAccess.test.js)
-  client_tests+=(-- src/pages/MyTime.test.tsx src/pages/Payroll.test.tsx src/components/AppShell.test.tsx src/router/index.test.tsx)
+  client_tests+=(-- src/pages/MyTime.test.tsx src/pages/Payroll.test.tsx src/pages/WorkTime.test.tsx src/pages/Dashboard.test.tsx src/components/AppShell.test.tsx src/router/index.test.tsx)
   browser_tests+=(-- tests/browser/payroll.spec.ts tests/browser/staff-account-links.spec.ts tests/browser/classroom-access.spec.ts)
 fi
 

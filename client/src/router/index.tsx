@@ -19,6 +19,7 @@ import Classroom from "../pages/Classroom";
 import TeacherCare from "../pages/TeacherCare";
 import { useAuth } from "../auth/context";
 
+import WorkTime from "../pages/WorkTime";
 import Payroll from "../pages/Payroll";
 import MyTime from "../pages/MyTime";
 
@@ -38,6 +39,7 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/my-time" element={<MyTime />} />
       <Route path="/payroll" element={<Payroll />} />
+      <Route path="/work-time" element={<WorkTime />} />
       <Route path="/accounts" element={<Accounts />} />
       <Route path="/registration-forms" element={<RegistrationForms />} />
       <Route path="/rooms" element={<Rooms />} />

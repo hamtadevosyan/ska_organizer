@@ -20,7 +20,8 @@ async function write(kind, staffId, data, version, id = rowId(kind, staffId)) {
 async function employee(id) { v.identifier(id, 'staff'); const staff = await db.getStaffById(id); if (!staff) throw auth.problem('Staff record not found.', 404); return staff; }
 const authorized = (token, admin, fn) => db.withAuthLock(async () => {
   const actor = await auth.sessionAccount(token, { touch: true }); auth.operationalPermission(actor, false);
-  if (admin && actor.role !== 'admin') throw auth.problem('Administrator payroll access is required.', 403, 'FORBIDDEN');
+  if (admin === 'manager' && !['admin', 'editor'].includes(actor.role)) throw auth.problem('Administrator or editor work-time access is required.', 403, 'FORBIDDEN');
+  if (admin === true && actor.role !== 'admin') throw auth.problem('Administrator payroll access is required.', 403, 'FORBIDDEN');
   vault.check(); return fn(actor);
 });
 const expectVersion = (payload, version) => { if (payload.version !== version) throw auth.problem('This payroll record changed. Refresh before saving.', 409, 'PAYROLL_CONFLICT'); };
@@ -51,13 +52,14 @@ exports.own = token => authorized(token, false, async actor => {
   if (!actor.staffMemberId) throw auth.problem('Ask an administrator to link your account to your active staff record.', 403, 'STAFF_LINK_REQUIRED');
   const staff = await employee(actor.staffMemberId); if (!staff.active) throw auth.problem('Your staff record is inactive.', 403);
   const ledger = await read('ledger', staff.id);
-  // No payroll profile, rate, documents, approval reasons or other employee data.
+  const open = ledger.data.sessions.find(session => !session.voided && !session.end);
   return { staff: { id: staff.id, name: staff.name }, version: ledger.version, timeZone: ledger.data.timeZone,
-    sessions: ledger.data.sessions.filter(s => !s.voided).slice(-60).map(({ history, ...s }) => s),
-    days: math.daily(ledger.data).slice(-31).map(({ approval, ...d }) => d) };
+    checkedIn: !!open, needsReview: !!open?.breaks.some(b => !b.end) };
 });
 exports.clock = (token, payload) => authorized(token, false, async actor => {
-  v.object(payload, ['action', 'requestId', 'version']); const requestId = v.requestId(payload.requestId);
+  v.object(payload, ['action', 'requestId', 'version']);
+  if (!['checkin', 'checkout'].includes(payload.action)) throw auth.problem('Use check in or check out. A manager handles time corrections.');
+  const requestId = v.requestId(payload.requestId);
   if (!actor.staffMemberId) throw auth.problem('An active linked staff identity is required.', 403);
   const staff = await employee(actor.staffMemberId); if (!staff.active) throw auth.problem('Staff record is inactive.', 403);
   const ledger = await read('ledger', staff.id); const data = ledger.data;
@@ -74,7 +76,7 @@ exports.clock = (token, payload) => authorized(token, false, async actor => {
     if (!open) throw auth.problem('Check in before recording a departure or break.', 409);
     const rest = open.breaks.find(b => !b.end);
     if (payload.action === 'checkout') {
-      if (rest) throw auth.problem('End your break before checking out.', 409);
+      if (rest) throw auth.problem('Ask an administrator to resolve the unfinished break before checking out.', 409);
       open.end = now; if (!open.original.end) open.original.end = now;
     } else if (['paid-break', 'unpaid-break'].includes(payload.action)) {
       if (rest) throw auth.problem('A break is already open.', 409);
@@ -86,6 +88,7 @@ exports.clock = (token, payload) => authorized(token, false, async actor => {
   invalidate(data, [payload.action === 'checkin' ? data.sessions.at(-1) : open]); data.requests.push({ id: requestId, action: payload.action });
   if (data.requests.length > 20000) throw auth.problem('Time ledger requires archival.', 409);
   data.history.push({ type: payload.action, sessionId: (payload.action === 'checkin' ? data.sessions.at(-1) : open).id, requestId, ...stamp(actor) });
+  await captureWorkLimits(data, staff.id);
   await write('ledger', staff.id, data, ledger.version); await auth.audit(actor, 'employee_clock.' + payload.action.replace('-', '_'), staff.id);
   return { replayed: false };
 });
@@ -151,7 +154,11 @@ async function calculate(staffId, payload) {
   const start = time.validateDate(payload.start), end = time.validateDate(payload.end);
   if (end < start || end > time.addDays(start, 92)) throw auth.problem('Choose an ordered period of at most 93 days.');
   const [ledger, profile] = await Promise.all([read('ledger', staffId), read('profile', staffId)]);
-  return math.preview(ledger.data, profile.data, start, end);
+  const result = math.preview(ledger.data, profile.data, start, end);
+  const work = await workRows(staffId, ledger, start, end);
+  for (const row of work) if (row.status === 'pending') result.blockers.push(row.date + ': Extra work time needs manager review in Work time.');
+  result.canFinalize = !result.blockers.length;
+  return result;
 }
 exports.preview = (token, staffId, payload) => authorized(token, true, async actor => {
   v.object(payload, ['start', 'end']); await employee(staffId); const result = await calculate(staffId, payload); await auth.audit(actor, 'payroll.preview', staffId); return result;
@@ -184,4 +191,85 @@ exports.content = (token, staffId, id, revision) => authorized(token, true, asyn
   const row = await db.getPayrollRecord(id); if (!row || row.staffId !== staffId || row.kind !== 'document') throw auth.problem('Payroll document not found.', 404);
   const data = vault.open(row); const file = data.revisions.find(r => r.revision === Number(revision)); if (!file) throw auth.problem('Revision not found.', 404);
   await auth.audit(actor, 'payroll.document_download', id); return { ...file, content: Buffer.from(file.dataBase64, 'base64') };
+});
+
+// Work schedule and review projections are separate from private pay/tax DTOs.
+// Existing encrypted record kinds suffice; no new database migration is needed.
+async function workSchedule(staffId) {
+  const row = await db.getPayrollRecord('profile:work-schedule:' + staffId);
+  if (row) return { data: vault.open(row), version: row.version };
+  const profile = await read('profile', staffId);
+  return { data: { fallbackMinutes: profile.data.rules.dailyScheduledMinutes, entries: [] }, version: 0 };
+}
+function limitOn(schedule, date) {
+  return [...schedule.data.entries].filter(entry => entry.effectiveOn <= date).sort((a,b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.sequence-a.sequence)[0]?.minutes ?? schedule.data.fallbackMinutes;
+}
+async function captureWorkLimits(ledger, staffId) {
+  ledger.workLimits ||= {};
+  const schedule = await workSchedule(staffId);
+  for (const day of math.daily(ledger)) if (!Object.hasOwn(ledger.workLimits, day.date)) ledger.workLimits[day.date] = limitOn(schedule, day.date);
+}
+async function workRows(staffId, ledger, start, end) {
+  const schedule = await workSchedule(staffId);
+  return math.daily(ledger.data).filter(day => day.date >= start && day.date <= end).map(day => {
+    const sessions = ledger.data.sessions.filter(s => !s.voided && day.sessionIds.includes(s.id));
+    const last = [...sessions].sort((a,b) => b.start.localeCompare(a.start))[0];
+    const minutes = ledger.data.workLimits?.[day.date] ?? limitOn(schedule, day.date);
+    const fingerprint = math.hash({ sessions, date: day.date, minutes });
+    const decision = ledger.data.workReviews?.[day.date]; const current = decision?.fingerprint === fingerprint ? decision : null;
+    const extraMillis = Math.max(0, day.paidMillis - minutes*60000);
+    return { staffId, date: day.date, version: ledger.version, timeZone: ledger.data.timeZone,
+      plannedMinutes: minutes, rawMillis: day.rawMillis, paidMillis: day.paidMillis, extraMillis, incomplete: day.incomplete,
+      status: day.incomplete ? 'incomplete' : extraMillis && !current ? 'pending' : current?.decision === 'worked' ? 'confirmed' : current?.decision === 'clock-error' ? 'corrected' : 'within-schedule',
+      reason: current?.reason || '', sessionId: last?.id, checkout: last?.end || null,
+      canCorrect: ledger.data.timeZone === time.timeZone() && !!last?.end && time.dateAt(last.start, ledger.data.timeZone) === day.date && time.dateAt(last.end, ledger.data.timeZone) === day.date };
+  });
+}
+exports.workTime = (token, { start, end } = {}) => authorized(token, 'manager', async actor => {
+  const today = time.dateAt(); start = start === undefined ? time.addDays(today,-60) : time.validateDate(start); end = end === undefined ? today : time.validateDate(end);
+  if (end < start || end > time.addDays(start,92)) throw auth.problem('Choose a work-time period of at most 93 days.');
+  const people = []; for (let page=1;;page++) { const batch = await db.listStaff({page,pageSize:100}); people.push(...batch); if (batch.length<100) break; }
+  const staff = [], items = [];
+  for (const person of people) {
+    const schedule = await workSchedule(person.id), ledger = await read('ledger',person.id);
+    staff.push({ id: person.id, name: person.name, active: person.active, scheduleVersion: schedule.version, defaultMinutes: schedule.data.fallbackMinutes, entries: schedule.data.entries });
+    items.push(...(await workRows(person.id,ledger,start,end)).map(row => ({...row,name:person.name})));
+  }
+  await auth.audit(actor,'employee_time.review_list');
+  return { today, timeZone:time.timeZone(), start, end, staff, items: items.sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name)) };
+});
+exports.schedule = (token, staffId, payload) => authorized(token,'manager',async actor => {
+  v.object(payload,['version','effectiveOn','approvedHours','reason']); await employee(staffId);
+  const schedule = await workSchedule(staffId); expectVersion(payload,schedule.version);
+  const minutes = Math.round(payload.approvedHours*60);
+  if (typeof payload.approvedHours !== 'number' || !Number.isFinite(payload.approvedHours) || minutes<0 || minutes>1440 || Math.abs(payload.approvedHours*60-minutes)>0.000001) throw auth.problem('Enter daily hours between 0 and 24, to the nearest minute.');
+  const effectiveOn = time.validateDate(payload.effectiveOn);
+  if (effectiveOn < time.dateAt()) throw auth.problem('Schedule changes apply today or later. Existing clocked days keep their original daily limit.');
+  schedule.data.entries.push({effectiveOn,minutes,sequence:schedule.data.entries.length+1,reason:reason(payload.reason),...stamp(actor)});
+  await write('profile',staffId,schedule.data,schedule.version,'profile:work-schedule:'+staffId);
+  await auth.audit(actor,'employee_time.schedule_set',staffId); return {saved:true};
+});
+exports.reviewWork = (token,staffId,payload) => authorized(token,'manager',async actor => {
+  v.object(payload,['version','date','decision','reason','workEndedAt','occurrence','noWorkAfterEnd']); await employee(staffId);
+  const ledger = await read('ledger',staffId); expectVersion(payload,ledger.version); const date = time.validateDate(payload.date);
+  const row = (await workRows(staffId,ledger,date,date))[0]; if (!row || row.incomplete) throw auth.problem('Resolve incomplete clock records before reviewing extra time.',409);
+  if (row.status!=='pending') throw auth.problem('This day no longer has pending extra time. Refresh the work-time list.',409);
+  if (!['worked','clock-error'].includes(payload.decision)) throw auth.problem('Choose worked time or a verified clock error.');
+  const why = reason(payload.reason);
+  if (payload.decision==='clock-error') {
+    if (!row.canCorrect || payload.noWorkAfterEnd!==true) throw auth.problem('Confirm no work was performed after the corrected time. Overnight or break changes need administrator review.');
+    const session = ledger.data.sessions.find(s=>s.id===row.sessionId); const before = structuredClone(session);
+    const finish = time.resolveTime(payload.workEndedAt,payload.occurrence);
+    if (Date.parse(finish)>Date.parse(session.end) || Date.parse(finish)>Date.now() || time.dateAt(finish,ledger.data.timeZone)!==date) throw auth.problem('Choose an actual work-end time on this day, no later than the recorded checkout.');
+    const next = {...session,end:finish,version:session.version+1}; validateSession(next,ledger.data.sessions);
+    ledger.data.history.push({type:'clock-error-review',before,after:structuredClone(next),reason:why,...stamp(actor)});
+    invalidate(ledger.data,[before,next]); Object.assign(session,next);
+    const updated = (await workRows(staffId,ledger,date,date))[0];
+    if (updated.extraMillis) throw auth.problem('The corrected day still exceeds its daily limit. Confirm actual extra work or use administrator review.');
+  }
+  const day = math.daily(ledger.data).find(d=>d.date===date); const sessions=ledger.data.sessions.filter(s=>!s.voided&&day.sessionIds.includes(s.id));
+  ledger.data.workReviews ||= {};
+  const decision = {decision:payload.decision,reason:why,fingerprint:math.hash({sessions,date,minutes:row.plannedMinutes}),...stamp(actor)};
+  ledger.data.history.push({type:'extra-time-review',date,after:decision,...stamp(actor)}); ledger.data.workReviews[date]=decision;
+  await write('ledger',staffId,ledger.data,ledger.version); await auth.audit(actor,'employee_time.'+payload.decision.replace('-','_'),staffId); return {saved:true};
 });

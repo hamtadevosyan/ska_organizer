@@ -14,4 +14,8 @@ admin.get('/staff/:staffId/documents/:id/:revision', async (req, res) => {
   const file = await service.content(req.sessionToken, req.params.staffId, req.params.id, req.params.revision);
   res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(file.filename), 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" }).send(file.content);
 });
-module.exports = { self, admin };
+const work = express.Router(); work.use(requireSession);
+work.get('/',async(req,res)=>res.json({data:await service.workTime(req.sessionToken,req.query)}));
+work.post('/staff/:staffId/schedule',async(req,res)=>res.json({data:await service.schedule(req.sessionToken,req.params.staffId,req.body||{})}));
+work.post('/staff/:staffId/review',async(req,res)=>res.json({data:await service.reviewWork(req.sessionToken,req.params.staffId,req.body||{})}));
+module.exports = { self, admin, work };

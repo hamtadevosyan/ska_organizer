@@ -37,6 +37,7 @@ app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api/children/:childId/safety', requireSession, require('./routes/childSafety'));
 app.use('/api/time-clock', payroll.self);
+app.use('/api/work-time', payroll.work);
 app.use('/api/classroom', requireSession, require('./routes/classroom'));
 app.use('/api', requireSession, requireOperationalAccess);
 app.use('/api/registration-forms', registrationForms.router);
