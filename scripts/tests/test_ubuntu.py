@@ -254,6 +254,21 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(env['DB_ADAPTER'], 'sequelize')
         self.assertEqual(env['NODE_ENV'], 'production')
 
+    def test_backup_timer_uses_the_configured_facility_time_zone(self):
+        template = '[Timer]\nOnCalendar=*-*-* 02:00:00 @TIME_ZONE@\n'
+        self.assertEqual(u.render(template, self.cfg), '[Timer]\nOnCalendar=*-*-* 02:00:00 America/Los_Angeles\n')
+        self.cfg['environment']['FACILITY_TIME_ZONE'] = 'America/New_York'
+        self.assertIn('02:00:00 America/New_York', u.render(template, self.cfg))
+        self.cfg['environment']['FACILITY_TIME_ZONE'] = 'Invalid/Synthetic_Zone'
+        with self.assertRaises(u.Failure): u.render(template, self.cfg)
+
+    def test_every_supplied_native_template_renders_and_unknown_tokens_still_fail(self):
+        for template in TEMPLATES.iterdir():
+            if template.is_file():
+                with self.subTest(template=template.name):
+                    self.assertNotRegex(u.render(template.read_text(), self.cfg), r'@[A-Z_]+@')
+        with self.assertRaises(u.Failure): u.render('@UNKNOWN_SETTING@', self.cfg)
+
     def test_secret_files_are_private_even_with_permissive_umask(self):
         before = os.umask(0)
         try:

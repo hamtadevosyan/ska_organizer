@@ -488,8 +488,9 @@ def create_accounts():
 
 
 def render(template, cfg):
+    db = database_settings(cfg['environment'])
     values = {'DOMAIN': cfg['domain'], 'LAN_IP': cfg['ip'], 'LAN_CIDR': cfg['cidr'],
-              'DB_PORT': str(database_settings(cfg['environment'])['port']), 'NODE': cfg['node']}
+              'DB_PORT': str(db['port']), 'NODE': cfg['node'], 'TIME_ZONE': db['zone']}
     for key, value in values.items():
         template = template.replace('@' + key + '@', value)
     if re.search(r'@[A-Z_]+@', template):
