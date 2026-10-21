@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -20,6 +21,45 @@ CFG = {'node': '/usr/bin/node', 'ip': '192.168.50.20', 'cidr': '192.168.50.0/24'
        'interface': 'eth0', 'domain': u.DOMAIN,
        'environment': {'DATABASE_URL': 'postgresql://ska:synthetic%21@127.0.0.1:5432/ska_test',
                        'DB_SCHEMA': 'public', 'FACILITY_TIME_ZONE': 'America/Los_Angeles'}}
+
+
+class PayrollProbeTests(unittest.TestCase):
+    def test_real_node_probe_classifies_failures_without_printing_exception_details(self):
+        node = shutil.which('node')
+        self.assertIsNotNone(node, 'Node is required for the payroll runtime probe check.')
+        modes = ['EMPTY', 'VERIFIED', 'RELEASE_OUTDATED', 'RELEASE_INCOMPLETE', 'MIGRATIONS_PENDING',
+                 'DB_AUTH', 'DB_PERMISSIONS', 'DB_NAME', 'DB_SCHEMA', 'DB_WAIT', 'DB_CONNECTION',
+                 'KEY_MISSING', 'KEY_UNREADABLE', 'KEY_INVALID', 'KEY_MISMATCH']
+        for mode in modes:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); (root / 'services').mkdir()
+                if mode != 'RELEASE_INCOMPLETE':
+                    (root / 'services/dbAdapter.js').write_text("""
+const mode=process.env.PROBE_CASE;
+exports.setup=async()=>{
+ const error=new Error('SYNTHETIC-PRIVATE-URL-DO-NOT-PRINT');
+ if(mode==='MIGRATIONS_PENDING'){error.message='Database migrations are pending. Run npm run db:migrate from server.';throw error;}
+ const codes={DB_AUTH:'28P01',DB_PERMISSIONS:'42501',DB_NAME:'3D000',DB_SCHEMA:'42P01',DB_WAIT:'55P03',DB_CONNECTION:'ECONNREFUSED'};
+ if(codes[mode]){error.original={code:codes[mode]};throw error;}
+};
+exports.close=async()=>{};
+if(mode!=='RELEASE_OUTDATED'){
+ exports.countPayrollRecords=async()=>mode==='KEY_MISSING'?1:0;
+ exports.firstPayrollRecord=async()=>({id:'synthetic'});
+}
+""")
+                (root / 'services/payrollVault.js').write_text("""
+exports.check=()=>{if(process.env.PROBE_CASE==='KEY_INVALID')throw Error('SYNTHETIC-PRIVATE-URL-DO-NOT-PRINT');};
+exports.open=()=>{if(process.env.PROBE_CASE==='KEY_MISMATCH')throw Error('SYNTHETIC-PRIVATE-URL-DO-NOT-PRINT');};
+""")
+                key = root / 'key'
+                if mode in ('VERIFIED', 'KEY_INVALID', 'KEY_MISMATCH'): key.write_text('synthetic')
+                result = subprocess.run([node, '-e', u.PAYROLL_PROBE_JS], cwd=root, env={**os.environ,
+                    'PROBE_CASE': mode, 'PAYROLL_KEY_FILE': str(key), 'SKAO_PAYROLL_EXPECT_KEY': '1' if mode == 'KEY_UNREADABLE' or key.exists() else '0'},
+                    text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.stdout, 'SKAO_PAYROLL:' + mode + '\n')
+                self.assertEqual(result.returncode, 0 if mode in ('EMPTY','VERIFIED') else 1)
+                self.assertNotIn('SYNTHETIC-PRIVATE', result.stdout + result.stderr)
 
 
 class NativeTests(unittest.TestCase):
@@ -54,7 +94,7 @@ class NativeTests(unittest.TestCase):
     def test_payroll_initialization_creates_a_private_key_only_after_empty_vault_verification(self):
         from types import SimpleNamespace
         user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
-        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), patch.object(u, 'systemctl') as service:
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='SKAO_PAYROLL:EMPTY\n')), patch.object(u, 'systemctl') as service:
             u.payroll_init(self.cfg)
             target = u.CONF / 'payroll.key'
             original = target.read_text()
@@ -64,6 +104,26 @@ class NativeTests(unittest.TestCase):
             self.assertEqual(target.read_text(), original)
         self.assertIn('PAYROLL_KEY_FILE=', (u.CONF / 'server.env').read_text())
         self.assertEqual(service.call_count, 2)
+
+    def test_payroll_check_is_read_only_and_only_displays_allowlisted_diagnostics(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        for output, status in [('SKAO_PAYROLL:EMPTY\n', 0), ('SKAO_PAYROLL:VERIFIED\n', 0),
+                               ('SKAO_PAYROLL:DB_AUTH\n', 1), ('secret exception detail', 1)]:
+            with self.subTest(output=output), patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=status, stdout=output)), patch.object(u, 'systemctl') as service, patch.object(u, 'secure_write') as write:
+                if status:
+                    with self.assertRaises(u.Failure) as raised: u.payroll_init(self.cfg, check_only=True)
+                    self.assertNotIn('secret exception detail', str(raised.exception))
+                else: u.payroll_init(self.cfg, check_only=True)
+                self.assertFalse((u.CONF / 'payroll.key').exists())
+                service.assert_not_called(); write.assert_not_called()
+
+    def test_an_unrecognized_success_result_cannot_create_a_payroll_key(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='unrecognized private output')), patch.object(u, 'systemctl') as service:
+            with self.assertRaises(u.Failure): u.payroll_init(self.cfg)
+            self.assertFalse((u.CONF / 'payroll.key').exists()); service.assert_not_called()
 
     def test_payroll_initialization_refuses_symlinks_or_shared_permissions(self):
         from types import SimpleNamespace
