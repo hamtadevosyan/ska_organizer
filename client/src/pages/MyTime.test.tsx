@@ -25,9 +25,14 @@ test('a checked-in employee sees only checkout and no worked hours or break cont
   expect(screen.queryByRole('button', { name: /break/i })).not.toBeInTheDocument();
   expect(screen.queryByText(/Recent workdays|clocked hours|recorded hours|Arrived:/)).not.toBeInTheDocument();
 });
-test('a legacy unfinished break requires administrator correction instead of silently deducting time', async () => {
+test('a legacy review flag never asks an employee to enter a break or blocks checkout', async () => {
   vi.mocked(axios.get).mockResolvedValue({ data: { data: { ...clock, checkedIn: true, needsReview: true } } });
-  render(view()); expect(await screen.findByRole('alert')).toHaveTextContent('resolve an unfinished break'); expect(screen.getByRole('button', { name: 'Check out of work' })).toBeDisabled();
+  render(view()); const checkout = await screen.findByRole('button', { name: 'Check out of work' });
+  expect(checkout).toBeEnabled(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByText(/break/i)).not.toBeInTheDocument();
+  fireEvent.click(checkout);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ action: 'checkout', version: clock.version });
 });
 test('unlinked accounts and an unavailable server cannot record time', async () => {
   const { rerender } = render(view(false)); expect(screen.getByRole('alert')).toHaveTextContent('link your account'); expect(axios.get).not.toHaveBeenCalled();

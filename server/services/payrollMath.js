@@ -12,8 +12,10 @@ function daily(ledger) {
       if (!rawMillis && date !== time.dateAt(start, ledger.timeZone)) continue;
       const row = rows.get(date) || { date, rawMillis: 0, unpaidMillis: 0, paidMillis: 0, incomplete: false, sessionIds: [] };
       row.rawMillis += rawMillis;
-      row.unpaidMillis += session.breaks.filter(b => !b.paid).reduce((sum, b) => sum + intersection(Date.parse(b.start), b.end ? Date.parse(b.end) : finish, from, to), 0);
-      row.incomplete ||= !session.end || session.breaks.some(b => !b.end);
+      // Keep historical completed deductions. An unfinished legacy entry has
+      // no known duration: preserve it, without inventing an end or deduction.
+      row.unpaidMillis += session.breaks.filter(b => !b.paid && b.end).reduce((sum, b) => sum + intersection(Date.parse(b.start), Date.parse(b.end), from, to), 0);
+      row.incomplete ||= !session.end;
       row.sessionIds.push(session.id); rows.set(date, row);
     }
   }
@@ -22,17 +24,17 @@ function daily(ledger) {
 }
 function preview(ledger, profile, start, end) {
   const all = daily(ledger), blockers = []; const rows = [];
-  if (!profile.rules?.confirmed || !profile.rules.reference?.trim()) blockers.push('Confirm the applicable overtime, paid/unpaid break, rounding and adjustment rules before finalizing.');
+  if (!profile.rules?.confirmed || !profile.rules.reference?.trim()) blockers.push('Confirm the applicable payroll policy, overtime and adjustments before finalizing.');
   const rules = profile.rules || {};
   const paidDays = all.filter(row => row.date >= start && row.date <= end);
   for (const day of paidDays) {
     const approval = day.approval; const issues = [];
-    if (day.incomplete) issues.push('Missing checkout or unfinished break.');
+    if (day.incomplete) issues.push('Missing checkout.');
     if (approval?.status !== 'approved') issues.push('Daily paid time is not approved.');
     const rate = [...(profile.rates || [])].filter(r => r.effectiveOn <= day.date).sort((a, b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.sequence - a.sequence)[0];
     if (!rate) issues.push('No effective hourly rate.');
     if (approval?.status === 'approved' && approval.rulesFingerprint !== hash(profile.rules)) issues.push('The paid-hours policy changed after approval. Review and approve this day again.');
-    if (approval && !approval.rulesReviewed) issues.push('Overtime, breaks and adjustments have not been reviewed.');
+    if (approval && !approval.rulesReviewed) issues.push('Hours, overtime and adjustments have not been reviewed.');
     if (approval?.status === 'approved') {
       const total = approval.regularMillis + approval.overtimeMillis + approval.doubleMillis;
       if (total < day.paidMillis) issues.push('Approved time is below clocked paid time. Correct the original error with a reason or obtain payroll-provider review; time is never silently capped.');

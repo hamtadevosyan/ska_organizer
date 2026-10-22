@@ -31,7 +31,7 @@ function validateSession(session, sessions) {
   const end = session.end ? Date.parse(session.end) : Infinity, start = Date.parse(session.start);
   if (end <= start || (Number.isFinite(end) && end - start > 7 * 86400000)) throw auth.problem('Checkout must follow check-in and span no more than seven days.');
   if (sessions.some(s => s.id !== session.id && !s.voided && start < (s.end ? Date.parse(s.end) : Infinity) && end > Date.parse(s.start))) throw auth.problem('This time overlaps another work session.', 409);
-  const breaks = [...session.breaks].sort((a, b) => a.start.localeCompare(b.start));
+  const breaks = session.breaks.filter(b => b.end).sort((a, b) => a.start.localeCompare(b.start));
   for (let i = 0; i < breaks.length; i++) {
     const b = breaks[i]; const finish = b.end ? Date.parse(b.end) : Infinity;
     if (Date.parse(b.start) < start || finish > end || finish <= Date.parse(b.start) || typeof b.paid !== 'boolean' || (i && Date.parse(b.start) < (breaks[i - 1].end ? Date.parse(breaks[i - 1].end) : Infinity))) throw auth.problem('Breaks must be inside the work session and cannot overlap.');
@@ -54,7 +54,7 @@ exports.own = token => authorized(token, false, async actor => {
   const ledger = await read('ledger', staff.id);
   const open = ledger.data.sessions.find(session => !session.voided && !session.end);
   return { staff: { id: staff.id, name: staff.name }, version: ledger.version, timeZone: ledger.data.timeZone,
-    checkedIn: !!open, needsReview: !!open?.breaks.some(b => !b.end) };
+    checkedIn: !!open, needsReview: false };
 });
 exports.clock = (token, payload) => authorized(token, false, async actor => {
   v.object(payload, ['action', 'requestId', 'version']);
@@ -73,16 +73,8 @@ exports.clock = (token, payload) => authorized(token, false, async actor => {
     const next = { id: randomUUID(), start: now, end: null, original: { start: now, end: null }, breaks: [], ...stamp(actor), version: 1 };
     validateSession(next, data.sessions); data.sessions.push(next);
   } else {
-    if (!open) throw auth.problem('Check in before recording a departure or break.', 409);
-    const rest = open.breaks.find(b => !b.end);
-    if (payload.action === 'checkout') {
-      if (rest) throw auth.problem('Ask an administrator to resolve the unfinished break before checking out.', 409);
-      open.end = now; if (!open.original.end) open.original.end = now;
-    } else if (['paid-break', 'unpaid-break'].includes(payload.action)) {
-      if (rest) throw auth.problem('A break is already open.', 409);
-      open.breaks.push({ id: randomUUID(), start: now, end: null, paid: payload.action === 'paid-break', ...stamp(actor) });
-    } else if (payload.action === 'end-break') { if (!rest) throw auth.problem('No break is open.', 409); rest.end = now; }
-    else throw auth.problem('Choose a valid clock action.');
+    if (!open) throw auth.problem('Check in before recording a departure.', 409);
+    open.end = now; if (!open.original.end) open.original.end = now;
     open.version++; validateSession(open, data.sessions);
   }
   invalidate(data, [payload.action === 'checkin' ? data.sessions.at(-1) : open]); data.requests.push({ id: requestId, action: payload.action });
@@ -117,7 +109,7 @@ exports.profile = (token, staffId, payload) => authorized(token, true, async act
     v.object(payload.rules, ['mode', 'workweekStart', 'confirmed', 'reference', 'dailyScheduledMinutes']);
     if (!['ca-standard', 'external-review'].includes(payload.rules.mode) || typeof payload.rules.confirmed !== 'boolean') throw auth.problem('Choose and confirm the payroll rule review.');
     data.rules = { mode: payload.rules.mode, confirmed: payload.rules.confirmed, workweekStart: integer(payload.rules.workweekStart, 6), reference: text(payload.rules.reference, 'rules reference'), dailyScheduledMinutes: integer(payload.rules.dailyScheduledMinutes, 1440) };
-    if (data.rules.confirmed && !data.rules.reference) throw auth.problem('Describe the verified overtime, breaks and adjustment policy before confirming it.');
+    if (data.rules.confirmed && !data.rules.reference) throw auth.problem('Describe the verified payroll policy before confirming it.');
   }
   data.history.push({ before: { ...before, history: undefined }, reason: why, ...stamp(actor) });
   await write('profile', staffId, data, current.version); await auth.audit(actor, 'payroll.profile_update', staffId); return { saved: true };
@@ -133,9 +125,9 @@ exports.correct = (token, staffId, payload) => authorized(token, true, async act
   v.object(payload, ['version', 'sessionId', 'start', 'end', 'breaks', 'voided', 'reason']); await employee(staffId);
   const ledger = await read('ledger', staffId); expectVersion(payload, ledger.version); const old = ledger.data.sessions.find(s => s.id === payload.sessionId);
   if (!old) throw auth.problem('Time session not found.', 404);
-  if (!Array.isArray(payload.breaks) || payload.breaks.length > 30 || typeof payload.voided !== 'boolean') throw auth.problem('Supply break records and record status.');
+  if (payload.breaks !== undefined && (!Array.isArray(payload.breaks) || payload.breaks.length > 30) || typeof payload.voided !== 'boolean') throw auth.problem('Supply valid time records and record status.');
   const next = { ...old, start: instant(payload.start), end: payload.end === null ? null : instant(payload.end), voided: payload.voided,
-    breaks: payload.breaks.map(b => { v.object(b, ['start', 'end', 'paid']); return { start: instant(b.start), end: b.end === null ? null : instant(b.end), paid: b.paid }; }), version: old.version + 1 };
+    breaks: payload.breaks === undefined ? structuredClone(old.breaks) : payload.breaks.map(b => { v.object(b, ['start', 'end', 'paid']); return { start: instant(b.start), end: b.end === null ? null : instant(b.end), paid: b.paid }; }), version: old.version + 1 };
   if (!next.voided) validateSession(next, ledger.data.sessions);
   ledger.data.history.push({ type: 'correction', before: structuredClone(old), after: structuredClone(next), reason: reason(payload.reason), ...stamp(actor) });
   invalidate(ledger.data, [old, next]); Object.assign(old, next); await write('ledger', staffId, ledger.data, ledger.version); await auth.audit(actor, 'employee_clock.correct', staffId); return { saved: true };
@@ -145,12 +137,12 @@ exports.approve = (token, staffId, payload) => authorized(token, true, async act
   const ledger = await read('ledger', staffId); expectVersion(payload, ledger.version); const date = time.validateDate(payload.date);
   const day = math.daily(ledger.data).find(row => row.date === date); if (!day) throw auth.problem('No time records exist on this day.', 404);
   if (!['approved', 'returned'].includes(payload.status) || typeof payload.rulesReviewed !== 'boolean') throw auth.problem('Choose approved or returned and confirm the daily rule review.');
-  if (payload.status === 'approved' && day.incomplete) throw auth.problem('Resolve missing checkouts and unfinished breaks before approving.', 409);
+  if (payload.status === 'approved' && day.incomplete) throw auth.problem('Record the missing checkout before approving.', 409);
   const profile = await read('profile', staffId);
   const approval = { rulesFingerprint: math.hash(profile.data.rules), date, status: payload.status, regularMillis: integer(payload.regularMillis, 48 * 3600000), overtimeMillis: integer(payload.overtimeMillis, 48 * 3600000), doubleMillis: integer(payload.doubleMillis, 48 * 3600000),
     adjustmentCents: payload.adjustmentCents, rulesReviewed: payload.rulesReviewed, reason: reason(payload.reason), ...stamp(actor) };
   if (!Number.isSafeInteger(approval.adjustmentCents) || Math.abs(approval.adjustmentCents) > 100000000 || approval.regularMillis + approval.overtimeMillis + approval.doubleMillis > 48 * 3600000) throw auth.problem('Approved time or adjustment is outside the supported range.');
-  if (approval.status === 'approved' && !approval.rulesReviewed) throw auth.problem('Review daily overtime, paid rest, meal breaks and adjustments first.');
+  if (approval.status === 'approved' && !approval.rulesReviewed) throw auth.problem('Review actual hours, overtime and adjustments first.');
   ledger.data.history.push({ type: 'approval', ...stamp(actor), reason: approval.reason, before: ledger.data.approvals[date] || null, after: approval }); ledger.data.approvals[date] = approval;
   await write('ledger', staffId, ledger.data, ledger.version); await auth.audit(actor, 'payroll.daily_' + payload.status, staffId); return approval;
 });
@@ -261,7 +253,7 @@ exports.reviewWork = (token,staffId,payload) => authorized(token,'manager',async
   if (!['worked','clock-error'].includes(payload.decision)) throw auth.problem('Choose worked time or a verified clock error.');
   const why = reason(payload.reason);
   if (payload.decision==='clock-error') {
-    if (!row.canCorrect || payload.noWorkAfterEnd!==true) throw auth.problem('Confirm no work was performed after the corrected time. Overnight or break changes need administrator review.');
+    if (!row.canCorrect || payload.noWorkAfterEnd!==true) throw auth.problem('Confirm no work was performed after the corrected time. Overnight changes need administrator review.');
     const session = ledger.data.sessions.find(s=>s.id===row.sessionId); const before = structuredClone(session);
     const finish = time.resolveTime(payload.workEndedAt,payload.occurrence);
     if (Date.parse(finish)>Date.parse(session.end) || Date.parse(finish)>Date.now() || time.dateAt(finish,ledger.data.timeZone)!==date) throw auth.problem('Choose an actual work-end time on this day, no later than the recorded checkout.');

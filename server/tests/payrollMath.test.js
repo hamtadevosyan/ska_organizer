@@ -45,3 +45,14 @@ test('negative adjusted gross cannot be finalized',()=>{
  const data=ledger([session('2026-10-19')],{'2026-10-19':approval(28800000,{adjustmentCents:-20000})});
  const result=preview(data,profile(),'2026-10-19','2026-10-19');expect(result.canFinalize).toBe(false);expect(result.blockers.join(' ')).toMatch(/negative/);
 });
+
+test('an unfinished legacy entry neither deducts guessed time nor blocks a completed day',()=>{
+ const work={...session('2026-10-19'),breaks:[{start:'2026-10-19T18:00:00Z',end:null,paid:false}]};
+ const data=ledger([work],{'2026-10-19':approval(28800000)});
+ expect(daily(data)[0]).toMatchObject({rawMillis:28800000,paidMillis:28800000,unpaidMillis:0,incomplete:false});
+ expect(preview(data,profile(),'2026-10-19','2026-10-19')).toMatchObject({grossCents:16000,canFinalize:true});
+ expect(work.breaks[0].end).toBeNull();
+ work.end=null;
+ expect(daily(data)[0].incomplete).toBe(true);
+ expect(preview(data,profile(),'2026-10-19','2026-10-19').blockers.join(' ')).toContain('Missing checkout.');
+});

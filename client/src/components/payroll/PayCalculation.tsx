@@ -54,13 +54,13 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
   function dayCard(day: Day) {
     return <article key={day.date} className="payroll-review-day">
       <div className="payroll-review-heading"><div><h4>{day.date}</h4><p>{duration(day.paidMillis)} recorded paid time</p>
-        {day.unpaidMillis > 0 && <small>{duration(day.unpaidMillis)} recorded unpaid break time</small>}</div>
-        <span className={'payroll-status ' + (day.approval?.status === 'approved' ? 'is-ready' : '')}>{day.incomplete ? 'Missing time' : day.approval?.status === 'approved' ? 'Approved' : 'Needs review'}</span></div>
-      {day.incomplete ? <><p>Finish the missing checkout or break before calculating this day.</p><button type="button" disabled={busy} onClick={() => onSection('time')}>Fix time for {day.date}</button></> : <>
+        {day.unpaidMillis > 0 && <small>Previously recorded deduction: {duration(day.unpaidMillis)}</small>}</div>
+        <span className={'payroll-status ' + (day.approval?.status === 'approved' ? 'is-ready' : '')}>{day.incomplete ? 'Missing checkout' : day.approval?.status === 'approved' ? 'Approved' : 'Needs review'}</span></div>
+      {day.incomplete ? <><p>Record the missing checkout before calculating this day.</p><button type="button" disabled={busy} onClick={() => onSection('time')}>Fix checkout for {day.date}</button></> : <>
         <button type="button" disabled={busy} onClick={() => { if (dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; onDirty(false); setReviewing(reviewing === day.date ? '' : day.date); }}>Review hours for {day.date}</button>
-        {reviewing === day.date && (ordinaryDay(day) ? <form key={day.date + ':' + data.ledger.version} onChange={() => onDirty(true)} onSubmit={event => void save(event, 'approvals', () => ({ version: data.ledger.version, date: day.date, status: 'approved', regularMillis: day.paidMillis, overtimeMillis: 0, doubleMillis: 0, adjustmentCents: 0, rulesReviewed: true, reason: 'Administrator reviewed all recorded paid time, breaks and overtime; no adjustments.' }))}>
+        {reviewing === day.date && (ordinaryDay(day) ? <form key={day.date + ':' + data.ledger.version} onChange={() => onDirty(true)} onSubmit={event => void save(event, 'approvals', () => ({ version: data.ledger.version, date: day.date, status: 'approved', regularMillis: day.paidMillis, overtimeMillis: 0, doubleMillis: 0, adjustmentCents: 0, rulesReviewed: true, reason: 'Administrator reviewed all recorded paid time and overtime; no adjustments.' }))}>
           <fieldset disabled={busy}><p>Approve the full recorded time above at the regular rate. No time is rounded, capped by the schedule or deducted automatically.</p>
-            <label className="payroll-check"><input type="checkbox" required />I checked the hours, breaks and overtime for {day.date}.</label>
+            <label className="payroll-check"><input type="checkbox" required />I checked the hours and overtime for {day.date}.</label>
             <button>Approve recorded hours for {day.date}</button>
             <button type="button" onClick={() => onSection('time')}>Use different hours or adjustments</button>
           </fieldset></form> : <div className="payroll-note"><p>This day needs a detailed review of overtime, adjustments or payroll rules. Recorded time stays intact.</p><button type="button" disabled={busy} onClick={() => onSection('time')}>Review overtime and adjustments for {day.date}</button></div>)}
@@ -85,7 +85,7 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
           <p>Have the person who handles payroll verify these settings once. This calculation supports standard California non-exempt rules, with workdays starting at midnight.</p>
           <label>Workweek starts<select name="workweekStart" defaultValue={rules.workweekStart}>{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day, i) => <option value={i} key={day}>{day}</option>)}</select></label>
           <label>Payroll review note<input name="reference" defaultValue={rules.reference} placeholder="Who reviewed the rules and which policy applies" maxLength={2000} required /></label>
-          <label className="payroll-check"><input type="checkbox" required />The applicable classification, overtime, breaks and adjustments have been reviewed.</label><button>Save reviewed payroll rules</button>
+          <label className="payroll-check"><input type="checkbox" required />The applicable classification, overtime and adjustments have been reviewed.</label><button>Save reviewed payroll rules</button>
         </fieldset></form> : <><p>Your saved rule set requires payroll-provider review.</p><button disabled={busy} onClick={() => onSection('profile')}>Open payroll settings</button></>)}
       </aside>}
       {!selected.length ? <p>No recorded work in these dates. Choose a different period or check the employee's time records.</p> : <>

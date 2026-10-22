@@ -71,7 +71,7 @@ test('recorded-hours approval is explicit, retains the selected dates and preser
   expect(axios.post).not.toHaveBeenCalled();
   const approve = screen.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' });
   fireEvent.click(approve); expect(axios.post).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByLabelText('I checked the hours, breaks and overtime for 2026-10-19.'));
+  fireEvent.click(screen.getByLabelText('I checked the hours and overtime for 2026-10-19.'));
   vi.mocked(axios.post).mockImplementationOnce(async (_url, body) => {
     currentDetail.ledger = { ...currentDetail.ledger, version: 2, days: [{ ...currentDetail.ledger.days[0], approval: body as Details['ledger']['days'][number]['approval'] }] };
     return { data: { data: {} } };
@@ -123,7 +123,7 @@ test('unsaved guided review blocks calculation until the administrator confirms 
   configured(); currentDetail.ledger.days = [recordedDay('2026-10-19')];
   await employee(); period('2026-10-19');
   fireEvent.click(screen.getByRole('button', { name: 'Review hours for 2026-10-19' }));
-  fireEvent.click(screen.getByLabelText('I checked the hours, breaks and overtime for 2026-10-19.'));
+  fireEvent.click(screen.getByLabelText('I checked the hours and overtime for 2026-10-19.'));
   expect(screen.getByRole('button', { name: 'Calculate gross pay' })).toBeDisabled();
   // Re-selecting the current section must not clear the outstanding draft.
   fireEvent.click(screen.getByRole('button', { name: 'Calculate pay' }));
@@ -131,11 +131,11 @@ test('unsaved guided review blocks calculation until the administrator confirms 
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   try {
     fireEvent.click(screen.getByRole('button', { name: 'Discard unsaved changes' }));
-    expect(screen.getByLabelText('I checked the hours, breaks and overtime for 2026-10-19.')).toBeChecked();
+    expect(screen.getByLabelText('I checked the hours and overtime for 2026-10-19.')).toBeChecked();
     expect(screen.getByRole('button', { name: 'Calculate gross pay' })).toBeDisabled();
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Discard unsaved changes' }));
-    expect(screen.queryByLabelText('I checked the hours, breaks and overtime for 2026-10-19.')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('I checked the hours and overtime for 2026-10-19.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Calculate gross pay' })).toBeEnabled();
     expect(screen.getByLabelText('Pay period start')).toHaveValue('2026-10-19');
     expect(axios.post).not.toHaveBeenCalled();
@@ -163,4 +163,13 @@ test('a delayed historical calculation cannot reappear after the pay dates chang
   expect(screen.queryByRole('button', { name: 'Save calculation' })).not.toBeInTheDocument();
   expect(screen.getByLabelText('Pay period end')).toHaveValue('2026-10-20');
   expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('an unfinished day asks only for checkout, never for break logging',async()=>{
+ configured();currentDetail.ledger.days=[{...recordedDay('2026-10-19'),incomplete:true}];
+ await employee();period('2026-10-19');
+ expect(screen.getByText('Missing checkout')).toBeVisible();
+ expect(screen.getByText('Record the missing checkout before calculating this day.')).toBeVisible();
+ expect(screen.getByRole('button',{name:'Fix checkout for 2026-10-19'})).toBeEnabled();
+ expect(screen.queryByText(/break/i)).not.toBeInTheDocument();
 });

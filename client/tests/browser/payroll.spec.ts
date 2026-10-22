@@ -53,11 +53,11 @@ for (const width of [320, 1280]) test(`own clock and private pay review through 
     await page.getByRole('button', { name: 'Save hourly rate', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Save hourly rate', exact: true })).toHaveCount(0);
     await page.getByLabel('Payroll review note', { exact: true }).fill('Synthetic reviewer verified standard overtime, paid rest, actual unpaid breaks and adjustments.');
-    await page.getByLabel('The applicable classification, overtime, breaks and adjustments have been reviewed.', { exact: true }).check();
+    await page.getByLabel('The applicable classification, overtime and adjustments have been reviewed.', { exact: true }).check();
     await page.getByRole('button', { name: 'Save reviewed payroll rules', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Save reviewed payroll rules', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Review hours for 2026-09-21', exact: true }).click();
-    await page.getByLabel('I checked the hours, breaks and overtime for 2026-09-21.', { exact: true }).check();
+    await page.getByLabel('I checked the hours and overtime for 2026-09-21.', { exact: true }).check();
     await page.getByRole('button', { name: 'Approve recorded hours for 2026-09-21', exact: true }).click();
     await expect(page.getByLabel('Pay period start', { exact: true })).toHaveValue('2026-09-21');
     await expect(page.getByLabel('Pay period end', { exact: true })).toHaveValue('2026-09-21');

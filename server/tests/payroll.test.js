@@ -48,16 +48,22 @@ test('clock writes need CSRF and one current version; retries cannot create dupl
   await expect(service.clock(teacher.token,{...body,requestId:randomUUID()})).rejects.toMatchObject({status:409});
   await expect(service.clock(teacher.token,{...body,action:'checkout'})).rejects.toMatchObject({status:409});
 });
-test('legacy paid rest remains paid and unfinished breaks need manager correction, with no self-service break actions', async () => {
+test('legacy unfinished entries never require a break action, block checkout or create a guessed deduction', async () => {
   const {person,t,teacher}=await day(); await clock(teacher.token,'checkin'); advance(3600000);
   await expect(clock(teacher.token,'paid-break')).rejects.toMatchObject({status:400});
   let detail=await service.get(t,person.id); const session=detail.ledger.sessions.at(-1); const now=new Date().toISOString();
-  await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:null,breaks:[{start:now,end:null,paid:false}],voided:false,reason:'Synthetic legacy unfinished break'});
-  expect((await service.own(teacher.token)).needsReview).toBe(true); advance(1800000);
-  await expect(clock(teacher.token,'checkout')).rejects.toMatchObject({status:409});
-  detail=await service.get(t,person.id); await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:null,breaks:[{start:now,end:new Date().toISOString(),paid:false}],voided:false,reason:'Synthetic verified break end'});
-  advance(60000); await clock(teacher.token,'checkout'); detail=await service.get(t,person.id);
-  expect(detail.ledger.days[0].unpaidMillis).toBe(1800000); expect(detail.ledger.days[0].rawMillis-detail.ledger.days[0].paidMillis).toBe(1800000);
+  await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:null,breaks:[{start:now,end:null,paid:false}],voided:false,reason:'Synthetic historical entry'});
+  const raw=await db.getPayrollRecord('ledger:'+person.id), stored=vault.open(raw);
+  stored.sessions.at(-1).breaks[0].id='legacy-entry-id';
+  stored.sessions.at(-1).breaks[0].actorId='historical-actor';
+  await db.savePayrollRecord({...raw,ciphertext:vault.seal(raw,stored)});
+  const original=structuredClone(stored.sessions.at(-1).breaks);
+  expect((await service.own(teacher.token)).needsReview).toBe(false); advance(1800000);
+  await clock(teacher.token,'checkout'); detail=await service.get(t,person.id);
+  expect(detail.ledger.days[0]).toMatchObject({unpaidMillis:0,paidMillis:9.5*3600000,incomplete:false});
+  expect(detail.ledger.sessions.at(-1).breaks).toEqual(original);
+  await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:detail.ledger.sessions.at(-1).end,voided:false,reason:'Verify checkout while retaining history'});
+  detail=await service.get(t,person.id); expect(detail.ledger.sessions.at(-1).breaks).toEqual(original);
   const own=await service.own(teacher.token);expect(Object.keys(own).sort()).toEqual(['checkedIn','needsReview','staff','timeZone','version']);
 });
 test('private fields are encrypted in storage, masked in responses and preserved on unrelated edits', async () => {

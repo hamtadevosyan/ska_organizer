@@ -42,8 +42,7 @@ export default function MyTime() {
     {!account?.staffMemberId ? <p role="alert">Ask an administrator to link your account to your active staff record in Accounts.</p> : serverUnavailable ? <p role="alert">The connection is interrupted. Clock actions are unavailable; report your actual times to an administrator.</p> : <>
       {error && <p role="alert">{error}</p>}<button disabled={busy} onClick={() => setRevision(n => n + 1)}>Refresh my time</button>
       {!data ? !error && <p role="status">Loading your clock…</p> : <><section><h2>{data.staff.name}</h2><p>{data.timeZone}</p><strong>{data.checkedIn ? 'Checked in' : 'Checked out'}</strong>
-        {data.needsReview && <p role="alert">Ask an administrator to resolve an unfinished break before checking out.</p>}
-        <div className="payroll-actions">{data.checkedIn ? <button disabled={busy || data.needsReview} onClick={() => void clock('checkout')}>Check out of work</button> : <button disabled={busy} onClick={() => void clock('checkin')}>Check in to work</button>}</div>
+        <div className="payroll-actions">{data.checkedIn ? <button disabled={busy} onClick={() => void clock('checkout')}>Check out of work</button> : <button disabled={busy} onClick={() => void clock('checkin')}>Check in to work</button>}</div>
         <p>Ask a manager to correct a missed clock action.</p></section></>}
     </>}
   </div>;
