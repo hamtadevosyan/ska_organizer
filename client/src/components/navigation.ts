@@ -16,8 +16,6 @@ const navigation = {
   purchasing: { to: '/purchasing', label: 'Purchasing', icon: ShoppingCart },
   receiving: { to: '/receiving', label: 'Receipts', icon: PackageCheck },
   staff: { to: '/staff', label: 'Staff', icon: Users },
-  worktime: { to: '/work-time', label: 'Work time', icon: ClipboardCheck },
-  payroll: { to: '/payroll', label: 'Staff pay & time', icon: FileText, adminOnly: true },
   clock: { to: '/my-time', label: 'My time', icon: ClipboardCheck },
   reports: { to: '/reports', label: 'Reports', icon: FileText },
   accounts: { to: '/accounts', label: 'Accounts', icon: Users, adminOnly: true },

@@ -93,7 +93,11 @@ exports.clock = (token, payload) => authorized(token, false, async actor => {
   return { replayed: false };
 });
 exports.get = (token, staffId) => authorized(token, true, async actor => {
-  const staff = await employee(staffId); const [profile, ledger, docs, snapshots] = await Promise.all([read('profile', staffId), read('ledger', staffId), db.listPayrollRecords(staffId, 'document'), db.listPayrollRecords(staffId, 'snapshot')]);
+  const staff = await employee(staffId);
+  // authorized() holds one transaction/client. Finish each query before
+  // issuing the next; pg does not support concurrent queries on that client.
+  const profile = await read('profile', staffId), ledger = await read('ledger', staffId);
+  const docs = await db.listPayrollRecords(staffId, 'document'), snapshots = await db.listPayrollRecords(staffId, 'snapshot');
   await auth.audit(actor, 'payroll.view', staffId);
   const documents = docs.map(row => { const d = vault.open(row); return { id: row.id, version: row.version, title: d.title, category: d.category,
     revisions: d.revisions.map(({ dataBase64, ...r }) => r) }; });
@@ -153,7 +157,7 @@ exports.approve = (token, staffId, payload) => authorized(token, true, async act
 async function calculate(staffId, payload) {
   const start = time.validateDate(payload.start), end = time.validateDate(payload.end);
   if (end < start || end > time.addDays(start, 92)) throw auth.problem('Choose an ordered period of at most 93 days.');
-  const [ledger, profile] = await Promise.all([read('ledger', staffId), read('profile', staffId)]);
+  const ledger = await read('ledger', staffId), profile = await read('profile', staffId);
   const result = math.preview(ledger.data, profile.data, start, end);
   const work = await workRows(staffId, ledger, start, end);
   for (const row of work) if (row.status === 'pending') result.blockers.push(row.date + ': Extra work time needs manager review in Work time.');

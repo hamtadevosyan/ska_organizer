@@ -36,3 +36,8 @@ Facility-wide read-only, time-clock-only access and badge authentication are pro
 ## Teacher extension
 
 The separate Teacher role may use these saved class projections and adds scoped attendance and reviewed safety cards. Class viewer permissions remain unchanged. See [Teacher care access](teacher-care-access.md).
+
+
+## Teacher and class-viewer presentation
+
+My class shares the administrator Home palette, action cards and existing public illustration. Teacher shortcuts open scoped class attendance, class children, saved activities and meals. Class viewers receive class children, personal My time, saved activities and meals. The welcome and detail cards use their current class assignment; no global dashboard request, staff/private payroll shortcut or additional child fields are introduced. Attendance and health/emergency actions remain teacher-only and server-authorized. No personal data is added to offline caches.

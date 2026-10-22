@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import Classroom from './Classroom';
 import * as api from '../api/classroom';
 import type { ClassroomOverview } from '../api/classroom';
@@ -17,7 +18,7 @@ const activities = { state: 'assigned' as const, room, weekStart: '2026-10-12', 
 const meals = { state: 'assigned' as const, room, weekStart: '2026-10-12', hasPlan: true, version: 1, savedAt: null, scope: 'facility' as const,
   week: [{ day: 'Monday', meals: [{ slot: 'lunch', name: 'Vegetable rice', type: 'lunch' }] }] };
 function view(section: 'overview' | 'children' | 'activities' | 'meals' = 'overview', user = account, unavailable = false) {
-  return <AuthContext.Provider value={{ account: user, ready: true, notice: '', serverUnavailable: unavailable, signIn: vi.fn(), signOut: vi.fn(), changePassword: vi.fn(), retry: vi.fn() }}><Classroom section={section} /></AuthContext.Provider>;
+  return <AuthContext.Provider value={{ account: user, ready: true, notice: '', serverUnavailable: unavailable, signIn: vi.fn(), signOut: vi.fn(), changePassword: vi.fn(), retry: vi.fn() }}><MemoryRouter><Classroom section={section} /></MemoryRouter></AuthContext.Provider>;
 }
 beforeEach(() => {
   vi.resetAllMocks();
@@ -33,6 +34,16 @@ test('overview shows only the assigned class count and configuration', async () 
   expect(screen.getByText('24–60 months')).toBeVisible();
   expect(api.getClassroomChildren).not.toHaveBeenCalled();
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+});
+test.each(['teacher', 'viewer'] as const)('%s overview links only to its permitted colorful class actions', async role => {
+  render(view('overview', { ...account, role }));
+  await screen.findByRole('heading', { name: room.name });
+  const links = screen.getByRole('navigation', { name: 'Class quick actions' }).querySelectorAll('a');
+  expect(Array.from(links, link => link.getAttribute('href'))).toEqual(role === 'teacher' ?
+    ['/classroom/attendance', '/classroom/children', '/classroom/activities', '/classroom/meals'] :
+    ['/classroom/children', '/my-time', '/classroom/activities', '/classroom/meals']);
+  expect(screen.queryByRole('link', { name: /payroll|staff|inventory|generate/i })).not.toBeInTheDocument();
+  expect(api.getClassroomChildren).not.toHaveBeenCalled();
 });
 test('children render basic names without profile or management actions', async () => {
   vi.mocked(api.getClassroomChildren).mockResolvedValue({ ...children, items: [{ ...children.items[0], medical: 'private health sentinel', notes: 'private notes sentinel' } as typeof children.items[0]] });

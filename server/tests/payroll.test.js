@@ -144,7 +144,13 @@ test('work-time HTTP writes require CSRF and viewers cannot query or change the 
   const path='/work-time/staff/'+person.id+'/review';
   expect((await http(app).post('/api'+path).set('Origin',fixture.origin).set('Cookie','skao_session='+editor.token).send(body)).status).toBe(403);
   expect((await api(teacher.token,'post',path,body)).status).toBe(403);expect((await api(teacher.token,'get','/work-time')).status).toBe(403);
-  const viewer=await actor('viewer',person);expect((await api(viewer.token,'get','/work-time')).status).toBe(403);
+  // A staff record has one sign-in account. day() already links person to the
+  // teacher; use a separate employee so this fixture also satisfies PostgreSQL.
+  const viewerPerson=await staff(),viewer=await actor('viewer',viewerPerson);
+  expect((await service.own(viewer.token)).staff.id).toBe(viewerPerson.id);
+  expect((await api(viewer.token,'get','/work-time')).status).toBe(403);
+  expect((await api(viewer.token,'post',path,body)).status).toBe(403);
+  expect((await api(viewer.token,'post','/work-time/staff/'+person.id+'/schedule',{version:0,effectiveOn:row.date,approvedHours:8,reason:'Viewer must not change a schedule'})).status).toBe(403);
   const audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic work review audit failure'));
   try{await expect(service.reviewWork(editor.token,person.id,body)).rejects.toThrow('Synthetic work review audit failure');}finally{audit.mockRestore();}
   expect((await service.workTime(t)).items[0].status).toBe('pending');

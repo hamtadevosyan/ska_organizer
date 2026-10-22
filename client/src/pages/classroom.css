@@ -25,6 +25,49 @@
 .ska-classroom-date { color: #755395; font-size: .9rem; }
 .ska-classroom-menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; margin-top: 20px; }
 .ska-classroom-menu article { padding: 16px; background: #fff8ec; border-radius: 16px; border: 1px solid #f4e3c3; }
+.ska-classroom-welcome { margin-bottom: 28px; }
+.ska-classroom-welcome h1 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; font-size: clamp(2rem, 5vw, 2.8rem); letter-spacing: -.04em; }
+.ska-classroom-welcome p { max-width: 42rem; color: #626c81; line-height: 1.7; }
+.ska-classroom .ska-classroom-actions .home-action { text-decoration: none; }
+.ska-classroom .ska-classroom-actions small { margin-top: 8px; color: #46536c; }
+.ska-classroom .ska-classroom-actions .action-attendance small { color: white; }
+.ska-classroom a:focus-visible { outline: 3px solid #7655c9; outline-offset: 3px; }
+.ska-classroom-section-title { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.ska-classroom-section-title h2 { margin: 0; }
+.ska-classroom-section-title .ska-classroom-icon { background: #f1e7ff; }
+.ska-classroom-at-glance { border-color: #dfd8f2; background: linear-gradient(135deg, #fff, #fcf9ff); }
+.ska-classroom-facts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin-top: 18px; }
+.ska-classroom .ska-classroom-facts > div { display: block; border: 0; padding: 14px 16px; border-radius: 16px; background: #ecf5ff; }
+.ska-classroom .ska-classroom-facts > div:last-child { background: #fff3d2; }
+.ska-classroom-facts dt { font-size: .85rem; margin-bottom: 6px; }
+.ska-classroom-facts dd { font-size: 1.05rem; }
+.ska-classroom .ska-classroom-spotlight { margin-top: 22px; }
+.ska-classroom-spotlight .ska-kicker { display: flex; align-items: center; gap: 7px; }
+.ska-classroom-hero { position: relative; overflow: hidden; }
+.ska-classroom-hero > * { position: relative; z-index: 1; }
+.ska-classroom-hero::after { content: ''; position: absolute; width: 160px; height: 160px; right: -55px; top: -70px; border: 24px solid #ffffff60; border-radius: 50%; pointer-events: none; }
+.ska-classroom-hero.section-attendance { background: linear-gradient(115deg, #dcecff, #e7e3ff 70%, #f3e6ff); border-color: #cbdcf7; }
+.ska-classroom-hero.section-children { background: linear-gradient(115deg, #ffeadc, #ffe2d1 65%, #fff2d6); border-color: #f0d6be; }
+.ska-classroom-hero.section-activities { background: linear-gradient(115deg, #f1e4ff, #e7d5ff 65%, #e5eaff); border-color: #dac6f3; }
+.ska-classroom-hero.section-meals { background: linear-gradient(115deg, #fff6cf, #ffe9a2 65%, #ffebcd); border-color: #f0dba0; }
+.ska-classroom-day-note { background: #f1f7ff; border-color: #d9e6f5; }
+.ska-classroom-day-note summary { cursor: pointer; min-height: 44px; padding: 10px 0; font-weight: 650; color: #416599; }
+.ska-classroom-roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 285px), 1fr)); gap: 18px; align-items: start; }
+.ska-classroom-child-card { margin: 0; border-color: #e4d5f3; background: linear-gradient(145deg, #fff, #fcf8ff); }
+.ska-classroom-child-card:nth-child(3n+2) { border-color: #f0d7c5; background: linear-gradient(145deg, #fff, #fff7ee); }
+.ska-classroom-child-card:nth-child(3n) { border-color: #f0e2b5; background: linear-gradient(145deg, #fff, #fffbef); }
+.ska-classroom-child-card.is-present { border-color: #c8daf8; }
+.ska-classroom-child-title { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.ska-classroom-child-title h2 { margin: 0; font-size: 1.2rem; line-height: 1.35; }
+.ska-classroom-child-title p { margin: 4px 0 0; font-size: .9rem; }
+.ska-classroom .ska-classroom-safety-action { background: #fff5f0; border-color: #efd7c9; color: #9b4c36; max-width: 100%; }
+.ska-classroom-visit-status { display: inline-flex; padding: 6px 10px; font-size: .85rem; font-weight: 700; color: #705394; background: #f0e8fb; border-radius: 10px; }
+.ska-classroom-visit-status.is-present { background: #e8f2ff; color: #2868b4; }
+.ska-classroom-visit-status.needs-review { background: #fff0d0; color: #886018; }
+.ska-classroom .ska-classroom-attendance-action { width: 100%; margin-top: 12px; border-color: #4b72e7; background: linear-gradient(115deg, #2877e8, #6151df); color: white; }
+.ska-classroom .ska-classroom-attendance-action.is-checkout { background: #f1ecff; color: #6442a5; border-color: #d5c7ed; }
+.ska-classroom button:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 390px) { .ska-classroom-hero { padding: 16px; gap: 10px; } .ska-classroom-icon { padding: 10px; } .ska-classroom-hero > button { width: 100%; } .ska-classroom-week > button { flex: 1; } .ska-classroom-week > label { flex-basis: 100%; order: -1; } }
 
 @media (max-width: 600px) { .ska-classroom-hero { grid-template-columns: auto minmax(0, 1fr); padding: 16px; } .ska-classroom-hero > button { grid-column: 1 / -1; width: 100%; } .ska-classroom-hero h1, .ska-classroom-eyebrow { overflow-wrap: normal; word-break: normal; } }
+@media (max-width: 359px) { .ska-classroom-actions .home-action { padding: 16px 12px; } .ska-classroom-actions .home-action-title { gap: 5px; } .ska-classroom .ska-classroom-actions small { font-size: .68rem; } .ska-classroom-facts { grid-template-columns: minmax(0,1fr); } }

@@ -3,7 +3,7 @@
 Staff records and sign-in accounts remain separate. Link an existing account to an active employee in Accounts; creating an employee does not create an account or grant payroll privileges. Job titles do not grant privileges.
 
 - Every linked active account can open **More → My time**. A classroom assignment is unnecessary for its own work clock. Only check-in/check-out status and the applicable clock action are shown; employee pages and their status API omit worked hours, timestamps, session history and pay totals. Clock actions use server timestamps. Missing checkouts remain unresolved. Managers handle break corrections; no automatic meal deduction is performed.
-- Only administrators can open **More → Staff pay & time**, read or change pay profiles, rates, approvals, corrections, snapshots or payroll files. Editors, teachers and viewers cannot access even their own private pay profile through these routes. They retain their separate operational/class permissions.
+- Only administrators can open **More → Staff → Pay & time**, read or change pay profiles, rates, approvals, corrections, snapshots or payroll files. Editors, teachers and viewers cannot access even their own private pay profile through these routes. They retain their separate operational/class permissions.
 - Private profiles contain legal name, payment method/frequency, optional employee ID in a payroll service, payday notes, masked employee SSN/bank/routing identifiers and required document names. Payroll policy review controls are under Advanced payroll settings. Blank replacement fields keep stored identifiers; clearing requires an explicit checkbox.
 - Rates are appended with an effective facility date, reason and actor. Later corrections on the same effective date supersede the earlier rate for new calculations; prior values remain stored. Time corrections retain original clock values and attributed before/after history. Affected daily approvals require review again.
 - Daily decisions distinguish actual elapsed time, explicit unpaid breaks and reviewed regular/overtime/double-time hours. Administrators can return a day for correction, add documented premiums/adjustments, and review every change. Scheduled daily minutes never cap actual time. No automatic time rounding or meal deduction is performed.
@@ -47,7 +47,7 @@ Private payroll documents accept validated PDF/PNG/JPEG up to 5 MB per revision.
 
 ## Simple clock and manager extra-time review
 
-Admins/editors open **More → Work time** to set approved daily hours for each employee, using hours such as 8 or 7.5. Effective-dated changes apply today or later. Internally the allowance is stored as whole minutes. A workday keeps the allowance captured when it was first clocked, so changing the schedule cannot silently remove a pending exception. Legacy work uses its existing scheduled daily minutes (eight hours by default) until a schedule is configured.
+Admins/editors open **More → Staff → Work time** to set approved daily hours for each employee, using hours such as 8 or 7.5. Effective-dated changes apply today or later. Internally the allowance is stored as whole minutes. A workday keeps the allowance captured when it was first clocked, so changing the schedule cannot silently remove a pending exception. Legacy work uses its existing scheduled daily minutes (eight hours by default) until a schedule is configured.
 
 On Home, admins/editors see an in-app reminder when a completed workday exceeds its allowance. The reminder refreshes at most every 60 seconds while Home is open, and on focus/online. It links to the last 60 days of Work time. It is not an email, SMS or phone push notification. Editors receive a narrow operational projection: staff name, dates, recorded duration, daily allowance, excess time and review decision. Pay rates, identifiers, bank data, payroll documents and finalized pay calculations remain admin-only.
 
@@ -73,3 +73,20 @@ This uses the configured separate `_test` PostgreSQL database for synthetic test
 Run `bash SKAO.sh payroll-check` for a read-only check of the installed release, database and original key as the API service identity. It does not create a key, restart services or change files. Its bracketed diagnostic code distinguishes an outdated/incomplete installed release, missing migrations, database authentication/permissions/connectivity and key access/decryption failures. Raw database errors, credentials and key contents are not printed. A missing original key for existing encrypted records still stops initialization.
 
 `update --local` builds tracked working-tree source files. Newly added SKAO-106 source files must be added to Git before that deployment command can include them; a commit or push is not required for a local deployment. Applying a source patch alone does not change the currently installed release. If the check reports RELEASE_OUTDATED, RELEASE_INCOMPLETE or MIGRATIONS_PENDING, review the tracked SKAO-106 files, run `bash SKAO.sh update --local`, and rerun the check before initialization. For DB or key diagnoses, review the specified local configuration/access issue; never share service configuration files or replace a key for existing data.
+
+## Staff subsections
+
+Staff information, Work time, and the administrator-only Pay & time page share one Staff entry on desktop and in the phone More menu. Their addresses are `/staff`, `/staff/work-time`, and `/staff/payroll`. Existing `/work-time` and `/payroll` bookmarks redirect while preserving the query and fragment. Employee My time stays separate. Grouping these screens does not expand account permissions or combine their data requests; private payroll requests remain administrator-only.
+
+
+## Guided pay calculation
+
+Open **Staff → Pay & time**, then choose an employee. Calculate pay is the default screen:
+
+1. Choose the pay-period start and end dates.
+2. If needed, save the hourly rate and its effective date, then explicitly confirm the payroll policy review. Private identifiers and bank fields are optional and are not required to calculate gross pay.
+3. Review each recorded day. For an ordinary completed day, confirm the hours/break/overtime review and choose Approve recorded hours. Exact recorded milliseconds are retained; schedules do not cap paid time. The simplified approval is unavailable for apparent daily/weekly/seventh-day overtime or an existing adjustment. Those cases open the existing detailed review instead.
+4. Choose Calculate gross pay. Resolve any server-reported blockers, including related workweek days outside the selected dates or pending extra-time reviews in Work time. Related dates are not included in the selected period's gross amount.
+5. Review **Gross pay before taxes**, then choose Save calculation. The result remains visible and is available in saved snapshots.
+
+Each daily save refreshes the ledger version before another decision. Chosen pay dates remain selected. Changing dates or editing an unsaved form clears old results; calculation is disabled until draft changes are saved or discarded. Delayed historical-snapshot requests are cancelled when the period changes. Server fingerprint checks still reject stale finalization. This is gross-pay calculation and recordkeeping; it does not transfer money or calculate tax withholding.

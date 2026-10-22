@@ -22,22 +22,49 @@ for (const width of [320, 1280]) test(`own clock and private pay review through 
     const base = api + '/payroll/staff/' + employee.id;
     const detail=await data<{ledger:{sessions:{id:string}[]}}>(await http.get(base));
     await data(await http.post(base + '/corrections', { data: { version: own.version, sessionId: detail.ledger.sessions[0].id, start: '2026-09-21T15:00:00Z', end: '2026-09-21T23:00:00Z', breaks: [], reason: 'Synthetic historical fixture correction', voided: false } }));
-    await page.goto('/payroll'); await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(employee.id);
-    await page.getByLabel('Legal employee name', { exact: true }).fill('Synthetic legal name'); await page.getByLabel('Employee SSN (optional)', { exact: true }).fill('SYNTHETIC-TAX-1234');
-    await page.getByText('Advanced payroll settings',{exact:true}).click();
-    await page.getByLabel('Payroll policy review notes', { exact: true }).fill('Synthetic reviewer verified applicable standard rules; no unpaid breaks in synthetic fixture.');
-    await page.getByText('The applicable classification, workweek, overtime, paid rest, meal periods, premiums and adjustments have been reviewed.', { exact: true }).click();
-    await page.getByLabel('Reason for profile change', { exact: true }).fill('Synthetic payroll profile'); await page.getByRole('button', { name: 'Save private profile', exact: true }).click();
-    await expect(page.getByLabel('Employee SSN (optional)', { exact: true })).toHaveAttribute('placeholder', '••••1234');
-    await page.getByRole('button', { name: 'Hourly rates', exact: true }).click(); await page.getByLabel('Effective date', { exact: true }).fill('2026-01-01'); await page.getByLabel('Hourly rate', { exact: true }).fill('20'); await page.getByLabel('Reason / correction explanation', { exact: true }).fill('Synthetic base rate'); await page.getByRole('button', { name: 'Add effective rate', exact: true }).click();
-    await expect(page.getByText('2026-01-01 · $20.00/hour · Synthetic base rate', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Time & approvals', exact: true }).click(); await page.locator('summary').filter({ hasText: '2026-09-21' }).click();
-    await page.getByLabel('I reviewed actual work, overtime, paid rest, unpaid meals and premiums for this date.', { exact: true }).check(); await page.getByLabel('Approval / return reason, including any difference from clocked time', { exact: true }).fill('Synthetic eight hours reviewed'); await page.getByRole('button', { name: 'Save daily decision', exact: true }).click();
-    await expect(page.locator('summary').filter({ hasText: '2026-09-21' })).toContainText('approved');
-    await page.getByRole('button', { name: 'Pay preview', exact: true }).click(); await page.getByLabel('Pay period start', { exact: true }).fill('2026-09-21'); await page.getByLabel('Pay period end', { exact: true }).fill('2026-09-21'); await page.getByRole('button', { name: 'Calculate gross preview', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Reviewed gross-pay preview: $160.00', exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Save finalized calculation snapshot', exact: true }).click(); await expect(page.getByRole('button', { name: 'Open calculation snapshot', exact: true })).toBeEnabled();
-    await page.reload(); await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(employee.id); await page.getByRole('button', { name: 'Pay preview', exact: true }).click(); await page.getByRole('button', { name: 'Open calculation snapshot', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Reviewed gross-pay preview: $160.00', exact: true })).toBeVisible(); expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1); await page.screenshot({ path: test.info().outputPath('payroll.png'), fullPage: true });
+    await page.goto('/dashboard');
+    if (width === 320) {
+      await page.getByRole('button', { name: 'More', exact: true }).click();
+      const more = page.getByRole('navigation', { name: 'More navigation' });
+      await expect(more.getByRole('link', { name: 'Work time', exact: true })).toHaveCount(0);
+      await expect(more.getByRole('link', { name: 'Staff pay & time', exact: true })).toHaveCount(0);
+      await more.getByRole('link', { name: 'Staff', exact: true }).click();
+    } else {
+      const desktop = page.getByRole('navigation', { name: 'Desktop navigation' });
+      await expect(desktop.getByRole('link', { name: 'Work time', exact: true })).toHaveCount(0);
+      await expect(desktop.getByRole('link', { name: 'Staff pay & time', exact: true })).toHaveCount(0);
+      await desktop.getByRole('link', { name: 'Staff', exact: true }).click();
+    }
+    const sections = page.getByRole('navigation', { name: 'Staff sections' });
+    await expect(sections.getByRole('link', { name: 'Staff information', exact: true })).toHaveAttribute('aria-current', 'page');
+    await sections.getByRole('link', { name: 'Work time', exact: true }).click();
+    await expect(page).toHaveURL(/\/staff\/work-time$/);
+    await expect(sections.getByRole('link', { name: 'Work time', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(sections.getByRole('link', { name: 'Staff information', exact: true })).not.toHaveAttribute('aria-current');
+    expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    await sections.getByRole('link', { name: 'Pay & time', exact: true }).click();
+    await expect(page).toHaveURL(/\/staff\/payroll$/);
+    await expect(sections.getByRole('link', { name: 'Pay & time', exact: true })).toHaveAttribute('aria-current', 'page');
+    await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(employee.id);
+    await expect(page.getByRole('heading', { name: '1. Choose pay dates', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Employee SSN (optional)', { exact: true })).toHaveCount(0);
+    await page.getByLabel('Pay period start', { exact: true }).fill('2026-09-21'); await page.getByLabel('Pay period end', { exact: true }).fill('2026-09-21');
+    await page.getByLabel('Hourly rate ($ per hour)', { exact: true }).fill('20'); await page.getByLabel('Rate starts on', { exact: true }).fill('2026-01-01');
+    await page.getByRole('button', { name: 'Save hourly rate', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save hourly rate', exact: true })).toHaveCount(0);
+    await page.getByLabel('Payroll review note', { exact: true }).fill('Synthetic reviewer verified standard overtime, paid rest, actual unpaid breaks and adjustments.');
+    await page.getByLabel('The applicable classification, overtime, breaks and adjustments have been reviewed.', { exact: true }).check();
+    await page.getByRole('button', { name: 'Save reviewed payroll rules', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save reviewed payroll rules', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Review hours for 2026-09-21', exact: true }).click();
+    await page.getByLabel('I checked the hours, breaks and overtime for 2026-09-21.', { exact: true }).check();
+    await page.getByRole('button', { name: 'Approve recorded hours for 2026-09-21', exact: true }).click();
+    await expect(page.getByLabel('Pay period start', { exact: true })).toHaveValue('2026-09-21');
+    await expect(page.getByLabel('Pay period end', { exact: true })).toHaveValue('2026-09-21');
+    await page.getByRole('button', { name: 'Calculate gross pay', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Gross pay before taxes: $160.00', exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Save calculation', exact: true }).click(); await expect(page.getByRole('button', { name: 'Open calculation snapshot', exact: true })).toBeEnabled();
+    await page.reload(); await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(employee.id); await page.getByRole('button', { name: 'Calculate pay', exact: true }).click(); await page.getByRole('button', { name: 'Open calculation snapshot', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Gross pay before taxes: $160.00', exact: true })).toBeVisible(); expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1); await page.screenshot({ path: test.info().outputPath('payroll.png'), fullPage: true });
   } finally { await context.close(); }
 });
 test('editor receives a home reminder and corrects a verified late clockout without private payroll access at 390px', async({page,browser})=>{
@@ -54,6 +81,12 @@ test('editor receives a home reminder and corrects a verified late clockout with
   const base=api+'/payroll/staff/'+employee.id;const initial=await data<{ledger:{version:number;sessions:{id:string}[]}}>(await http.get(base));
   await data(await http.post(base+'/corrections',{data:{version:initial.ledger.version,sessionId:initial.ledger.sessions[0].id,start:'2026-09-22T15:00:00Z',end:'2026-09-23T00:00:00Z',breaks:[],voided:false,reason:'Synthetic nine-hour late clockout'}}));
   await login('editor');await other.goto('/dashboard');await expect(other.getByRole('region',{name:'Extra employee time reminders'})).toContainText('needs extra-time review');await other.getByRole('link',{name:'Review work time',exact:true}).click();
+  await expect(other).toHaveURL(/\/staff\/work-time$/);
+  const sections=other.getByRole('navigation',{name:'Staff sections'});
+  await expect(sections.getByRole('link')).toHaveCount(2);
+  await expect(sections.getByRole('link',{name:'Staff information',exact:true})).toBeVisible();
+  await expect(sections.getByRole('link',{name:'Work time',exact:true})).toHaveAttribute('aria-current','page');
+  await expect(sections.getByRole('link',{name:'Pay & time',exact:true})).toHaveCount(0);
   await expect(other.getByRole('heading',{name:employee.name+' · 2026-09-22',exact:true})).toBeVisible();expect((await other.request.get(base)).status()).toBe(403);
   await other.getByText('Correct a late clock-out mistake',{exact:true}).click();await other.getByLabel('Actual work ended at (America/Los_Angeles)',{exact:true}).fill('16:00:00');await other.getByLabel('Clock correction reason',{exact:true}).fill('Verified employee stopped work at 4 PM and forgot to clock out');await other.getByLabel('I verified no work was performed after this time.',{exact:true}).check();await other.getByRole('button',{name:'Save verified clock correction',exact:true}).click();
   await expect(other.getByText('No extra time is waiting for review.',{exact:true})).toBeVisible();expect(await other.locator('main').evaluate(e=>e.scrollWidth)).toBeLessThanOrEqual(391);

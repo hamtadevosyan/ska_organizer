@@ -206,8 +206,10 @@ test('offline route reload returns only the public shell and never stores route/
   await sw.lifecycle('install');
   const before = sw.keys();
   sw.network(async () => { throw new TypeError('Synthetic offline'); });
-  const response = await sw.dispatch('/attendance?room=sensitive-room-id', {}, true).response;
-  assert.equal(await response.text(), bodies.get('/index.html').toString());
+  for (const path of ['/attendance?room=sensitive-room-id', '/staff/work-time', '/staff/payroll?employee=private-id']) {
+    const response = await sw.dispatch(path, {}, true).response;
+    assert.equal(await response.text(), bodies.get('/index.html').toString());
+  }
   assert.deepEqual(sw.keys(), before);
   assert.equal(sw.dispatch('/api/children?private=value', {}, true).response, undefined);
 });

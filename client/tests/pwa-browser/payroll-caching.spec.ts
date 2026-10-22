@@ -5,7 +5,8 @@ test('private payroll is never stored offline and disappears when its session ca
   test.setTimeout(60_000); const http = await authenticatedApi(page); const suffix = randomUUID().slice(0, 8); const marker = 'SYNTHETIC-PRIVATE-PAYROLL-' + suffix;
   const response = await http.post(api + '/staff', { data: { name: 'Payroll privacy ' + suffix, role: 'Other' } }); expect(response.status()).toBe(201); const person = (await response.json()).data;
   expect((await http.post(api + '/payroll/staff/' + person.id + '/profile', { data: { version: 0, reason: 'Synthetic privacy fixture', legalName: marker, taxId: 'SYNTHETIC-TAX-1234' } })).status()).toBe(200);
-  await page.goto('/payroll'); await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(person.id);
+  await page.goto('/staff/payroll'); await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(person.id);
+  await page.getByText('Employee setup & records', { exact: true }).click(); await page.getByRole('button', { name: 'Private profile', exact: true }).click();
   await expect(page.getByLabel('Legal employee name', { exact: true })).toHaveValue(marker);
   await page.evaluate(async () => { await navigator.serviceWorker.ready; }); await page.waitForFunction(() => !!navigator.serviceWorker.controller);
   const headers = (await http.get(api + '/payroll/staff/' + person.id)).headers(); expect(headers['cache-control']).toContain('no-store');

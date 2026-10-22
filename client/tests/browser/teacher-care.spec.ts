@@ -70,7 +70,13 @@ for (const width of [320, 1280]) test(`Teacher records class attendance and read
     page.on('request', request => { if (request.url().startsWith(api + '/')) requests.push(new URL(request.url()).pathname); });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('/staff'); await expect(page).toHaveURL(/\/classroom$/);
-    await page.goto('/classroom/children');
+    const actions = page.getByRole('navigation', { name: 'Class quick actions' });
+    await expect(actions.getByRole('link', { name: /Take attendance/ })).toHaveAttribute('href', '/classroom/attendance');
+    await expect(actions.getByRole('link', { name: /Activities/ })).toHaveAttribute('href', '/classroom/activities');
+    await expect(actions.getByRole('link', { name: /Meals/ })).toHaveAttribute('href', '/classroom/meals');
+    await fits(page);
+    await page.screenshot({ path: test.info().outputPath('teacher-home.png'), fullPage: true });
+    await actions.getByRole('link', { name: /Class children/ }).click();
     await expect(page.locator('main')).toContainText(saved.pupil.firstName);
     await expect(page.locator('main')).not.toContainText(saved.foreign.firstName);
     await page.getByRole('button', { name: 'Health & emergency', exact: true }).click();

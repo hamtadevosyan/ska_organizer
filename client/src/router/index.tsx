@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Accounts from "../pages/Accounts";
 import RegistrationForms from "../pages/RegistrationForms";
@@ -22,6 +22,12 @@ import { useAuth } from "../auth/context";
 import WorkTime from "../pages/WorkTime";
 import Payroll from "../pages/Payroll";
 import MyTime from "../pages/MyTime";
+import StaffLayout from "../components/staff/StaffLayout";
+
+function StaffRedirect({ to }: { to: string }) {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname: to, search, hash }} replace />;
+}
 
 export default function AppRoutes() {
   const { account } = useAuth();
@@ -38,8 +44,8 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/my-time" element={<MyTime />} />
-      <Route path="/payroll" element={<Payroll />} />
-      <Route path="/work-time" element={<WorkTime />} />
+      <Route path="/payroll" element={<StaffRedirect to="/staff/payroll" />} />
+      <Route path="/work-time" element={<StaffRedirect to="/staff/work-time" />} />
       <Route path="/accounts" element={<Accounts />} />
       <Route path="/registration-forms" element={<RegistrationForms />} />
       <Route path="/rooms" element={<Rooms />} />
@@ -55,7 +61,11 @@ export default function AppRoutes() {
       <Route path="/activities" element={<Activities />} />
       <Route path="/schedule" element={<Navigate to="/activities" replace />} />
       <Route path="/meals" element={<Meals />} />
-      <Route path="/staff" element={<Staff />} />
+      <Route path="/staff" element={<StaffLayout />}>
+        <Route index element={<Staff />} />
+        <Route path="work-time" element={<WorkTime />} />
+        <Route path="payroll" element={<Payroll />} />
+      </Route>
       <Route path="/reports" element={<Reports />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

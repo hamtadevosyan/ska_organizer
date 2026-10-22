@@ -10,6 +10,7 @@ import type { StaffAccountOption } from '../api/staffAccountOptions';
 import { hours, localTime, money, payrollRequestId } from '../components/payroll/types';
 import type { ClockSession, Details, Preview } from '../components/payroll/types';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
+import PayCalculation from '../components/payroll/PayCalculation';
 import './payroll.css';
 const base = API_BASE_URL + '/api/payroll/staff/';
 const value = (data: FormData, key: string) => String(data.get(key) || '');
@@ -19,11 +20,14 @@ const readFile = (file: File) => new Promise<string>((resolve, reject) => { cons
 function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: boolean, busy: boolean) => void }) {
   const reportUnsaved = useUnsavedChanges();
   const [data, setData] = useState<Details | null>(null); const [error, setError] = useState(''); const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0); const [tab, setTab] = useState('profile'); const [dirty, setDirty] = useState(false); const [formTurn, setFormTurn] = useState(0);
+  const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0); const [tab, setTab] = useState('pay'); const [dirty, setDirty] = useState(false); const [formTurn, setFormTurn] = useState(0);
   const [preview, setPreview] = useState<Preview | null>(null); const [snapshot, setSnapshot] = useState<{ sourceChanged: boolean; preview: Preview } | null>(null);
   const [correction, setCorrection] = useState<ClockSession | null>(null);
+  const resultPanel = useRef<HTMLDivElement | null>(null);
+  const snapshotLoad = useRef<AbortController | null>(null);
   const mounted = useRef(true); const controller = useRef<AbortController | null>(null); const snapshotRequest = useRef(payrollRequestId());
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; controller.current?.abort(); }; }, []);
+  useEffect(() => { if (preview || snapshot) resultPanel.current?.scrollIntoView?.({ block: 'start' }); }, [preview, snapshot]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; controller.current?.abort(); snapshotLoad.current?.abort(); }; }, []);
   useEffect(() => {
     const request = new AbortController(); controller.current = request;
     void axios.get<{ data: Details }>(base + encodeURIComponent(staffId), { signal: request.signal }).then(response => { if (!request.signal.aborted) setData(response.data.data); })
@@ -33,22 +37,37 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   useEffect(() => { reportUnsaved(dirty, busy); onWork(dirty, busy); return () => { reportUnsaved(false, false); onWork(false, false); }; }, [dirty, busy, reportUnsaved, onWork]);
   useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, [dirty]);
   async function operation(path: string, body: unknown, after?: (result: unknown) => void, refresh = true) {
-    if (busy) return; setBusy(true); setError(''); setMessage('');
+    if (busy) return false; snapshotLoad.current?.abort(); setBusy(true); setError(''); setMessage('');
     try {
       const response = await axios.post<{ data: unknown }>(base + encodeURIComponent(staffId) + '/' + path, body);
-      if (!mounted.current) return;
+      if (!mounted.current) return false;
       after?.(response.data.data); setDirty(false);
       if (refresh) {
         try {
           const latest = await axios.get<{ data: Details }>(base + encodeURIComponent(staffId));
           if (mounted.current) { setData(latest.data.data); setPreview(null); setFormTurn(n => n + 1); setMessage('Saved.'); }
-        } catch { if (mounted.current) { setData(null); setError('The change was saved, but the latest record could not be loaded. Retry payroll before making another change.'); } }
+        } catch { if (mounted.current) { setData(null); setError('The change was saved, but the latest record could not be loaded. Retry payroll before making another change.'); } return false; }
       } else setMessage('Preview calculated.');
-    } catch (failure) { if (mounted.current) setError(authError(failure, 'Could not save the payroll change. Refresh and review the latest record.')); }
+      return true;
+    } catch (failure) { if (mounted.current) setError(authError(failure, 'Could not save the payroll change. Refresh and review the latest record.')); return false; }
     finally { if (mounted.current) setBusy(false); }
   }
   function submit(event: FormEvent<HTMLFormElement>, action: (fields: FormData) => void) { event.preventDefault(); action(new FormData(event.currentTarget)); }
-  function choose(next: string) { if (busy || dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; setTab(next); setDirty(false); setFormTurn(n => n + 1); setCorrection(null); }
+  function clearResults() { snapshotLoad.current?.abort(); setPreview(null); setSnapshot(null); }
+  function choose(next: string) { if (next === tab) return; if (busy || dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; snapshotLoad.current?.abort(); setTab(next); setDirty(false); setFormTurn(n => n + 1); setCorrection(null); }
+  function openSnapshot(id: string) {
+    if (busy || dirty) return;
+    snapshotLoad.current?.abort(); const request = new AbortController(); snapshotLoad.current = request;
+    void axios.get<{ data: { preview: Preview; sourceChanged: boolean } }>(base + encodeURIComponent(staffId) + '/snapshots/' + encodeURIComponent(id), { signal: request.signal }).then(response => {
+      if (mounted.current && !request.signal.aborted) { setSnapshot(response.data.data); setPreview(null); }
+    }).catch(failure => { if (mounted.current && !request.signal.aborted && !axios.isCancel(failure)) setError(authError(failure, 'Could not open the calculation snapshot.')); });
+  }
+  async function saveCalculation() {
+    if (!preview || busy || dirty) return; const saved = preview;
+    if (await operation('snapshots', { start: saved.start, end: saved.end, fingerprint: saved.fingerprint, requestId: snapshotRequest.current }) && mounted.current) {
+      setSnapshot({ sourceChanged: false, preview: saved }); setMessage('Calculation saved. Gross pay is shown below.');
+    }
+  }
   async function download(documentId: string, revision: number, filename: string) {
     setError('');
     try {
@@ -60,16 +79,17 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   const profile = data.profile; const ledger = data.ledger;
   const field = (label: string, name: string, initial = '', type = 'text', required = false) => <label>{label}<input name={name} type={type} defaultValue={initial} required={required} step={type === 'number' ? 'any' : undefined} maxLength={type === 'text' ? 2000 : undefined} /></label>;
   const renderPreview = (result: Preview) => <><p>{result.start}–{result.end} · {result.timeZone} · {result.workedDays} worked days · {hours(result.approvedMillis)} approved hours</p>
-    <h3>{result.canFinalize ? 'Reviewed gross-pay preview' : 'Incomplete gross-pay subtotal'}: {money(result.grossCents, result.currency || 'USD')}</h3>
+    <h3>{result.canFinalize ? 'Gross pay before taxes' : 'Estimated subtotal'}: {money(result.grossCents, result.currency || 'USD')}</h3>
     <p>Gross only. Payment has not been executed. Taxes and withholding are not calculated.</p>
     {result.blockers.length > 0 && <div role="alert"><strong>Resolve before finalizing</strong><ul>{result.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
     <div className="payroll-calculation-days">{result.rows.map(row => <article className="payroll-calculation-day" key={row.date}><h3>{row.date}</h3><dl className="payroll-grid"><div><dt>Clocked hours</dt><dd>{hours(row.rawMillis)}</dd></div><div><dt>Approved hours</dt><dd>{row.approval?.status === 'approved' ? hours(row.approval.regularMillis + row.approval.overtimeMillis + row.approval.doubleMillis) : 'Not approved'}</dd></div><div><dt>Hourly rate</dt><dd>{row.rate ? money(row.rate.cents, row.rate.currency) : 'Missing'}</dd></div><div><dt>Gross pay</dt><dd>{money(row.grossCents, row.rate?.currency || 'USD')}</dd></div></dl></article>)}</div></>;
   return <><section><h2>{data.staff.name}</h2><p>{data.staff.active ? 'Active employee' : 'Inactive employee — records retained'}</p>
     {data.missingDocuments.length > 0 && <p className="payroll-note">Missing payroll documents: {data.missingDocuments.join(', ')}</p>}
-    <nav className="payroll-actions" aria-label="Payroll sections">{[['profile','Private profile'],['rates','Hourly rates'],['time','Time & approvals'],['pay','Pay preview'],['documents','Payroll documents']].map(([id,label]) => <button key={id} disabled={busy} aria-pressed={tab === id} onClick={() => choose(id)}>{label}</button>)}</nav>
+    <nav className="payroll-menu" aria-label="Payroll sections"><button className="payroll-primary" disabled={busy} aria-pressed={tab === 'pay'} onClick={() => choose('pay')}>Calculate pay</button>
+      <details open={tab !== 'pay'}><summary>Employee setup &amp; records</summary><div className="payroll-actions">{[['profile','Private profile'],['rates','Hourly rates'],['time','Time & approvals'],['documents','Payroll documents']].map(([id,label]) => <button key={id} disabled={busy} aria-pressed={tab === id} onClick={() => choose(id)}>{label}</button>)}</div></details></nav>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
   </section>
-  <section key={tab + ':' + formTurn} onChange={() => setDirty(true)}>
+  <section key={tab + ':' + (tab === 'pay' ? 'guided' : formTurn)} onChange={() => { if (tab !== 'pay') setDirty(true); }}>
     {tab === 'profile' && <form onSubmit={event => submit(event, fields => {
       const body: Record<string, unknown> = { version: profile.version, reason: value(fields,'reason'), legalName: value(fields,'legalName'), paymentMethod: value(fields,'paymentMethod'), payFrequency: value(fields,'payFrequency'), providerReference: value(fields,'providerReference'), instructions: value(fields,'instructions'), requiredDocuments: value(fields,'requiredDocuments').split('\n').map(s => s.trim()).filter(Boolean), rules: { mode: value(fields,'mode'), workweekStart: Number(value(fields,'workweekStart')), dailyScheduledMinutes: profile.rules.dailyScheduledMinutes, confirmed: fields.has('confirmed'), reference: value(fields,'reference') } };
       for (const key of ['taxId','bankAccount','routingNumber']) { if (fields.has('clear-' + key)) body[key] = null; else if (value(fields,key)) body[key] = value(fields,key); }
@@ -81,7 +101,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
       <p>Private identifiers are masked. Leave replacements blank to keep stored values.</p>
       {(['taxId','bankAccount','routingNumber'] as const).map(key => <div key={key}><label>{key === 'taxId' ? 'Employee SSN (optional)' : key === 'bankAccount' ? 'Bank account' : 'Routing number'}<input name={key} autoComplete="off" type="password" maxLength={100} placeholder={profile[key] || 'Not stored'} /></label><label className="payroll-check"><input name={'clear-' + key} type="checkbox" />Clear stored {key === 'taxId' ? 'tax identifier' : key === 'bankAccount' ? 'bank account' : 'routing number'}</label></div>)}
       <label>Required payroll document names, one per line<textarea name="requiredDocuments" defaultValue={profile.requiredDocuments.join('\n')} /></label>
-      <p>Set approved daily hours and review extra time in <Link to="/work-time" className="ska-link">Work time</Link>.</p><details><summary>Advanced payroll settings</summary><h3>Payroll policy review</h3><p>Scheduled time is a planning reference, never an automatic cap. Workdays run midnight to midnight in the facility time zone; choose Other rules if your defined workday differs. Raw clock times are retained without automatic rounding or meal deductions. Administrators review paid rest, unpaid meals, daily/weekly/seventh-day overtime and any premium or adjustment.</p>
+      <p>Set approved daily hours and review extra time in <Link to="/staff/work-time" className="ska-link">Work time</Link>.</p><details><summary>Advanced payroll settings</summary><h3>Payroll policy review</h3><p>Scheduled time is a planning reference, never an automatic cap. Workdays run midnight to midnight in the facility time zone; choose Other rules if your defined workday differs. Raw clock times are retained without automatic rounding or meal deductions. Administrators review paid rest, unpaid meals, daily/weekly/seventh-day overtime and any premium or adjustment.</p>
       <label>Rule set<select name="mode" defaultValue={profile.rules.mode}><option value="ca-standard">California standard non-exempt review</option><option value="external-review">Other rules — payroll provider review required</option></select></label>
       <div className="payroll-grid"><label>Workweek starts<select name="workweekStart" defaultValue={profile.rules.workweekStart}>{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day,i) => <option key={day} value={i}>{day}</option>)}</select></label></div>
       <label>Payroll policy review notes<textarea name="reference" defaultValue={profile.rules.reference} /></label>
@@ -106,11 +126,13 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
         <button type="button" onClick={() => setCorrection({ ...correction, breaks: [...correction.breaks, { start: correction.start, end: correction.end, paid: true }] })}>Add missing break</button><label className="payroll-check"><input type="checkbox" name="voided" defaultChecked={correction.voided} />Void this erroneous session, preserving history</label>{field('Correction reason','reason','','text',true)}<button>Save time correction</button><button type="button" onClick={() => setCorrection(null)}>Cancel correction</button></fieldset></form>}
       <details><summary>Attributed change history</summary><ul>{ledger.history.map((event,i) => <li key={i}>{event.type} · {event.at || ''} · {event.actorId || ''} · {event.reason || ''}<details><summary>Record details</summary><pre>{JSON.stringify(event,null,2)}</pre></details></li>)}</ul></details>
     </>}
-    {tab === 'pay' && <><h2>Gross-pay preview</h2><p>Only approved paid hours and the rate effective on each work date are used. Missing or changed records block finalization. For complex rates, exemptions or wage orders, use your payroll provider.</p>
-      <form onSubmit={event => submit(event, fields => { snapshotRequest.current = payrollRequestId(); setSnapshot(null); void operation('preview',{ start: value(fields,'start'), end: value(fields,'end') }, result => setPreview(result as Preview),false); })}><fieldset disabled={busy}><div className="payroll-grid">{field('Pay period start','start',today(ledger.timeZone),'date',true)}{field('Pay period end','end',today(ledger.timeZone),'date',true)}</div><button>Calculate gross preview</button></fieldset></form>
-      {preview && <>{renderPreview(preview)}<button disabled={busy || !preview.canFinalize} onClick={() => void operation('snapshots',{ start: preview.start, end: preview.end, fingerprint: preview.fingerprint, requestId: snapshotRequest.current })}>Save finalized calculation snapshot</button></>}
-      <h3>Saved calculation snapshots</h3><ul>{data.snapshots.map(row => <li key={row.id}>{row.start}–{row.end} · {money(row.grossCents,row.currency)} · {row.at}<button onClick={() => { void axios.get<{ data: { preview: Preview; sourceChanged: boolean } }>(base + encodeURIComponent(staffId) + '/snapshots/' + encodeURIComponent(row.id)).then(response => { if (mounted.current) { setSnapshot(response.data.data); setPreview(null); } }).catch(failure => { if (mounted.current) setError(authError(failure,'Could not open the calculation snapshot.')); }); }}>Open calculation snapshot</button></li>)}</ul>
+    {tab === 'pay' && <>
+      <PayCalculation data={data} busy={busy} dirty={dirty} onDirty={next => { setDirty(next); if (next) clearResults(); }} onPeriodChange={clearResults} onSection={choose}
+        onSave={(path, body) => operation(path, body)} onCalculate={period => { snapshotRequest.current = payrollRequestId(); clearResults(); void operation('preview', period, result => setPreview(result as Preview), false); }} />
+      <div ref={resultPanel} className="payroll-result">{preview && <>{renderPreview(preview)}<button disabled={busy || dirty || !preview.canFinalize} onClick={() => void saveCalculation()}>Save calculation</button></>}
       {snapshot && <>{snapshot.sourceChanged && <p role="alert">Source records changed after this snapshot. This historical calculation is retained unchanged; review a correction with your payroll provider.</p>}{renderPreview(snapshot.preview)}</>}
+      </div>
+      <h3>Saved calculation snapshots</h3><ul>{data.snapshots.map(row => <li key={row.id}>{row.start}–{row.end} · {money(row.grossCents,row.currency)} · {row.at}<button disabled={busy || dirty} onClick={() => openSnapshot(row.id)}>Open calculation snapshot</button></li>)}</ul>
     </>}
     {tab === 'documents' && <><h2>Private payroll documents</h2><p>PDF, PNG or JPG, up to 5 MB each. Revisions are retained. Downloads are authorized and audited; files stay out of the app’s offline cache.</p>
       <form onSubmit={event => submit(event, fields => {
@@ -129,7 +151,7 @@ export default function Payroll() {
     return () => request.abort();
   }, [account?.id, account?.role]);
   if (account?.role !== 'admin') return <p role="alert">Administrator payroll access is required.</p>;
-  return <div className="payroll-page ska-core-page"><header><h1>Staff pay & time</h1><p>Private employee profiles, reviewed hours and gross-pay calculations.</p></header>{error && <p role="alert">{error}</p>}
+  return <div className="payroll-page ska-core-page"><header><h1>Staff pay & time</h1><p>Calculate gross pay in three steps. Employee setup and detailed records are available below.</p></header>{error && <p role="alert">{error}</p>}
     <section><label>Payroll employee<select aria-label="Payroll employee" value={selected} onChange={event => { if (work.current.busy || work.current.dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; setSelected(event.target.value); }}><option value="">Choose an employee</option>{staff.map(person => <option key={person.id} value={person.id}>{person.name}{person.active ? '' : ' · Inactive'}</option>)}</select></label></section>
     {selected && <StaffPayroll key={account.id + ':' + selected} staffId={selected} onWork={onWork} />}
   </div>;

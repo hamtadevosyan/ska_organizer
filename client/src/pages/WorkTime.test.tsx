@@ -19,4 +19,4 @@ test('a manager confirms extra work explicitly without changing checkouts or sil
  render(view());await screen.findByRole('heading',{name:'Ari Employee · 2026-10-21'});fireEvent.change(screen.getByLabelText('Extra-work review note'),{target:{value:'Stayed to assist with pickup'}});fireEvent.click(screen.getByRole('button',{name:'Confirm extra time was worked'}));
  await waitFor(()=>expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/staff/a/review'),{version:2,date:'2026-10-21',decision:'worked',reason:'Stayed to assist with pickup'}));
 });
-test('the home alert tells an editor that extra-time review is pending',async()=>{render(view('editor',true));expect(await screen.findByText('1 workday needs extra-time review.')).toBeVisible();expect(screen.getByRole('link',{name:'Review work time'})).toHaveAttribute('href','/work-time');});
+test('the home alert tells an editor that extra-time review is pending',async()=>{render(view('editor',true));expect(await screen.findByText('1 workday needs extra-time review.')).toBeVisible();expect(screen.getByRole('link',{name:'Review work time'})).toHaveAttribute('href','/staff/work-time');});

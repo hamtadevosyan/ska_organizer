@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, CalendarDays, GraduationCap, RefreshCw, Users, Utensils } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, Clock3, GraduationCap, Palette, RefreshCw, Sparkles, Sun, Users, Utensils } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
 import { getClassroomActivities, getClassroomChildren, getClassroomMeals, getClassroomOverview } from '../api/classroom';
 import type { ClassroomActivities, ClassroomChildren, ClassroomMeals, ClassroomOverview, ClassroomScope } from '../api/classroom';
+import learningIllustration from '../assets/brand/learning-world-v5.png';
+import './dashboard.css';
 import './classroom.css';
 
 type Section = 'overview' | 'children' | 'activities' | 'meals';
@@ -68,17 +71,34 @@ export default function Classroom({ section = 'overview' }: { section?: Section 
   const error = failure?.key === key ? failure.message : '';
   const overview = current?.overview;
   const Icon = icons[section];
+  const teacher = account?.role === 'teacher';
+  const actions = teacher ? [
+    { to: '/classroom/attendance', label: 'Take attendance', note: 'Arrivals & pickups', icon: ClipboardCheck, color: 'attendance' },
+    { to: '/classroom/children', label: 'Class children', note: 'Children, health & emergency', icon: Users, color: 'child' },
+    { to: '/classroom/activities', label: 'Activities', note: 'See your saved class plan', icon: Palette, color: 'activities' },
+    { to: '/classroom/meals', label: 'Meals', note: 'See what’s on the menu', icon: Utensils, color: 'meals' },
+  ] : [
+    { to: '/classroom/children', label: 'Class children', note: 'Your classroom’s children', icon: Users, color: 'attendance' },
+    { to: '/my-time', label: 'My time', note: 'Check in or out of work', icon: Clock3, color: 'child' },
+    { to: '/classroom/activities', label: 'Activities', note: 'See your saved class plan', icon: Palette, color: 'activities' },
+    { to: '/classroom/meals', label: 'Meals', note: 'See what’s on the menu', icon: Utensils, color: 'meals' },
+  ];
   if ((account?.role !== 'viewer' && account?.role !== 'teacher')) return <p role="alert">Class viewer access is required.</p>;
   return <div className="ska-classroom ska-core-page">
-    <header className="ska-classroom-hero"><div className="ska-classroom-icon"><Icon size={30} aria-hidden="true" /></div><div><p className="ska-classroom-eyebrow">{account?.role === 'teacher' ? 'Teacher · attendance & child safety' : 'Class viewer · view only'}</p><h1>{titles[section]}</h1><p>{overview?.state === 'assigned' ? overview.room?.name : 'A simple view of your assigned class.'}</p></div>
+    {section === 'overview' ? <header className="ska-page-head ska-classroom-welcome"><div><span className="ska-kicker"><span className="kicker-dot" />A new day. A little magic.</span><h1>{titles[section]} <Sun className="greeting-sun" size={30} aria-hidden="true" /></h1><p>Hello, {account?.displayName || 'team'}. A day full of possibilities starts in your classroom.</p></div><button type="button" onClick={() => setRevision(value => value + 1)} aria-label="Refresh class"><RefreshCw size={18} aria-hidden="true" />Refresh</button></header> :
+    <header className={'ska-classroom-hero section-' + section}><div className="ska-classroom-icon"><Icon size={30} aria-hidden="true" /></div><div><p className="ska-classroom-eyebrow">Your classroom, together</p><h1>{titles[section]}</h1><p>{overview?.state === 'assigned' ? overview.room?.name : 'A simple view of your assigned class.'}</p></div>
       <button type="button" onClick={() => setRevision(value => value + 1)} aria-label="Refresh class"><RefreshCw size={18} aria-hidden="true" />Refresh</button>
-    </header>
+    </header>}
     {serverUnavailable ? <p role="alert" className="ska-classroom-card">Your class is unavailable while the connection is interrupted. Reconnect to load current information.</p>
       : error ? <p role="alert" className="ska-classroom-card">{error}</p>
         : !current ? <p role="status" className="ska-classroom-card">Loading your class…</p>
           : overview?.state !== 'assigned' ? <section className="ska-classroom-card"><h2>{overview?.state === 'unassigned' ? 'No class assigned yet' : 'Class currently unavailable'}</h2><p>Ask an administrator to assign you to an active class.</p></section>
             : <>
-              {section === 'overview' && <section className="ska-classroom-card"><h2>{overview.room?.name}</h2><p className="ska-classroom-count"><Users aria-hidden="true" />{overview.activeChildCount} active {overview.activeChildCount === 1 ? 'child' : 'children'}</p><dl><div><dt>Age range</dt><dd>{overview.room?.ageMinMonths == null || overview.room.ageMaxMonths == null ? 'Not configured' : overview.room.ageMinMonths + '–' + overview.room.ageMaxMonths + ' months'}</dd></div><div><dt>Class capacity</dt><dd>{overview.room?.capacity ?? 'Not configured'}</dd></div></dl><p>Use Children, Activities and Meals to see the information for your class.</p></section>}
+              {section === 'overview' && <>
+                <nav className="home-actions ska-classroom-actions" aria-label="Class quick actions">{actions.map(action => <Link to={action.to} key={action.to} className={'home-action action-' + action.color}><span className="home-action-top"><span className="home-action-icon"><action.icon size={29} aria-hidden="true" /></span></span><span className="home-action-title"><strong>{action.label}</strong><ArrowRight size={19} aria-hidden="true" /></span><small>{action.note}</small></Link>)}</nav>
+                <section className="ska-classroom-card ska-classroom-at-glance"><div className="ska-classroom-section-title"><span className="ska-classroom-icon"><GraduationCap size={24} aria-hidden="true" /></span><div><p className="ska-classroom-eyebrow">Your little community</p><h2>{overview.room?.name}</h2></div></div><p className="ska-classroom-count"><Users aria-hidden="true" />{overview.activeChildCount} active {overview.activeChildCount === 1 ? 'child' : 'children'}</p><dl className="ska-classroom-facts"><div><dt>Age range</dt><dd>{overview.room?.ageMinMonths == null || overview.room.ageMaxMonths == null ? 'Not configured' : overview.room.ageMinMonths + '–' + overview.room.ageMaxMonths + ' months'}</dd></div><div><dt>Class capacity</dt><dd>{overview.room?.capacity ?? 'Not configured'}</dd></div></dl></section>
+                <section className="home-spotlight ska-classroom-spotlight"><div><span className="ska-kicker"><Sparkles size={15} aria-hidden="true" />Little moments. Big discoveries.</span><h2>Let curiosity<br />lead the way.</h2><p>Make room for play, connection and a little wonder.</p><Link to="/classroom/activities" className="ska-link">Explore class activities <ArrowRight size={16} aria-hidden="true" /></Link></div><img src={learningIllustration} alt="" width="1536" height="1024" decoding="async" /></section>
+              </>}
               {section === 'children' && <section className="ska-classroom-card"><h2>Children</h2><p>{(current.details as ClassroomChildren).total} active children in your class</p><ul className="ska-classroom-children">{(current.details as ClassroomChildren).items.map(child => <li key={child.id}><span aria-hidden="true" className="ska-classroom-avatar">{child.firstName.slice(0, 1)}{child.lastName.slice(0, 1)}</span><span>{child.firstName} {child.lastName}{child.preferredName && child.preferredName !== child.firstName && <small>Goes by {child.preferredName}</small>}</span></li>)}</ul>{!(current.details as ClassroomChildren).items.length && <p>No active children are assigned to your class.</p>}</section>}
               {(section === 'activities' || section === 'meals') && <>
                 <section className="ska-classroom-week" aria-label="Week selection"><button onClick={() => setWeek(shiftedWeek(current.week, -7))}>Previous week</button><label><CalendarDays size={18} aria-hidden="true" />Week starting<input type="date" value={current.week} onChange={event => { if (event.target.value) setWeek(monday(event.target.value)); }} /></label><button onClick={() => setWeek(shiftedWeek(current.week, 7))}>Next week</button></section>
