@@ -15,7 +15,7 @@ import './payroll.css';
 const base = API_BASE_URL + '/api/payroll/staff/';
 const value = (data: FormData, key: string) => String(data.get(key) || '');
 const asMillis = (data: FormData, key: string) => Math.round(Number(value(data, key)) * 3600000);
-const today = (zone: string) => { const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const get = (kind: string) => parts.find(part => part.type === kind)?.value; return `${get('year')}-${get('month')}-${get('day')}`; };
+const today = (zone: string, instant = new Date()) => { const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(instant); const get = (kind: string) => parts.find(part => part.type === kind)?.value; return `${get('year')}-${get('month')}-${get('day')}`; };
 const readFile = (file: File) => new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = () => reject(new Error('Could not read the selected file.')); reader.readAsDataURL(file); });
 function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: boolean, busy: boolean) => void }) {
   const reportUnsaved = useUnsavedChanges();
@@ -23,10 +23,21 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0); const [tab, setTab] = useState('pay'); const [dirty, setDirty] = useState(false); const [formTurn, setFormTurn] = useState(0);
   const [preview, setPreview] = useState<Preview | null>(null); const [snapshot, setSnapshot] = useState<{ sourceChanged: boolean; preview: Preview } | null>(null);
   const [correction, setCorrection] = useState<ClockSession | null>(null);
+  const [targetDay, setTargetDay] = useState('');
+  const dayPanels = useRef(new Map<string, HTMLDetailsElement>());
+  const correctionPanel = useRef<HTMLFormElement | null>(null);
+  const policyPanel = useRef<HTMLDetailsElement | null>(null);
   const resultPanel = useRef<HTMLDivElement | null>(null);
   const snapshotLoad = useRef<AbortController | null>(null);
   const mounted = useRef(true); const controller = useRef<AbortController | null>(null); const snapshotRequest = useRef(payrollRequestId());
   useEffect(() => { if (preview || snapshot) resultPanel.current?.scrollIntoView?.({ block: 'start' }); }, [preview, snapshot]);
+  useEffect(() => {
+    if (tab !== 'time' || !targetDay) return;
+    const panel = dayPanels.current.get(targetDay);
+    if (panel) { panel.open = true; panel.scrollIntoView?.({ block: 'start' }); }
+  }, [tab, targetDay, formTurn]);
+  useEffect(() => { if (tab === 'time' && correction) correctionPanel.current?.scrollIntoView?.({ block: 'start' }); }, [tab, correction]);
+  useEffect(() => { if (tab === 'profile' && targetDay && policyPanel.current) { policyPanel.current.open = true; policyPanel.current.scrollIntoView?.({ block: 'start' }); } }, [tab, targetDay, formTurn]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; controller.current?.abort(); snapshotLoad.current?.abort(); }; }, []);
   useEffect(() => {
     const request = new AbortController(); controller.current = request;
@@ -54,7 +65,13 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   }
   function submit(event: FormEvent<HTMLFormElement>, action: (fields: FormData) => void) { event.preventDefault(); action(new FormData(event.currentTarget)); }
   function clearResults() { snapshotLoad.current?.abort(); setPreview(null); setSnapshot(null); }
-  function choose(next: string) { if (next === tab) return; if (busy || dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; snapshotLoad.current?.abort(); setTab(next); setDirty(false); setFormTurn(n => n + 1); setCorrection(null); }
+  function choose(next: string, date = '') {
+    if (next === tab && !date) return;
+    if (busy || dirty && !window.confirm('Discard the unsaved payroll form changes?')) return;
+    snapshotLoad.current?.abort(); setTab(next); setTargetDay(date); setDirty(false); setFormTurn(n => n + 1);
+    const incomplete = next === 'time' && data?.ledger.days.some(day => day.date === date && day.incomplete);
+    setCorrection(incomplete && data ? data.ledger.sessions.find(session => !session.voided && !session.end && today(data.ledger.timeZone, new Date(session.start)) <= date) || null : null);
+  }
   function openSnapshot(id: string) {
     if (busy || dirty) return;
     snapshotLoad.current?.abort(); const request = new AbortController(); snapshotLoad.current = request;
@@ -101,7 +118,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
       <p>Private identifiers are masked. Leave replacements blank to keep stored values.</p>
       {(['taxId','bankAccount','routingNumber'] as const).map(key => <div key={key}><label>{key === 'taxId' ? 'Employee SSN (optional)' : key === 'bankAccount' ? 'Bank account' : 'Routing number'}<input name={key} autoComplete="off" type="password" maxLength={100} placeholder={profile[key] || 'Not stored'} /></label><label className="payroll-check"><input name={'clear-' + key} type="checkbox" />Clear stored {key === 'taxId' ? 'tax identifier' : key === 'bankAccount' ? 'bank account' : 'routing number'}</label></div>)}
       <label>Required payroll document names, one per line<textarea name="requiredDocuments" defaultValue={profile.requiredDocuments.join('\n')} /></label>
-      <p>Set approved start/end times and review clocked time in <Link to="/staff/work-time" className="ska-link">Work time</Link>.</p><details><summary>Advanced payroll settings</summary><h3>Payroll policy review</h3><p>Scheduled time is a planning reference, never an automatic cap. Workdays run midnight to midnight in the facility time zone; choose Other rules if your defined workday differs. Check-in and checkout times are retained without automatic rounding or deductions. Administrators review actual work, daily/weekly/seventh-day overtime and any premium or adjustment.</p>
+      <p>Set approved start/end times and review clocked time in <Link to="/staff/work-time" className="ska-link">Work time</Link>.</p><details ref={policyPanel}><summary>Advanced payroll settings</summary><h3>Payroll policy review</h3><p>Scheduled time is a planning reference, never an automatic cap. Workdays run midnight to midnight in the facility time zone; choose Other rules if your defined workday differs. Check-in and checkout times are retained without automatic rounding or deductions. Administrators review actual work, daily/weekly/seventh-day overtime and any premium or adjustment.</p>
       <label>Rule set<select name="mode" defaultValue={profile.rules.mode}><option value="ca-standard">California standard non-exempt review</option><option value="external-review">Other rules — payroll provider review required</option></select></label>
       <div className="payroll-grid"><label>Workweek starts<select name="workweekStart" defaultValue={profile.rules.workweekStart}>{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day,i) => <option key={day} value={i}>{day}</option>)}</select></label></div>
       <label>Payroll policy review notes<textarea name="reference" defaultValue={profile.rules.reference} /></label>
@@ -110,10 +127,10 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
     </fieldset></form>}
     {tab === 'rates' && <><h2>Effective hourly rates</h2><p>A new rate or correction is appended. Earlier finalized pay snapshots remain unchanged.</p><ul>{profile.rates.map(rate => <li key={rate.id}>{rate.effectiveOn} · {money(rate.cents,rate.currency)}/hour · {rate.reason}</li>)}</ul>
       <form onSubmit={event => submit(event, fields => void operation('rates', { version: profile.version, effectiveOn: value(fields,'effectiveOn'), cents: Math.round(Number(value(fields,'rate')) * 100), currency: value(fields,'currency').toUpperCase(), reason: value(fields,'reason') }))}><fieldset disabled={busy}>
-        <div className="payroll-grid">{field('Effective date','effectiveOn',today(ledger.timeZone),'date',true)}{field('Hourly rate','rate','','number',true)}</div>{field('Currency','currency','USD','text',true)}{field('Reason / correction explanation','reason','','text',true)}<button>Add effective rate</button>
+        <div className="payroll-grid">{field('Effective date','effectiveOn',targetDay || today(ledger.timeZone),'date',true)}{field('Hourly rate','rate','','number',true)}</div>{field('Currency','currency','USD','text',true)}{field('Reason / correction explanation','reason','','text',true)}<button>Add effective rate</button>
       </fieldset></form></>}
     {tab === 'time' && <><h2>Work time and daily approvals</h2><p>{ledger.timeZone}. Clocked and approved hours are separate. Missing checkout is unresolved time, never zero pay.</p>
-      {ledger.days.map(day => <details key={day.date} className="payroll-workday"><summary>{day.date} · {hours(day.rawMillis)} clocked hours · {hours(day.paidMillis)} paid hours · {day.approval?.status || 'Not approved'}{day.incomplete ? ' · INCOMPLETE' : ''}</summary>
+      {ledger.days.map(day => <details key={day.date} className="payroll-workday" data-payroll-date={day.date} ref={node => { if (node) dayPanels.current.set(day.date, node); else dayPanels.current.delete(day.date); }}><summary>{day.date} · {hours(day.rawMillis)} clocked hours · {hours(day.paidMillis)} paid hours · {day.approval?.status || 'Not approved'}{day.incomplete ? ' · INCOMPLETE' : ''}</summary>
         <form onSubmit={event => submit(event, fields => void operation('approvals', { version: ledger.version, date: day.date, status: value(fields,'status'), regularMillis: asMillis(fields,'regular'), overtimeMillis: asMillis(fields,'overtime'), doubleMillis: asMillis(fields,'double'), adjustmentCents: Math.round(Number(value(fields,'adjustment')) * 100), rulesReviewed: fields.has('reviewed'), reason: value(fields,'reason') }))}><fieldset disabled={busy}>
           <div className="payroll-grid">{field('Regular paid hours','regular',String((day.approval?.regularMillis ?? day.paidMillis)/3600000),'number',true)}{field('Overtime hours at 1.5×','overtime',String((day.approval?.overtimeMillis ?? 0)/3600000),'number',true)}{field('Double-time hours','double',String((day.approval?.doubleMillis ?? 0)/3600000),'number',true)}{field('Premium / adjustment amount','adjustment',String((day.approval?.adjustmentCents ?? 0)/100),'number',true)}</div>
           <label>Decision<select name="status"><option value="approved">Approve paid hours</option><option value="returned">Return for correction</option></select></label><label className="payroll-check"><input name="reviewed" type="checkbox" defaultChecked={day.approval?.rulesReviewed} />I reviewed actual work, overtime and adjustments for this date.</label>
@@ -121,7 +138,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
         </fieldset></form>
       </details>)}
       <h3>Original sessions and corrections</h3><ul>{[...ledger.sessions].reverse().map(session => <li key={session.id}>{localTime(session.start,ledger.timeZone)} → {localTime(session.end,ledger.timeZone)}{session.voided ? ' · Voided' : ''}<button disabled={busy} onClick={() => setCorrection(session)}>Correct this session</button></li>)}</ul>
-      {correction && <form key={correction.id} onSubmit={event => submit(event, fields => void operation('corrections', { version: ledger.version, sessionId: correction.id, start: value(fields,'start'), end: value(fields,'end') || null, voided: fields.has('voided'), reason: value(fields,'reason') }, () => setCorrection(null)))}><fieldset disabled={busy}><h3>Correct recorded times</h3><p>Use full ISO timestamps with Z or a UTC offset. Original clock values and the reason remain in history. Changed paid time requires renewed approval.</p>{field('Corrected start (ISO timestamp)','start',correction.start,'text',true)}{field('Corrected checkout (blank if open)','end',correction.end || '')}
+      {correction && <form key={correction.id} ref={correctionPanel} onSubmit={event => submit(event, fields => void operation('corrections', { version: ledger.version, sessionId: correction.id, start: value(fields,'start'), end: value(fields,'end') || null, voided: fields.has('voided'), reason: value(fields,'reason') }, () => setCorrection(null)))}><fieldset disabled={busy}><h3>Correct recorded times</h3><p>Use full ISO timestamps with Z or a UTC offset. Original clock values and the reason remain in history. Changed paid time requires renewed approval.</p>{field('Corrected start (ISO timestamp)','start',correction.start,'text',true)}{field('Corrected checkout (blank if open)','end',correction.end || '')}
         <label className="payroll-check"><input type="checkbox" name="voided" defaultChecked={correction.voided} />Void this erroneous session, preserving history</label>{field('Correction reason','reason','','text',true)}<button>Save time correction</button><button type="button" onClick={() => setCorrection(null)}>Cancel correction</button></fieldset></form>}
       <details><summary>Attributed change history</summary><ul>{ledger.history.map((event,i) => <li key={i}>{event.type} · {event.at || ''} · {event.actorId || ''} · {event.reason || ''}<details><summary>Record details</summary><pre>{JSON.stringify(event,null,2)}</pre></details></li>)}</ul></details>
     </>}

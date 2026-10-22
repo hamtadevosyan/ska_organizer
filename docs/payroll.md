@@ -104,3 +104,11 @@ Administrator time corrections omit `breaks` to preserve historical arrays and t
 New schedules use same-day `HH:mm` start/end times with an end after the start, an effective date, and a reason. The approved window, clocked arrival/departure and manager review are shown separately. A day can need review for work before the start or after the end even when its total is within the approved span. This review threshold never caps recorded work or automatically changes a paid-hours decision.
 
 The encrypted schedule history retains the saved start/end times, derived duration and actor. The ledger captures the effective window on its first clock event for that day. Changing a future schedule cannot erase an older pending review. Duration-only legacy schedules/decisions remain readable; no SQL migration or key change is required. A separate administrator paid-hours review still applies for gross-pay calculation and overtime.
+
+## Visible daily pay-review reasons
+
+The pay calculator distinguishes an ordinary day awaiting an administrator's approval from a day with a specific problem. Each day displays its reasons immediately, including missing checkout, missing effective rate, unconfirmed or changed policy, changed clock records, returned decisions, outside-schedule work and overtime allocations. Approved hours with a remaining calculator blocker are shown as needing attention instead of appearing fully ready.
+
+For a straightforward unapproved day, the confirmation checkbox and approval button are visible directly on the card. No adjustment form is needed to understand or approve unchanged recorded time. Detailed allocation and adjustment controls remain available for intentional changes. They never replace an existing decision automatically.
+
+Outside-time actions open Work time with the employee selected and the exact date loaded, including older dates beyond the default recent list. Detailed time actions open the affected day's approval; missing-checkout actions open the relevant unfinished session correction when available. Rate actions prefill the affected date. All summaries are derived from the current authorized response; no review information or new drafts are written to browser storage.

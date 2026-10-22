@@ -23,10 +23,10 @@ const fixture: WorkData = {
     incomplete: false, status: 'pending', reason: '', canCorrect: true }],
 };
 let data: WorkData;
-function view(role: Role = 'editor', alerts = false) {
+function view(role: Role = 'editor', alerts = false, entry = '/') {
   return <AuthContext.Provider value={{ account: { ...testAccount, role }, ready: true, notice: '', serverUnavailable: false,
     signIn: vi.fn(), signOut: vi.fn(), changePassword: vi.fn(), retry: vi.fn() }}>
-    <MemoryRouter>{alerts ? <ExtraTimeAlerts /> : <WorkTime />}</MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>{alerts ? <ExtraTimeAlerts /> : <WorkTime />}</MemoryRouter>
   </AuthContext.Provider>;
 }
 async function chooseEmployee() {
@@ -163,6 +163,22 @@ test('historical clock times retain their recorded time zone after a facility ti
   expect(day.getByText('8:00:00 AM')).toBeVisible();
   expect(day.getByText('5:30:00 PM')).toBeVisible();
   expect(day.getByText('Recorded time zone: America/Los_Angeles')).toBeVisible();
+});
+
+test('a pay-review link opens its employee and exact date without searching recent days', async () => {
+  render(view('admin', false, '/staff/work-time?staff=a&date=2026-10-21'));
+  await screen.findByRole('heading', { name: 'Ari Employee · 2026-10-21' });
+  expect(screen.getByLabelText('Work-time employee')).toHaveValue('a');
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/api/work-time?start=2026-10-21&end=2026-10-21'), expect.anything());
+  expect(screen.getByRole('link', { name: 'Show recent workdays' })).toHaveAttribute('href', '/staff/work-time?staff=a');
+  expect(screen.getByRole('button', { name: 'Confirm extra time was worked' })).toBeVisible();
+});
+
+test('an invalid linked date cannot create an invalid API date range', async () => {
+  render(view('editor', false, '/staff/work-time?staff=a&date=2026-02-30'));
+  await screen.findByRole('heading', { name: 'Ari Employee · 2026-10-21' });
+  expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/api\/work-time$/), expect.anything());
+  expect(screen.queryByRole('link', { name: 'Show recent workdays' })).not.toBeInTheDocument();
 });
 
 test('the home alert tells an editor that extra-time review is pending', async () => {

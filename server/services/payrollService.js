@@ -43,6 +43,69 @@ function invalidate(ledger, sessions) {
   }
 }
 const ledgerDto = value => ({ version: value.version, timeZone: value.data.timeZone, sessions: value.data.sessions, days: math.daily(value.data), history: value.data.history });
+const readableDuration = millis => {
+  if (millis > 0 && millis < 1000) return 'less than 1 second';
+  const seconds = Math.max(0, Math.floor(millis / 1000));
+  return [Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)} hr` : '', Math.floor(seconds % 3600 / 60) ? `${Math.floor(seconds % 3600 / 60)} min` : '', seconds % 60 ? `${seconds % 60} sec` : ''].filter(Boolean).join(' ') || '0 min';
+};
+const readableClock = clock => {
+  const [hours, minutes] = clock.split(':').map(Number);
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`;
+};
+async function payrollReviewDays(staffId, ledger, profile, days) {
+  if (!days.length) return days;
+  // Read the operational schedule once. These explanations are private GET
+  // projections: they never mutate clock records, approval or calculation math.
+  const workByDate = new Map((await workRows(staffId, ledger, days[0].date, days.at(-1).date)).map(row => [row.date, row]));
+  const previewByDate = new Map(math.preview(ledger.data, profile, days[0].date, days.at(-1).date).rows.map(row => [row.date, row]));
+  const rules = profile.rules, rulesFingerprint = math.hash(rules), policyReady = rules.confirmed && !!rules.reference.trim() && rules.mode === 'ca-standard';
+  return days.map(day => {
+    const reasons = [], approval = day.approval, work = workByDate.get(day.date), preview = previewByDate.get(day.date);
+    const add = (code, message, action, date) => { if (!reasons.some(reason => reason.code === code && reason.message === message)) reasons.push({ code, message, action, ...(date ? { date } : {}) }); };
+    const start = time.addDays(day.date, -((new Date(day.date + 'T12:00:00Z').getUTCDay() - rules.workweekStart + 7) % 7));
+    const week = days.filter(row => row.date >= start && row.date <= time.addDays(start, 6));
+    const weekMillis = week.reduce((sum, row) => sum + Math.max(row.paidMillis, row.approval?.status === 'approved' ? row.approval.regularMillis + row.approval.overtimeMillis + row.approval.doubleMillis : 0), 0);
+    if (day.incomplete) add('MISSING_CHECKOUT', 'Checkout is missing. Record the actual departure before approving this day.', 'time');
+    if (!rules.confirmed || !rules.reference.trim()) add('POLICY_UNCONFIRMED', 'The employee\'s payroll rules have not been reviewed and confirmed.', 'profile');
+    if (rules.mode !== 'ca-standard') add('POLICY_UNSUPPORTED', 'The saved payroll rules require payroll-provider review.', 'profile');
+    if (!preview.rate) add('RATE_MISSING', 'No hourly rate applies to this date. Add a rate effective on or before this day.', 'rates');
+    else if (preview.rate.currency !== 'USD') add('CURRENCY_UNSUPPORTED', 'The saved hourly rate uses ' + preview.rate.currency + '. This calculator supports USD; review the rate or use your payroll provider.', 'rates');
+    if (approval?.status === 'returned') add('APPROVAL_RETURNED', 'Returned for correction: ' + approval.reason, 'time');
+    if (approval?.status === 'needs-review') add('CLOCK_CHANGED', 'Clock records changed after approval. Review the updated recorded time and approve this day again.', 'time');
+    if (work?.status === 'pending') {
+      if (work.scheduleIssue) add('SCHEDULE_ISSUE', work.scheduleIssue, 'work-time');
+      else if (work.plannedStart && work.plannedEnd) {
+        const parts = [work.earlyMillis ? readableDuration(work.earlyMillis) + ' before the approved start' : '', work.lateMillis ? readableDuration(work.lateMillis) + ' after the approved end' : ''].filter(Boolean);
+        add('OUTSIDE_SCHEDULE', 'Recorded work includes ' + parts.join(' and ') + '. Approved schedule: ' + readableClock(work.plannedStart) + '–' + readableClock(work.plannedEnd) + ' (' + work.scheduleTimeZone + '). Confirm the work or correct a verified clock error in Work time.', 'work-time');
+      } else add('OUTSIDE_SCHEDULE', 'Recorded work exceeds the earlier daily-hours allowance by ' + readableDuration(work.extraMillis) + '. Confirm the work or correct a verified clock error in Work time.', 'work-time');
+    }
+    if (approval?.status !== 'approved') {
+      if (day.paidMillis > 8 * 3600000) add('DAILY_OVERTIME', readableDuration(day.paidMillis) + ' was recorded, which exceeds eight hours. Review the daily overtime allocation.', 'time');
+      if (weekMillis > 40 * 3600000) add('WEEKLY_OVERTIME', readableDuration(weekMillis) + ' is recorded or approved in this workweek. Review the weekly overtime allocation.', 'time');
+      if (week.length === 7) add('SEVENTH_DAY', 'Work is recorded on all seven days of this workweek. Review seventh-day overtime before approving.', 'time');
+      const missingCheckouts = week.filter(row => row.incomplete && row.date !== day.date);
+      if (missingCheckouts.length) add('WORKWEEK_CHECKOUT', 'Checkout is missing on these workweek dates: ' + missingCheckouts.map(row => row.date).join(', ') + '. Record the actual departures before reviewing overtime.', 'time', missingCheckouts[0].date);
+      if (approval && (approval.overtimeMillis || approval.doubleMillis || approval.adjustmentCents || approval.regularMillis !== day.paidMillis)) add('SAVED_ALLOCATION', 'A saved decision uses different paid-hour allocations or an adjustment. Review that decision before replacing it.', 'time');
+    }
+    // Keep approved-day explanations aligned with the authoritative calculator,
+    // including stale policy fingerprints, weekly allocations and mixed rates.
+    for (const message of preview.issues) {
+      if (['Missing checkout.', 'Daily paid time is not approved.', 'No effective hourly rate.'].includes(message)) continue;
+      if (message === 'The complete workweek needs approved time for overtime review.') {
+        const unresolved = week.filter(row => row.incomplete || row.approval?.status !== 'approved' || row.approval.rulesFingerprint !== rulesFingerprint);
+        const dates = unresolved.map(row => row.date + ' (' + (row.incomplete ? 'missing checkout' : row.approval?.status !== 'approved' ? 'not approved' : 'payroll policy changed') + ')');
+        add('WORKWEEK_APPROVALS', 'Recorded days in this workweek still need review: ' + dates.join(', ') + '. Review those dates before calculating.', 'time', unresolved[0]?.date);
+      } else if (message.includes('policy changed')) add('POLICY_CHANGED', message, 'time');
+      else add('PAYROLL_VALIDATION', message, 'time');
+    }
+    const attention = reasons.length > 0;
+    if (!attention && approval?.status !== 'approved') add('APPROVAL_REQUIRED', 'Recorded time has not been approved yet.', 'approve');
+    const unchangedAllocation = !approval || !approval.overtimeMillis && !approval.doubleMillis && !approval.adjustmentCents && approval.regularMillis === day.paidMillis;
+    const canApproveRecorded = !attention && policyReady && !day.incomplete && day.paidMillis <= 8 * 3600000 && week.length < 7 && week.every(row => !row.incomplete) && weekMillis <= 40 * 3600000 && unchangedAllocation;
+    const workTime = work ? Object.fromEntries(['plannedStart', 'plannedEnd', 'plannedMinutes', 'scheduleTimeZone', 'timeZone', 'checkin', 'checkout', 'earlyMillis', 'lateMillis', 'outsideMillis', 'status', 'reason', 'scheduleIssue'].map(key => [key, work[key]])) : undefined;
+    return { ...day, review: { state: attention ? 'needs-attention' : approval?.status === 'approved' ? 'approved' : 'awaiting-approval', reasons, canApproveRecorded, workTime } };
+  });
+}
 function maskedProfile(data) {
   const result = structuredClone(data); delete result.history;
   for (const key of ['taxId', 'bankAccount', 'routingNumber']) result[key] = data[key] ? '••••' + data[key].slice(-4) : '';
@@ -91,11 +154,13 @@ exports.get = (token, staffId) => authorized(token, true, async actor => {
   // issuing the next; pg does not support concurrent queries on that client.
   const profile = await read('profile', staffId), ledger = await read('ledger', staffId);
   const docs = await db.listPayrollRecords(staffId, 'document'), snapshots = await db.listPayrollRecords(staffId, 'snapshot');
+  const ledgerDetails = ledgerDto(ledger);
+  ledgerDetails.days = await payrollReviewDays(staffId, ledger, profile.data, ledgerDetails.days);
   await auth.audit(actor, 'payroll.view', staffId);
   const documents = docs.map(row => { const d = vault.open(row); return { id: row.id, version: row.version, title: d.title, category: d.category,
     revisions: d.revisions.map(({ dataBase64, ...r }) => r) }; });
   return { staff: { id: staff.id, name: staff.name, active: staff.active }, profile: { ...maskedProfile(profile.data), version: profile.version },
-    ledger: ledgerDto(ledger), documents, missingDocuments: profile.data.requiredDocuments.filter(name => !documents.some(d => d.title.toLowerCase() === name.toLowerCase())),
+    ledger: ledgerDetails, documents, missingDocuments: profile.data.requiredDocuments.filter(name => !documents.some(d => d.title.toLowerCase() === name.toLowerCase())),
     snapshots: snapshots.map(row => { const value = vault.open(row); return { id: row.id, start: value.preview.start, end: value.preview.end, at: value.at, grossCents: value.preview.grossCents, currency: value.preview.currency }; }) };
 });
 exports.profile = (token, staffId, payload) => authorized(token, true, async actor => {

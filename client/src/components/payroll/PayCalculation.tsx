@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { CalendarDays, CheckCircle2, ClipboardCheck, Coins } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { Day, Details } from './types';
+import type { Day, Details, PayDayReview, PayReviewReason } from './types';
 
 type Period = { start: string; end: string };
 type Props = {
@@ -10,11 +10,13 @@ type Props = {
   onDirty: (dirty: boolean) => void; onPeriodChange: () => void;
   onCalculate: (period: Period) => void;
   onSave: (path: string, body: unknown) => Promise<boolean>;
-  onSection: (section: string) => void;
+  onSection: (section: string, date?: string) => void;
 };
 const shift = (date: string, days: number) => { const d = new Date(date + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 const weekStart = (date: string, firstDay: number) => shift(date, -((new Date(date + 'T12:00:00Z').getUTCDay() - firstDay + 7) % 7));
 const valid = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date + 'T12:00:00Z')) && new Date(date + 'T12:00:00Z').toISOString().slice(0, 10) === date;
+const clockLabel = (value: string) => { const [hour, minute] = value.split(':').map(Number); return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`; };
+const actualClock = (instant: string | null, zone: string) => instant ? new Date(instant).toLocaleTimeString('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', second: '2-digit' }) : 'Checkout missing';
 const duration = (ms: number) => { const seconds = Math.floor(ms / 1000); return `${Math.floor(seconds / 3600)} hr ${Math.floor(seconds % 3600 / 60)} min${seconds % 60 ? ` ${seconds % 60} sec` : ''}`; };
 function initialPeriod(zone: string): Period {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -27,6 +29,7 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
   const [period, setPeriod] = useState(() => initialPeriod(data.ledger.timeZone));
   const [reviewing, setReviewing] = useState('');
   const [draftTurn, setDraftTurn] = useState(0);
+  const [activeDraft, setActiveDraft] = useState('');
   const rules = data.profile.rules, days = data.ledger.days;
   const validPeriod = valid(period.start) && valid(period.end) && period.start <= period.end && Date.parse(period.end) - Date.parse(period.start) <= 92 * 86400000;
   const selected = validPeriod ? days.filter(day => day.date >= period.start && day.date <= period.end) : [];
@@ -35,12 +38,12 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
   const rateMissing = selected.length ? selected.some(day => !data.profile.rates.some(rate => rate.effectiveOn <= day.date)) : !data.profile.rates.length;
   function changePeriod(next: Period) {
     if (busy || dirty && !window.confirm('Discard the unsaved payroll form changes?')) return;
-    setPeriod(next); setReviewing(''); onDirty(false); onPeriodChange();
+    setPeriod(next); setReviewing(''); setActiveDraft(''); onDirty(false); onPeriodChange();
   }
   async function save(event: FormEvent<HTMLFormElement>, path: string, body: (fields: FormData) => unknown) {
     event.preventDefault();
     if (busy) return;
-    if (await onSave(path, body(new FormData(event.currentTarget)))) { setReviewing(''); onDirty(false); }
+    if (await onSave(path, body(new FormData(event.currentTarget)))) { setReviewing(''); setActiveDraft(''); onDirty(false); }
   }
   function ordinaryDay(day: Day) {
     const start = weekStart(day.date, rules.workweekStart);
@@ -51,20 +54,67 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
       workweek.reduce((sum, item) => sum + Math.max(item.paidMillis, item.approval?.status === 'approved' ? item.approval.regularMillis + item.approval.overtimeMillis + item.approval.doubleMillis : 0), 0) <= 40 * 3600000 &&
       (!day.approval || day.approval.overtimeMillis === 0 && day.approval.doubleMillis === 0 && day.approval.adjustmentCents === 0 && day.approval.regularMillis === day.paidMillis);
   }
+  function markDraft(id: string) { setActiveDraft(id); onDirty(true); }
+  const locked = (id: string) => busy || dirty && activeDraft !== id;
+  function reviewFor(day: Day): PayDayReview {
+    if (day.review) return day.review;
+    // Older detail responses remain readable during a rolling update. These
+    // reasons use known facts only; current servers supply the full validation.
+    const reasons: PayReviewReason[] = [];
+    const add = (code: string, message: string, action: PayReviewReason['action']) => reasons.push({ code, message, action });
+    const start = weekStart(day.date, rules.workweekStart);
+    const week = days.filter(item => item.date >= start && item.date <= shift(start, 6));
+    if (day.incomplete) add('MISSING_CHECKOUT', 'Record the missing checkout before calculating this day.', 'time');
+    if (!policyReady) add('POLICY_UNCONFIRMED', rules.mode === 'ca-standard' ? 'Payroll rules have not been reviewed and confirmed.' : 'The saved payroll rules require payroll-provider review.', 'profile');
+    if (!data.profile.rates.some(rate => rate.effectiveOn <= day.date)) add('RATE_MISSING', 'No hourly rate is saved for this date.', 'rates');
+    if (day.approval?.status === 'returned') add('APPROVAL_RETURNED', `This day was returned for correction: ${day.approval.reason}`, 'time');
+    if (day.approval?.status === 'needs-review') add('CLOCK_CHANGED', 'Clock records changed after approval. Review the updated time and approve this day again.', 'time');
+    if (day.approval?.status !== 'approved') {
+      if (day.paidMillis > 8 * 3600000) add('DAILY_OVERTIME', `${duration(day.paidMillis)} recorded today exceeds 8 hours. Review the overtime allocation.`, 'time');
+      if (week.reduce((sum, item) => sum + Math.max(item.paidMillis, item.approval?.status === 'approved' ? item.approval.regularMillis + item.approval.overtimeMillis + item.approval.doubleMillis : 0), 0) > 40 * 3600000) add('WEEKLY_OVERTIME', 'Recorded work in this workweek exceeds 40 hours. Review the overtime allocation.', 'time');
+      if (week.length === 7) add('SEVENTH_DAY', 'Work is recorded on all seven days of this workweek. Review the seventh-day allocation.', 'time');
+      if (week.some(item => item.incomplete) && !day.incomplete) add('WEEK_INCOMPLETE', 'Another day in this workweek has a missing checkout. Complete the clock records before reviewing overtime.', 'time');
+      if (!reasons.length) add('APPROVAL_REQUIRED', 'Recorded time has not been approved yet.', 'approve');
+    }
+    const attention = reasons.some(item => item.action !== 'approve');
+    return { state: attention ? 'needs-attention' : day.approval?.status === 'approved' ? 'approved' : 'awaiting-approval', reasons, canApproveRecorded: ordinaryDay(day) && !attention };
+  }
   function dayCard(day: Day) {
-    return <article key={day.date} className="payroll-review-day">
+    const review = reviewFor(day), work = review.workTime;
+    const straightforward = ordinaryDay(day) && review.canApproveRecorded;
+    const awaiting = review.state === 'awaiting-approval';
+    const showApproval = straightforward && (awaiting || reviewing === day.date);
+    const actions = new Set(review.reasons.map(reason => reason.action));
+    const timeTargets = [...new Set(review.reasons.filter(reason => reason.action === 'time').map(reason => reason.date || day.date))];
+    if (review.state === 'approved' && !straightforward && !timeTargets.length) timeTargets.push(day.date);
+    const targetedWork = `/staff/work-time?staff=${encodeURIComponent(data.staff.id)}&date=${encodeURIComponent(day.date)}`;
+    return <article key={day.date} className="payroll-review-day" aria-label={'Pay review for ' + day.date}>
       <div className="payroll-review-heading"><div><h4>{day.date}</h4><p>{duration(day.paidMillis)} recorded paid time</p>
         {day.unpaidMillis > 0 && <small>Previously recorded deduction: {duration(day.unpaidMillis)}</small>}</div>
-        <span className={'payroll-status ' + (day.approval?.status === 'approved' ? 'is-ready' : '')}>{day.incomplete ? 'Missing checkout' : day.approval?.status === 'approved' ? 'Approved' : 'Needs review'}</span></div>
-      {day.incomplete ? <><p>Record the missing checkout before calculating this day.</p><button type="button" disabled={busy} onClick={() => onSection('time')}>Fix checkout for {day.date}</button></> : <>
-        <button type="button" disabled={busy} onClick={() => { if (dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; onDirty(false); setReviewing(reviewing === day.date ? '' : day.date); }}>Review hours for {day.date}</button>
-        {reviewing === day.date && (ordinaryDay(day) ? <form key={day.date + ':' + data.ledger.version} onChange={() => onDirty(true)} onSubmit={event => void save(event, 'approvals', () => ({ version: data.ledger.version, date: day.date, status: 'approved', regularMillis: day.paidMillis, overtimeMillis: 0, doubleMillis: 0, adjustmentCents: 0, rulesReviewed: true, reason: 'Administrator reviewed all recorded paid time and overtime; no adjustments.' }))}>
-          <fieldset disabled={busy}><p>Approve the full recorded time above at the regular rate. No time is rounded, capped by the schedule or deducted automatically.</p>
-            <label className="payroll-check"><input type="checkbox" required />I checked the hours and overtime for {day.date}.</label>
-            <button>Approve recorded hours for {day.date}</button>
-            <button type="button" onClick={() => onSection('time')}>Use different hours or adjustments</button>
-          </fieldset></form> : <div className="payroll-note"><p>This day needs a detailed review of overtime, adjustments or payroll rules. Recorded time stays intact.</p><button type="button" disabled={busy} onClick={() => onSection('time')}>Review overtime and adjustments for {day.date}</button></div>)}
-      </>}
+        <span className={'payroll-status ' + (review.state === 'approved' ? 'is-ready' : '')}>{day.incomplete ? 'Missing checkout' : review.state === 'approved' ? 'Approved' : awaiting ? 'Awaiting approval' : 'Needs attention'}</span></div>
+      {review.reasons.length > 0 && <div className={'payroll-day-reasons ' + (awaiting ? 'is-awaiting' : '')}>
+        <strong>{awaiting ? 'What is needed' : 'What needs attention'}</strong>
+        <ul>{review.reasons.map(reason => <li key={reason.code + ':' + reason.message}>{reason.message}</li>)}</ul>
+      </div>}
+      {work && <dl className="payroll-clock-comparison">
+        <div><dt>Approved schedule</dt><dd>{work.plannedStart && work.plannedEnd ? `${clockLabel(work.plannedStart)}–${clockLabel(work.plannedEnd)}` : `Earlier daily-hours schedule · ${duration(work.plannedMinutes * 60000)}`}</dd><small>{work.scheduleTimeZone}</small></div>
+        <div><dt>Actual check-in</dt><dd>{work.checkin ? actualClock(work.checkin, work.timeZone || data.ledger.timeZone) : 'Not available'}</dd></div>
+        <div><dt>Actual checkout</dt><dd>{actualClock(work.checkout, work.timeZone || data.ledger.timeZone)}</dd></div>
+      </dl>}
+      <div className="payroll-review-actions">
+        {actions.has('work-time') && <Link to={targetedWork}>Review outside time for {day.date}</Link>}
+        {day.incomplete && <button type="button" disabled={busy} onClick={() => onSection('time', day.date)}>Fix checkout for {day.date}</button>}
+        {actions.has('rates') && <button type="button" disabled={busy} onClick={() => onSection('rates', day.date)}>Set hourly rate for {day.date}</button>}
+        {actions.has('profile') && <button type="button" disabled={busy} onClick={() => onSection('profile', day.date)}>Review payroll rules for {day.date}</button>}
+        {!day.incomplete && straightforward && review.state === 'approved' && <button type="button" disabled={busy} onClick={() => { if (dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; onDirty(false); setActiveDraft(''); setReviewing(day.date); }}>Review hours for {day.date}</button>}
+        {timeTargets.filter(date => date !== day.date || !day.incomplete).map(date => <button key={date} type="button" disabled={busy} onClick={() => onSection('time', date)}>{date === day.date ? 'Review overtime and adjustments for ' : 'Review workday '}{date}</button>)}
+      </div>
+      {showApproval && <form key={day.date + ':' + data.ledger.version + ':' + draftTurn} onChange={() => markDraft('day:' + day.date)} onSubmit={event => void save(event, 'approvals', () => ({ version: data.ledger.version, date: day.date, status: 'approved', regularMillis: day.paidMillis, overtimeMillis: 0, doubleMillis: 0, adjustmentCents: 0, rulesReviewed: true, reason: 'Administrator reviewed all recorded paid time and overtime; no adjustments.' }))}>
+        <fieldset disabled={locked('day:' + day.date)}><p>Approve the full recorded time above at the regular rate. No time is rounded, capped by the schedule or deducted automatically.</p>
+          <label className="payroll-check"><input type="checkbox" required />I checked the hours and overtime for {day.date}.</label>
+          <button>Approve recorded hours for {day.date}</button>
+          <details><summary>Change paid hours or add an adjustment</summary><p>Use this only when the recorded time needs a different reviewed allocation or a pay adjustment.</p><button type="button" onClick={() => onSection('time', day.date)}>Open detailed approval for {day.date}</button></details>
+        </fieldset></form>}
     </article>;
   }
   return <div className="payroll-guided">
@@ -78,10 +128,10 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
     <div className="payroll-step">
       <h3><ClipboardCheck size={21} aria-hidden="true" />2. Review hours</h3>
       {(rateMissing || !policyReady) && <aside className="payroll-setup"><h4>One-time employee setup</h4><p>Only an hourly rate and reviewed payroll rules are needed here. SSN, bank details and payroll documents can be entered separately.</p>
-        {rateMissing && <form key={'rate:' + data.profile.version + ':' + draftTurn} onChange={() => onDirty(true)} onSubmit={event => void save(event, 'rates', fields => ({ version: data.profile.version, effectiveOn: String(fields.get('effectiveOn')), cents: Math.round(Number(fields.get('rate')) * 100), currency: 'USD', reason: 'Initial hourly rate entered during guided pay setup.' }))}><fieldset disabled={busy}>
+        {rateMissing && <form key={'rate:' + data.profile.version + ':' + draftTurn} onChange={() => markDraft('rate')} onSubmit={event => void save(event, 'rates', fields => ({ version: data.profile.version, effectiveOn: String(fields.get('effectiveOn')), cents: Math.round(Number(fields.get('rate')) * 100), currency: 'USD', reason: 'Initial hourly rate entered during guided pay setup.' }))}><fieldset disabled={locked('rate')}>
           <div className="payroll-grid"><label>Hourly rate ($ per hour)<input type="number" name="rate" min="0.01" step="0.01" required /></label><label>Rate starts on<input type="date" name="effectiveOn" defaultValue={selected[0]?.date || period.start} required /></label></div><button>Save hourly rate</button>
         </fieldset></form>}
-        {!rateMissing && !policyReady && (rules.mode === 'ca-standard' ? <form key={'policy:' + data.profile.version + ':' + draftTurn} onChange={() => onDirty(true)} onSubmit={event => void save(event, 'profile', fields => ({ version: data.profile.version, reason: 'Payroll rules explicitly reviewed during guided pay setup.', rules: { ...rules, confirmed: true, workweekStart: Number(fields.get('workweekStart')), reference: String(fields.get('reference')) } }))}><fieldset disabled={busy}>
+        {!rateMissing && !policyReady && (rules.mode === 'ca-standard' ? <form key={'policy:' + data.profile.version + ':' + draftTurn} onChange={() => markDraft('policy')} onSubmit={event => void save(event, 'profile', fields => ({ version: data.profile.version, reason: 'Payroll rules explicitly reviewed during guided pay setup.', rules: { ...rules, confirmed: true, workweekStart: Number(fields.get('workweekStart')), reference: String(fields.get('reference')) } }))}><fieldset disabled={locked('policy')}>
           <p>Have the person who handles payroll verify these settings once. This calculation supports standard California non-exempt rules, with workdays starting at midnight.</p>
           <label>Workweek starts<select name="workweekStart" defaultValue={rules.workweekStart}>{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day, i) => <option value={i} key={day}>{day}</option>)}</select></label>
           <label>Payroll review note<input name="reference" defaultValue={rules.reference} placeholder="Who reviewed the rules and which policy applies" maxLength={2000} required /></label>
@@ -89,14 +139,14 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
         </fieldset></form> : <><p>Your saved rule set requires payroll-provider review.</p><button disabled={busy} onClick={() => onSection('profile')}>Open payroll settings</button></>)}
       </aside>}
       {!selected.length ? <p>No recorded work in these dates. Choose a different period or check the employee's time records.</p> : <>
-        <p>{selected.filter(day => day.approval?.status === 'approved').length} of {selected.length} recorded workdays approved. Review each day before calculating.</p>
+        <p>{selected.filter(day => reviewFor(day).state === 'approved').length} of {selected.length} recorded workdays approved. Review each day before calculating.</p>
         <div className="payroll-review-days">{selected.map(dayCard)}</div>
         {!!related.length && <details><summary>Related workweek days</summary><p>These dates are outside the pay period. Review them when needed to check the complete overtime workweek; their pay is not included in this period.</p><div className="payroll-review-days">{related.map(dayCard)}</div></details>}
       </>}
       <p>For work outside the approved schedule, <Link to="/staff/work-time">review work time</Link> before finalizing.</p>
     </div>
     <div className="payroll-step"><h3><CheckCircle2 size={21} aria-hidden="true" />3. Calculate gross pay</h3><p>The server checks the saved hours, effective rate and overtime rules. It will show anything still needing attention.</p>
-      {dirty && <p role="status">Save or discard your changes before calculating. <button type="button" disabled={busy} onClick={() => { if (!window.confirm('Discard the unsaved payroll form changes?')) return; setDraftTurn(n => n + 1); setReviewing(''); onDirty(false); }}>Discard unsaved changes</button></p>}
+      {dirty && <p role="status">Save or discard your changes before calculating. <button type="button" disabled={busy} onClick={() => { if (!window.confirm('Discard the unsaved payroll form changes?')) return; setDraftTurn(n => n + 1); setReviewing(''); setActiveDraft(''); onDirty(false); }}>Discard unsaved changes</button></p>}
       <button className="payroll-primary" disabled={busy || dirty || !validPeriod || !selected.length} onClick={() => onCalculate(period)}>Calculate gross pay</button></div>
   </div>;
 }

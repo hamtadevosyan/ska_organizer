@@ -1,6 +1,10 @@
 export type ClockSession = { id: string; start: string; end: string | null; version: number; voided?: boolean; breaks: { id?: string; start: string; end: string | null; paid: boolean }[] };
 export type Approval = { status: string; regularMillis: number; overtimeMillis: number; doubleMillis: number; adjustmentCents: number; reason: string; rulesReviewed: boolean };
-export type Day = { date: string; rawMillis: number; unpaidMillis: number; paidMillis: number; incomplete: boolean; approval: Approval | null };
+export type PayReviewReason = { code: string; message: string; date?: string; action: 'approve' | 'time' | 'work-time' | 'rates' | 'profile' };
+export type PayDayReview = { state: 'awaiting-approval' | 'needs-attention' | 'approved'; reasons: PayReviewReason[]; canApproveRecorded: boolean;
+  workTime?: { plannedStart: string | null; plannedEnd: string | null; plannedMinutes: number; scheduleTimeZone: string; timeZone?: string;
+    checkin: string | null; checkout: string | null; earlyMillis: number; lateMillis: number; outsideMillis: number; status: string; reason: string; scheduleIssue: string | null } };
+export type Day = { date: string; rawMillis: number; unpaidMillis: number; paidMillis: number; incomplete: boolean; approval: Approval | null; review?: PayDayReview };
 export type Rate = { id: string; effectiveOn: string; cents: number; currency: string; reason: string; sequence: number };
 export type Profile = { version: number; legalName: string; paymentMethod: string; payFrequency: string; providerReference: string; instructions: string; taxId: string; bankAccount: string; routingNumber: string; requiredDocuments: string[]; rates: Rate[];
  rules: { mode: string; workweekStart: number; confirmed: boolean; reference: string; dailyScheduledMinutes: number } };

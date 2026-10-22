@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
 import { CalendarClock, ClipboardCheck } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AuthContext, useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
 import { API_BASE_URL } from '../lib/api';
@@ -40,9 +40,12 @@ function statusLabel(row: WorkDay) {
 
 export default function WorkTime() {
   const { account, serverUnavailable } = useAuth();
+  const [search] = useSearchParams();
+  const date = search.get('date') || '';
+  const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date + 'T12:00:00Z')) && new Date(date + 'T12:00:00Z').toISOString().slice(0, 10) === date ? date : '';
   if (serverUnavailable) return <p role="alert">The connection is interrupted. Reconnect before reviewing work time.</p>;
   if (!account || account.disabled || account.mustChangePassword || !['admin', 'editor'].includes(account.role)) return <p role="alert">Manager work-time access is required.</p>;
-  return <ManagerWorkTime key={account.id + ':' + account.role} admin={account.role === 'admin'} />;
+  return <ManagerWorkTime key={account.id + ':' + account.role + ':' + search.toString()} admin={account.role === 'admin'} targetStaff={search.get('staff') || ''} targetDate={targetDate} />;
 }
 
 function ScheduleForm({ person, today, timeZone, disabled, onDirty, onSave }: {
@@ -96,14 +99,16 @@ function ClockComparison({ row, zone }: { row: WorkDay; zone: string }) {
   </>;
 }
 
-function ManagerWorkTime({ admin }: { admin: boolean }) {
+function ManagerWorkTime({ admin, targetStaff, targetDate }: { admin: boolean; targetStaff: string; targetDate: string }) {
   const report = useUnsavedChanges(); const [dirty, setDirty] = useState(false); const [draft, setDraft] = useState(''); const [formTurn, setFormTurn] = useState(0);
-  const [data, setData] = useState<WorkData | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [selected, setSelected] = useState(''), [message, setMessage] = useState('');
+  const [data, setData] = useState<WorkData | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [selected, setSelected] = useState(targetStaff), [message, setMessage] = useState('');
   const [revision, setRevision] = useState(0); const mounted = useRef(true); const saving = useRef(false);
+  const reviewPanel = useRef<HTMLElement | null>(null);
+  useEffect(() => { if (data && targetDate) reviewPanel.current?.scrollIntoView?.({ block: 'start' }); }, [data, targetDate]);
   useEffect(() => { report(dirty, busy); return () => report(false, false); }, [dirty, busy, report]);
   useEffect(() => { if (!dirty && !busy) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, [dirty, busy]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => { const c = new AbortController(); void axios.get<{ data: WorkData }>(url, { signal: c.signal }).then(response => { if (!c.signal.aborted) { setData(response.data.data); setError(''); } }).catch(failure => { if (!c.signal.aborted && !axios.isCancel(failure)) { setData(null); setError(authError(failure, 'Could not load employee work time.')); } }); return () => c.abort(); }, [revision]);
+  useEffect(() => { const c = new AbortController(); const requestUrl = targetDate ? url + '?start=' + targetDate + '&end=' + targetDate : url; void axios.get<{ data: WorkData }>(requestUrl, { signal: c.signal }).then(response => { if (!c.signal.aborted) { setData(response.data.data); setError(''); } }).catch(failure => { if (!c.signal.aborted && !axios.isCancel(failure)) { setData(null); setError(authError(failure, 'Could not load employee work time.')); } }); return () => c.abort(); }, [revision, targetDate]);
   function discard() { if (dirty && !window.confirm('Discard unsaved work-time form changes?')) return false; setDirty(false); setDraft(''); setFormTurn(n => n + 1); return true; }
   function mark(id: string) { setDirty(true); setDraft(id); }
   const locked = (id: string) => busy || dirty && draft !== id;
@@ -118,6 +123,7 @@ function ManagerWorkTime({ admin }: { admin: boolean }) {
   const pending = data?.items.filter(row => row.status === 'pending' && (!selected || row.staffId === selected)) || [];
   const recorded = data?.items.filter(row => row.staffId === selected) || [];
   return <div className="payroll-page ska-core-page work-time-page"><header><h1>Work time</h1><p>Set when each employee is approved to work, compare their actual clock times, then review any time outside that schedule.</p><p>Schedule approval and paid-hour approval are separate. Private pay rates and tax records are administrator-only.</p></header>
+    {targetDate && <p className="payroll-note">Showing {targetDate}. <Link to={'/staff/work-time' + (selected ? '?staff=' + encodeURIComponent(selected) : '')}>Show recent workdays</Link></p>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     <div className="payroll-actions"><button disabled={busy} onClick={() => { if (discard()) setRevision(n => n + 1); }}>Refresh work time</button>{dirty && <button disabled={busy} onClick={discard}>Discard unsaved changes</button>}</div>
     {dirty && <p className="payroll-note">Save or discard this form before editing another one.</p>}
@@ -125,10 +131,10 @@ function ManagerWorkTime({ admin }: { admin: boolean }) {
       <section><h2><CalendarClock size={23} aria-hidden="true" />1. Set approved schedule</h2><label>Employee<select aria-label="Work-time employee" value={selected} disabled={busy} onChange={event => { if (discard()) setSelected(event.target.value); }}><option value="">Choose an employee</option>{data.staff.map(employee => <option key={employee.id} value={employee.id}>{employee.name}{employee.active ? '' : ' · Inactive'}</option>)}</select></label>
         {person ? <ScheduleForm key={person.id + ':' + person.scheduleVersion + ':' + formTurn} person={person} today={data.today} timeZone={data.timeZone} disabled={locked('schedule')} onDirty={() => mark('schedule')} onSave={body => void save('/staff/' + encodeURIComponent(person.id) + '/schedule', body)} /> : <p>Choose an employee to set an approved start and end time.</p>}
       </section>
-      <section><h2><ClipboardCheck size={23} aria-hidden="true" />2. Review clocked time</h2><p>{data.timeZone} · Last 60 days. These are actual clock records, not a pay calculation.</p>
+      <section><h2><ClipboardCheck size={23} aria-hidden="true" />2. Review clocked time</h2><p>{data.timeZone} · {targetDate || 'Last 60 days'}. These are actual clock records, not a pay calculation.</p>
         {!person ? <p>Choose an employee above to see their approved schedule beside every recorded day.</p> : !recorded.length ? <p>No clocked workdays for {person.name} in this period.</p> : <div className="work-time-day-list">{recorded.map(row => <article key={row.staffId + ':' + row.date} className="work-time-day" aria-label={person.name + ' time on ' + row.date}><div className="work-time-day-head"><h3>{row.date}</h3><span className={'payroll-status ' + (row.status === 'within-schedule' || row.status === 'confirmed' || row.status === 'corrected' ? 'is-ready' : '')}>{statusLabel(row)}</span></div><ClockComparison row={row} zone={data.timeZone} /></article>)}</div>}
       </section>
-      <section><h2>3. Review time outside schedule ({pending.length})</h2><p>Confirm actual work, or correct a verified late clock-out mistake. Recorded time is kept until an explicit reviewed correction; it is never silently removed.</p>
+      <section ref={reviewPanel}><h2>3. Review time outside schedule ({pending.length})</h2><p>Confirm actual work, or correct a verified late clock-out mistake. Recorded time is kept until an explicit reviewed correction; it is never silently removed.</p>
         {!pending.length && <p>No extra time is waiting for review.</p>}
         {pending.map(row => { const id = row.staffId + ':' + row.date; return <article className="payroll-calculation-day" key={id + ':' + formTurn}><h3>{row.name} · {row.date}</h3><ClockComparison row={row} zone={data.timeZone} />
           <form onChange={() => mark('review:' + id)} onSubmit={event => submit(event, fields => void save('/staff/' + encodeURIComponent(row.staffId) + '/review', { version: row.version, date: row.date, decision: 'worked', reason: fields.get('reason') }))}><fieldset disabled={locked('review:' + id)}><label>Extra-work review note<input name="reason" required maxLength={1000} /></label><button>Confirm extra time was worked</button></fieldset></form>

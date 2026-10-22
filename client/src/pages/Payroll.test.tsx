@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import axios from 'axios';
 import Payroll from './Payroll';
@@ -67,7 +67,6 @@ test('recorded-hours approval is explicit, retains the selected dates and preser
   configured(); const exactMillis = 7.5 * 3600000 + 123;
   currentDetail.ledger.days = [recordedDay('2026-10-19', exactMillis)];
   await employee(); period('2026-10-19');
-  fireEvent.click(screen.getByRole('button', { name: 'Review hours for 2026-10-19' }));
   expect(axios.post).not.toHaveBeenCalled();
   const approve = screen.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' });
   fireEvent.click(approve); expect(axios.post).not.toHaveBeenCalled();
@@ -88,8 +87,8 @@ test('hour review includes recorded days outside the selected period when they s
   configured(); currentDetail.ledger.days = [recordedDay('2026-10-19'), recordedDay('2026-10-20')];
   await employee(); period('2026-10-20');
   fireEvent.click(screen.getByText('Related workweek days'));
-  expect(screen.getByRole('button', { name: 'Review hours for 2026-10-19' })).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Review hours for 2026-10-20' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Approve recorded hours for 2026-10-20' })).toBeVisible();
   expect(axios.post).not.toHaveBeenCalled();
 });
 
@@ -102,7 +101,6 @@ const detailedCases: { label: string; days: Details['ledger']['days'] }[] = [
 test.each(detailedCases)('$label requires a detailed review rather than replacing it with a straight-time approval', async ({ days }) => {
   configured(); currentDetail.ledger.days = structuredClone(days);
   await employee(); period('2026-10-19');
-  fireEvent.click(screen.getByRole('button', { name: 'Review hours for 2026-10-19' }));
   expect(screen.queryByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Review overtime and adjustments for 2026-10-19' })).toBeVisible();
   expect(axios.post).not.toHaveBeenCalled();
@@ -122,7 +120,6 @@ test('changing pay dates clears the previous calculation before it can be saved 
 test('unsaved guided review blocks calculation until the administrator confirms discarding it', async () => {
   configured(); currentDetail.ledger.days = [recordedDay('2026-10-19')];
   await employee(); period('2026-10-19');
-  fireEvent.click(screen.getByRole('button', { name: 'Review hours for 2026-10-19' }));
   fireEvent.click(screen.getByLabelText('I checked the hours and overtime for 2026-10-19.'));
   expect(screen.getByRole('button', { name: 'Calculate gross pay' })).toBeDisabled();
   // Re-selecting the current section must not clear the outstanding draft.
@@ -135,7 +132,7 @@ test('unsaved guided review blocks calculation until the administrator confirms 
     expect(screen.getByRole('button', { name: 'Calculate gross pay' })).toBeDisabled();
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Discard unsaved changes' }));
-    expect(screen.queryByLabelText('I checked the hours and overtime for 2026-10-19.')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('I checked the hours and overtime for 2026-10-19.')).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Calculate gross pay' })).toBeEnabled();
     expect(screen.getByLabelText('Pay period start')).toHaveValue('2026-10-19');
     expect(axios.post).not.toHaveBeenCalled();
@@ -172,4 +169,125 @@ test('an unfinished day asks only for checkout, never for break logging',async()
  expect(screen.getByText('Record the missing checkout before calculating this day.')).toBeVisible();
  expect(screen.getByRole('button',{name:'Fix checkout for 2026-10-19'})).toBeEnabled();
  expect(screen.queryByText(/break/i)).not.toBeInTheDocument();
+});
+
+
+test('an ordinary unapproved day explains the status and exposes approval without an extra click', async () => {
+  configured(); currentDetail.ledger.days = [recordedDay('2026-10-19', 3 * 3600000 + 14 * 60000 + 4000)];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  expect(day.getByText('Awaiting approval')).toBeVisible();
+  expect(day.getByText('Recorded time has not been approved yet.')).toBeVisible();
+  expect(day.getByRole('checkbox', { name: 'I checked the hours and overtime for 2026-10-19.' })).toBeVisible();
+  expect(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).toBeVisible();
+  expect(day.queryByText('Needs review')).not.toBeInTheDocument();
+  expect(day.queryByText('Needs attention')).not.toBeInTheDocument();
+  expect(day.queryByRole('button', { name: 'Review hours for 2026-10-19' })).not.toBeInTheDocument();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('outside-time details and a direct employee/date link are visible without opening adjustment controls', async () => {
+  configured(); currentDetail.ledger.days = [{ ...recordedDay('2026-10-19', 3 * 3600000), review: {
+    state: 'needs-attention', canApproveRecorded: false,
+    reasons: [{ code: 'OUTSIDE_SCHEDULE', message: 'Work continued 30 min after the approved 5:00 PM end. Review this time in Work time.', action: 'work-time' }],
+    workTime: { plannedStart: '08:00', plannedEnd: '17:00', plannedMinutes: 540, scheduleTimeZone: 'America/Los_Angeles', timeZone: 'America/Los_Angeles',
+      checkin: '2026-10-19T21:30:00Z', checkout: '2026-10-20T00:30:00Z', earlyMillis: 0, lateMillis: 1800000, outsideMillis: 1800000, status: 'pending', reason: '', scheduleIssue: null },
+  } }];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  expect(day.getByText('Needs attention')).toBeVisible();
+  expect(day.getByText('Work continued 30 min after the approved 5:00 PM end. Review this time in Work time.')).toBeVisible();
+  expect(day.getByText('8:00 AM–5:00 PM')).toBeVisible();
+  expect(day.getByText('2:30:00 PM')).toBeVisible(); expect(day.getByText('5:30:00 PM')).toBeVisible();
+  expect(day.getByRole('link', { name: 'Review outside time for 2026-10-19' })).toHaveAttribute('href', '/staff/work-time?staff=a&date=2026-10-19');
+  expect(day.queryByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).not.toBeInTheDocument();
+  expect(day.queryByRole('button', { name: 'Review overtime and adjustments for 2026-10-19' })).not.toBeInTheDocument();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('a stale approved day shows the actual policy issue instead of an approved badge', async () => {
+  configured(); currentDetail.ledger.days = [{ ...recordedDay('2026-10-19'), approval: { status: 'approved', regularMillis: 8 * 3600000, overtimeMillis: 0, doubleMillis: 0, adjustmentCents: 0, rulesReviewed: true, reason: 'Earlier approval' },
+    review: { state: 'needs-attention', canApproveRecorded: false, reasons: [{ code: 'POLICY_CHANGED', message: 'The paid-hours policy changed after approval. Review and approve this day again.', action: 'time' }] } }];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  expect(day.getByText('Needs attention')).toBeVisible();
+  expect(day.getByText('The paid-hours policy changed after approval. Review and approve this day again.')).toBeVisible();
+  expect(day.queryByText('Approved', { exact: true })).not.toBeInTheDocument();
+  expect(screen.getByText('0 of 1 recorded workdays approved. Review each day before calculating.')).toBeVisible();
+  expect(day.getByRole('button', { name: 'Review overtime and adjustments for 2026-10-19' })).toBeVisible();
+});
+
+test('a day action opens the matching detailed approval immediately', async () => {
+  configured(); currentDetail.ledger.days = [recordedDay('2026-10-19'), recordedDay('2026-10-20', 9 * 3600000)];
+  await employee(); period('2026-10-19', '2026-10-20');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-20' }));
+  expect(day.getByText('9 hr 0 min recorded today exceeds 8 hours. Review the overtime allocation.')).toBeVisible();
+  fireEvent.click(day.getByRole('button', { name: 'Review overtime and adjustments for 2026-10-20' }));
+  await screen.findByRole('heading', { name: 'Work time and daily approvals' });
+  const panels = Array.from(document.querySelectorAll<HTMLDetailsElement>('details[data-payroll-date]'));
+  expect(panels.find(panel => panel.dataset.payrollDate === '2026-10-20')?.open).toBe(true);
+  expect(panels.find(panel => panel.dataset.payrollDate === '2026-10-19')?.open).toBe(false);
+  expect(within(panels.find(panel => panel.dataset.payrollDate === '2026-10-20')!).getByLabelText('Regular paid hours')).toBeVisible();
+});
+
+test('missing rate and unconfirmed policy show their causes and direct setup actions', async () => {
+  currentDetail.ledger.days = [recordedDay('2026-10-19')]; await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  expect(day.getByText('No hourly rate is saved for this date.')).toBeVisible();
+  expect(day.getByText('Payroll rules have not been reviewed and confirmed.')).toBeVisible();
+  expect(day.getByRole('button', { name: 'Set hourly rate for 2026-10-19' })).toBeVisible();
+  expect(day.getByRole('button', { name: 'Review payroll rules for 2026-10-19' })).toBeVisible();
+  expect(day.queryByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).not.toBeInTheDocument();
+});
+
+test('a missing-rate shortcut starts the new rate on the affected workday', async () => {
+  configured(); currentDetail.profile.rates = []; currentDetail.ledger.days = [recordedDay('2026-10-19')];
+  await employee(); period('2026-10-19');
+  fireEvent.click(screen.getByRole('button', { name: 'Set hourly rate for 2026-10-19' }));
+  expect(await screen.findByLabelText('Effective date')).toHaveValue('2026-10-19');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('the payroll-rules shortcut opens the policy fields directly', async () => {
+  currentDetail.ledger.days = [recordedDay('2026-10-19')];
+  await employee(); period('2026-10-19');
+  fireEvent.click(screen.getByRole('button', { name: 'Review payroll rules for 2026-10-19' }));
+  const policy = await screen.findByLabelText('Payroll policy review notes');
+  expect(policy).toBeVisible();
+  expect(policy.closest('details')).toHaveAttribute('open');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('the missing-checkout shortcut opens the unfinished session without another search', async () => {
+  configured(); currentDetail.ledger.days = [{ ...recordedDay('2026-10-19'), incomplete: true }];
+  currentDetail.ledger.sessions = [{ id: 'open-a', start: '2026-10-19T15:00:00Z', end: null, version: 1, breaks: [] }];
+  await employee(); period('2026-10-19');
+  fireEvent.click(screen.getByRole('button', { name: 'Fix checkout for 2026-10-19' }));
+  expect(await screen.findByLabelText('Corrected start (ISO timestamp)')).toHaveValue('2026-10-19T15:00:00Z');
+  expect(screen.getByLabelText('Corrected checkout (blank if open)')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Save time correction' })).toBeVisible();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+
+test('a related-workweek issue points directly to the affected workday instead of reopening the approved day', async () => {
+  configured();
+  currentDetail.ledger.days = [recordedDay('2026-10-19'), { ...recordedDay('2026-10-20'),
+    approval: { status: 'approved', regularMillis: 8 * 3600000, overtimeMillis: 0, doubleMillis: 0, adjustmentCents: 0, rulesReviewed: true, reason: 'Recorded work approved' },
+    review: { state: 'needs-attention', canApproveRecorded: false, reasons: [
+      { code: 'WORKWEEK_APPROVALS', date: '2026-10-19', message: 'The complete workweek needs approved time. Review 2026-10-19 before calculating.', action: 'time' },
+      { code: 'WORKWEEK_CHECKOUT', date: '2026-10-19', message: 'The related workday 2026-10-19 needs its time records checked.', action: 'time' },
+    ] },
+  }];
+  await employee(); period('2026-10-20');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-20' }));
+  expect(day.getByText('The complete workweek needs approved time. Review 2026-10-19 before calculating.')).toBeVisible();
+  expect(day.getAllByRole('button', { name: 'Review workday 2026-10-19' })).toHaveLength(1);
+  expect(day.queryByRole('button', { name: 'Review overtime and adjustments for 2026-10-20' })).not.toBeInTheDocument();
+  fireEvent.click(day.getByRole('button', { name: 'Review workday 2026-10-19' }));
+  await screen.findByRole('heading', { name: 'Work time and daily approvals' });
+  const panels = Array.from(document.querySelectorAll<HTMLDetailsElement>('details[data-payroll-date]'));
+  expect(panels.find(panel => panel.dataset.payrollDate === '2026-10-19')?.open).toBe(true);
+  expect(panels.find(panel => panel.dataset.payrollDate === '2026-10-20')?.open).toBe(false);
+  expect(axios.post).not.toHaveBeenCalled();
 });
