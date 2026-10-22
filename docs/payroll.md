@@ -6,19 +6,18 @@ Staff records and sign-in accounts remain separate. Link an existing account to 
 - Only administrators can open **More → Staff → Pay & time**, read or change pay profiles, rates, approvals, corrections, snapshots or payroll files. Editors, teachers and viewers cannot access even their own private pay profile through these routes. They retain their separate operational/class permissions.
 - Private profiles contain legal name, payment method/frequency, optional employee ID in a payroll service, payday notes, masked employee SSN/bank/routing identifiers and required document names. Payroll policy review controls are under Advanced payroll settings. Blank replacement fields keep stored identifiers; clearing requires an explicit checkbox.
 - Rates are appended with an effective facility date, reason and actor. Later corrections on the same effective date supersede the earlier rate for new calculations; prior values remain stored. Time corrections retain original clock values and attributed before/after history. Affected daily approvals require review again.
-- Daily decisions distinguish actual elapsed time, completed historical deductions and reviewed regular/overtime/double-time hours. Administrators can return a day for correction, add documented premiums/adjustments, and review every change. Scheduled daily minutes never cap actual time. No automatic time rounding or meal deduction is performed.
+- Daily decisions keep actual worked time, proposed paid credit, approved paid time and manually entered additional pay separate. Administrators explicitly approve decisions and can return a day for correction. Schedules never cap actual work. Original timestamps and completed historical deductions remain intact; no automatic deduction is introduced.
 - A period preview lists each day, effective rate, reviewed hours and gross. Missing rates, unapproved/incomplete time, changed policy, underpaid clocked time, negative adjusted gross and unsupported rules block finalization. A saved calculation snapshot is immutable; later source changes are shown when opening it. A snapshot does not execute payment or calculate withholding/net pay.
 
 ## Rule boundaries
 
-The supported gross preview is a manually reviewed standard California non-exempt allocation in USD, using midnight-to-midnight workdays in the facility time zone. Choose Other rules and use provider review if the defined workday differs. Its guardrails cover regular hours over eight/day or forty/workweek, double time above twelve/day, and seventh-day allocation. Workweek context includes recorded days outside the selected pay period. Mixed hourly rates with overtime in a workweek require payroll-provider calculation; other classifications/rules explicitly block finalization. Bonuses, weighted regular rates, exemptions, wage-order exceptions, split shifts, unusual schedules, tax withholding and actual payments are outside this calculator. A final snapshot is a reviewed calculation record, not a certification of legal compliance.
+The gross preview uses approved paid time at the saved hourly rate, plus the additional pay amount and adjustment explicitly entered by the administrator. It applies no automatic overtime or double-time multiplier. Daily/weekly/seventh-day review flags and work outside the approved schedule require an explicit administrator overtime decision; an editor confirming that work occurred does not approve its pay.
 
-An administrator must verify the applicable classification and workday/workweek, breaks, premiums and adjustments and enter a reviewer reference before finalizing. Review each day's actual records, including any missed meal/rest premium or paid on-duty meal; the software does not infer a compliant break from silence. Paid rest remains paid. Do not use an unpaid break unless the employee is relieved of duty.
+For a captured nine-hour approved window, a completed day with more than eight and no more than nine actual paid hours, all inside that window, proposes nine paid hours. The increase is a separate paid credit. The administrator still saves the decision. Eight hours or less, work outside the window, missing checkout and time above nine hours do not qualify. No actual time is reduced or capped. Earlier duration-only records do not acquire a guessed window.
 
-Primary references checked during implementation:
-- California DIR overtime: https://www.dir.ca.gov/dlse/faq_overtime.htm
-- Meal periods and on-duty/paid meals: https://www.dir.ca.gov/dlse/FAQ_MealPeriods.htm
-- Paid rest periods: https://www.dir.ca.gov/dlse/FAQ_RestPeriods.htm
+Potential overtime is identified from actual work, including earlier dates in the configured workweek, rather than from paid credits. Weekly review applies to the day actual cumulative work crosses forty hours and later days; adding a later day does not invalidate an earlier ordinary decision. An actual-time correction or an effective-rate change affecting a reviewed decision requires renewed review. Future rates that do not apply to that workday do not invalidate it. This is a manual gross-pay record, not a payment, withholding calculation or certification of compliance.
+
+California DIR reference for the review threshold: https://www.dir.ca.gov/dlse/faq_overtime.htm. Approved schedule length does not by itself determine whether overtime pay is required. The administrator records the reviewed additional amount and reason; the app does not choose a factor.
 
 ## Encryption and recovery
 
@@ -53,7 +52,7 @@ On Home, admins/editors see an in-app reminder when a completed workday has work
 
 Managers either confirm that the extra time was worked, or correct a verified late clock-out mistake. The latter requires an actual work-end time in the facility time zone, a reason and explicit confirmation that no work was performed after that time. Original clock values and attributed before/after history remain retained; affected paid-hour approval requires renewed review. Same-day tail corrections are supported in this narrow editor flow. Overnight sessions or historical time-zone changes need administrator correction. Ambiguous DST times require selecting an occurrence.
 
-Actual extra work is never removed just because it was not authorized in advance. Confirmed extra time remains in recorded work and still needs administrator payroll approval/overtime allocation. Pending extra-time reviews block finalizing a gross-pay snapshot. An approved daily schedule and an approved paid-hours decision are separate records.
+Actual extra work is never removed just because it was not authorized in advance. Confirmed extra time remains in recorded work and still needs an administrator's explicit paid-time and overtime decision. Pending extra-time reviews block finalizing a gross-pay snapshot. An approved daily schedule and an approved paid-hours decision are separate records.
 
 No new SQL migration or encryption key is needed for this follow-up. Work limits/reviews are stored within the existing encrypted ledger; effective work schedules use a separate encrypted profile-kind record. Native archive/reconnect fixtures now include these fields and the schedule record. Physical Ubuntu/PostgreSQL/device verification remains required.
 
@@ -85,8 +84,8 @@ Open **Staff → Pay & time**, then choose an employee. Calculate pay is the def
 
 1. Choose the pay-period start and end dates.
 2. If needed, save the hourly rate and its effective date, then explicitly confirm the payroll policy review. Private identifiers and bank fields are optional and are not required to calculate gross pay.
-3. Review each recorded day. For an ordinary completed day, confirm the hours/overtime review and choose Approve recorded hours. Exact recorded milliseconds are retained; schedules do not cap paid time. The simplified approval is unavailable for apparent daily/weekly/seventh-day overtime or an existing adjustment. Those cases open the existing detailed review instead.
-4. Choose Calculate gross pay. Resolve any server-reported blockers, including related workweek days outside the selected dates or pending extra-time reviews in Work time. Related dates are not included in the selected period's gross amount.
+3. Review each day's actual worked time and suggested paid time. Ordinary approval controls are visible directly. Eligible nine-hour schedules show the separate paid credit. For overtime review, enter the additional pay amount, review reason and explicit confirmation. No amount or factor is selected automatically.
+4. Choose Calculate gross pay. Resolve any server-reported blockers, including any affected earlier workweek dates, pending work-time review or missing administrator overtime decision. Related dates are not included in the selected period's gross amount.
 5. Review **Gross pay before taxes**, then choose Save calculation. The result remains visible and is available in saved snapshots.
 
 Each daily save refreshes the ledger version before another decision. Chosen pay dates remain selected. Changing dates or editing an unsaved form clears old results; calculation is disabled until draft changes are saved or discarded. Delayed historical-snapshot requests are cancelled when the period changes. Server fingerprint checks still reject stale finalization. This is gross-pay calculation and recordkeeping; it does not transfer money or calculate tax withholding.
@@ -103,7 +102,7 @@ Administrator time corrections omit `breaks` to preserve historical arrays and t
 
 New schedules use same-day `HH:mm` start/end times with an end after the start, an effective date, and a reason. The approved window, clocked arrival/departure and manager review are shown separately. A day can need review for work before the start or after the end even when its total is within the approved span. This review threshold never caps recorded work or automatically changes a paid-hours decision.
 
-The encrypted schedule history retains the saved start/end times, derived duration and actor. The ledger captures the effective window on its first clock event for that day. Changing a future schedule cannot erase an older pending review. Duration-only legacy schedules/decisions remain readable; no SQL migration or key change is required. A separate administrator paid-hours review still applies for gross-pay calculation and overtime.
+The encrypted schedule history retains the saved start/end times, derived duration and actor. The ledger captures the effective window on its first clock event for that day. Changing a future schedule cannot erase an older pending review. Duration-only legacy schedules/decisions remain readable; no SQL migration or key change is required. A separate administrator paid-time and overtime review still applies for gross-pay calculation.
 
 ## Visible daily pay-review reasons
 
@@ -112,3 +111,12 @@ The pay calculator distinguishes an ordinary day awaiting an administrator's app
 For a straightforward unapproved day, the confirmation checkbox and approval button are visible directly on the card. No adjustment form is needed to understand or approve unchanged recorded time. Detailed allocation and adjustment controls remain available for intentional changes. They never replace an existing decision automatically.
 
 Outside-time actions open Work time with the employee selected and the exact date loaded, including older dates beyond the default recent list. Detailed time actions open the affected day's approval; missing-checkout actions open the relevant unfinished session correction when available. Rate actions prefill the affected date. All summaries are derived from the current authorized response; no review information or new drafts are written to browser storage.
+
+
+## Repeated short-workday warnings
+
+A completed clocked day counts as short when actual paid time is below that day's captured approved duration. Paid credits do not change this count. The warning begins on the third short day in the configured workweek and lists the actual dates. Incomplete/open days and days without a captured allowance are not treated as completed short days; absence cannot be inferred without attendance records.
+
+Administrators see current-week warnings on Home, relevant workweek warnings in Work time and the private pay view. The Home reminder refreshes while the page is open and on focus, using the existing in-app reminder cycle. It sends no email or phone push. Editors, teachers and viewers do not receive private pay-decision or administrator short-day alert fields. Warnings do not automatically change paid time or impose a deduction.
+
+Earlier saved calculation snapshots remain immutable. Old overtime/double-time allocations require a new explicit manual pay decision before a fresh calculation; the app does not silently reprice them. No SQL migration or encryption-key change is required.

@@ -11,7 +11,7 @@ test('encrypted private profiles, original time, document bytes and immutable ca
   const file = Buffer.from('Synthetic private file bytes\u0000\u0001');
   const values = [
     ['profile', { taxId: 'SYNTHETIC-SECRET', rates: [{ cents: 2000, effectiveOn: '2026-01-01' }], history: [{ reason: 'Original rate' }] }],
-    ['ledger', { sessions: [{ start: '2026-10-19T15:00:00Z', original: { start: '2026-10-19T14:59:00Z' } }], approvals: { '2026-10-19': { status: 'approved', regularMillis: 28800000 } }, workLimits: {'2026-10-19':480}, workWindows: {'2026-10-19':{startTime:'08:00',endTime:'16:00',timeZone:'America/Los_Angeles',effectiveOn:'2026-10-19',sequence:1}}, workReviews: {'2026-10-19':{decision:'worked',reason:'Synthetic review'}} }],
+    ['ledger', { sessions: [{ start: '2026-10-19T15:00:00Z', original: { start: '2026-10-19T14:59:00Z' } }], approvals: { '2026-10-19': { status: 'approved', mode: 'manual-reviewed', paidMillis: 32400000, regularMillis: 32400000, overtimeMillis: 0, doubleMillis: 0, premiumCents: 1250, overtimeReviewed: true, scheduledCreditMillis: 1800000, overtimeFingerprint: 'synthetic-rates-aware-review' } }, workLimits: {'2026-10-19':480}, workWindows: {'2026-10-19':{startTime:'08:00',endTime:'16:00',timeZone:'America/Los_Angeles',effectiveOn:'2026-10-19',sequence:1}}, workReviews: {'2026-10-19':{decision:'worked',reason:'Synthetic review'}} }],
     ['document', { revisions: [{ revision: 1, dataBase64: file.toString('base64') }, { revision: 2, dataBase64: Buffer.from('New synthetic revision').toString('base64') }] }],
     ['snapshot', { preview: { grossCents: 16000, start: '2026-10-19', end: '2026-10-19' }, actorId: 'synthetic-admin' }],
   ];

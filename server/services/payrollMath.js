@@ -22,6 +22,38 @@ function daily(ledger) {
   return [...rows.values()].sort((a, b) => a.date.localeCompare(b.date)).map(row => ({ ...row, paidMillis: row.rawMillis - row.unpaidMillis,
     approval: ledger.approvals[row.date] || null }));
 }
+const HOUR = 3600000;
+function scheduledPayCredit(day, work) {
+  const eligible = !day.incomplete && day.paidMillis > 8 * HOUR && day.paidMillis < 9 * HOUR &&
+    work?.plannedMinutes === 540 && !!work.plannedStart && !!work.plannedEnd && work.outsideMillis === 0 && !work.scheduleIssue;
+  const suggestedPaidMillis = eligible ? 9 * HOUR : day.paidMillis;
+  return { eligible, suggestedPaidMillis, scheduledCreditMillis: suggestedPaidMillis - day.paidMillis };
+}
+function overtimeContext(day, allDays, rules = {}) {
+  const firstDay = Number.isInteger(rules.workweekStart) && rules.workweekStart >= 0 && rules.workweekStart <= 6 ? rules.workweekStart : 1;
+  const weekStart = time.addDays(day.date, -((new Date(day.date + 'T12:00:00Z').getUTCDay() - firstDay + 7) % 7));
+  const weekEnd = time.addDays(weekStart, 6);
+  const weekDays = allDays.filter(row => row.date >= weekStart && row.date <= day.date);
+  // Review flags use real recorded work, never additional scheduled paid credit.
+  const weekMillis = weekDays.reduce((sum, row) => sum + row.paidMillis, 0);
+  const daily = day.paidMillis > 8 * HOUR, weekly = weekMillis > 40 * HOUR;
+  const seventhDay = weekDays.filter(row => row.paidMillis > 0).length === 7 && day.date === weekEnd;
+  return { daily, weekly, seventhDay, requiresReview: daily || weekly || seventhDay, weekStart, weekEnd, weekMillis, dates: weekDays.map(row => row.date) };
+}
+const effectiveRate = (date, rates = []) => [...rates].filter(rate => rate.effectiveOn <= date)
+  .sort((a, b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.sequence - a.sequence)[0];
+function overtimeFingerprint(day, allDays, rules = {}, rates = []) {
+  const context = overtimeContext(day, allDays, rules), wholeWeek = context.weekly || context.seventhDay;
+  const actual = allDays.filter(row => wholeWeek ? row.date >= context.weekStart && row.date <= day.date : row.date === day.date)
+    .map(row => {
+      const savedRate = effectiveRate(row.date, rates);
+      const rate = savedRate ? Object.fromEntries(['id', 'effectiveOn', 'cents', 'currency', 'sequence'].map(key => [key, savedRate[key]])) : null;
+      return { date: row.date, paidMillis: row.paidMillis, incomplete: row.incomplete, sessionIds: row.sessionIds, rate };
+    });
+  return hash({ date: day.date, scope: wholeWeek ? 'week' : 'day', workweekStart: rules.workweekStart ?? 1, actual });
+}
+const approvedMillis = approval => approval?.mode === 'manual-reviewed' ? approval.paidMillis :
+  (approval?.regularMillis || 0) + (approval?.overtimeMillis || 0) + (approval?.doubleMillis || 0);
 function preview(ledger, profile, start, end) {
   const all = daily(ledger), blockers = []; const rows = [];
   if (!profile.rules?.confirmed || !profile.rules.reference?.trim()) blockers.push('Confirm the applicable payroll policy, overtime and adjustments before finalizing.');
@@ -31,34 +63,38 @@ function preview(ledger, profile, start, end) {
     const approval = day.approval; const issues = [];
     if (day.incomplete) issues.push('Missing checkout.');
     if (approval?.status !== 'approved') issues.push('Daily paid time is not approved.');
-    const rate = [...(profile.rates || [])].filter(r => r.effectiveOn <= day.date).sort((a, b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.sequence - a.sequence)[0];
+    const rate = effectiveRate(day.date, profile.rates);
     if (!rate) issues.push('No effective hourly rate.');
     if (approval?.status === 'approved' && approval.rulesFingerprint !== hash(profile.rules)) issues.push('The paid-hours policy changed after approval. Review and approve this day again.');
     if (approval && !approval.rulesReviewed) issues.push('Hours, overtime and adjustments have not been reviewed.');
+    const manual = approval?.mode === 'manual-reviewed';
+    const legacyMultiplier = !manual && !!(approval?.overtimeMillis || approval?.doubleMillis);
+    const total = approvedMillis(approval);
+    const context = overtimeContext(day, all, rules);
+    let validAmount = true;
     if (approval?.status === 'approved') {
-      const total = approval.regularMillis + approval.overtimeMillis + approval.doubleMillis;
+      if (!Number.isSafeInteger(total) || total < 0 || total > 48 * HOUR) { issues.push('The saved paid-hours amount is invalid. Review and approve this day again.'); validAmount = false; }
       if (total < day.paidMillis) issues.push('Approved time is below clocked paid time. Correct the original error with a reason or obtain payroll-provider review; time is never silently capped.');
-      // The supported rule is the standard California non-exempt workday.
-      // Never silently pay a straight rate for apparent daily/weekly overtime.
+      if (manual && (!Number.isSafeInteger(approval.premiumCents) || approval.premiumCents < 0 || approval.premiumCents > 100000000)) { issues.push('Enter a valid reviewed additional-pay amount.'); validAmount = false; }
+      if (legacyMultiplier) issues.push('An earlier overtime allocation uses automatic multipliers. Enter a reviewed paid-hours and additional-pay decision before calculating again.');
+      // Thresholds only flag a decision for explicit administrator review. They
+      // never select an overtime rate or multiply any recorded hour.
       if (rules.mode === 'ca-standard') {
-        const dayOfWeek = new Date(day.date + 'T12:00:00Z').getUTCDay();
-        const weekStart = time.addDays(day.date, -((dayOfWeek - rules.workweekStart + 7) % 7));
-        const weekEnd = time.addDays(weekStart, 6);
-        const weekDays = all.filter(d => d.date >= weekStart && d.date <= weekEnd);
-        if (weekDays.some(d => d.incomplete || d.approval?.status !== 'approved' || d.approval.rulesFingerprint !== hash(profile.rules))) issues.push('The complete workweek needs approved time for overtime review.');
-        const regularWeek = weekDays.reduce((sum, d) => sum + (d.approval?.status === 'approved' ? d.approval.regularMillis : 0), 0);
-        if (approval.regularMillis > 8 * 3600000 || regularWeek > 40 * 3600000) issues.push('Regular hours exceed the daily/weekly limit. Review the overtime allocation.');
-        if (total > 12 * 3600000 && approval.doubleMillis < total - 12 * 3600000) issues.push('Daily double-time allocation needs review.');
-        if (weekDays.length === 7 && day.date === weekEnd && (approval.regularMillis > 0 || approval.doubleMillis < Math.max(0, total - 8 * 3600000))) issues.push('Seventh-day overtime allocation needs review.');
-        const weekRates = new Set(weekDays.map(d => [...(profile.rates || [])].filter(r => r.effectiveOn <= d.date).sort((a, b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.sequence - a.sequence)[0]).map(rate => rate ? `${rate.currency}:${rate.cents}` : 'missing'));
-        if ((approval.overtimeMillis || approval.doubleMillis) && weekRates.size > 1) issues.push('Multiple rates in this workweek: regular-rate overtime requires payroll-provider review.');
+        const weekDays = all.filter(d => d.date >= context.weekStart && d.date <= day.date);
+        if (context.requiresReview && weekDays.some(d => d.incomplete)) issues.push('Earlier workweek clock records have a missing checkout. Record the actual departure before reviewing overtime.');
+        if ((context.requiresReview || approval.requiresOvertimeReview) && (!manual || approval.overtimeReviewed !== true)) issues.push('Overtime needs explicit administrator review and a manually entered additional-pay decision. No multiplier is applied automatically.');
       } else issues.push('Unsupported payroll rules: use your payroll provider for calculation.');
+      if (approval.requiresOvertimeReview && (!manual || approval.overtimeReviewed !== true) && !issues.some(issue => issue.startsWith('Overtime needs'))) issues.push('Overtime needs explicit administrator review and a manually entered additional-pay decision. No multiplier is applied automatically.');
+      if ((context.requiresReview || approval.requiresOvertimeReview) && manual && approval.overtimeReviewed === true && approval.overtimeFingerprint !== overtimeFingerprint(day, all, rules, profile.rates)) {
+        issues.push('Recorded work or hourly rate changed after overtime review. Review the current day or workweek and approve it again.');
+        validAmount = false;
+      }
     }
     let cents = null;
-    if (approval?.status === 'approved' && rate) {
+    if (approval?.status === 'approved' && rate && validAmount && !legacyMultiplier) {
       // Integer arithmetic, rounding money once per day to the nearest cent.
-      const weighted = BigInt(approval.regularMillis) * 2n + BigInt(approval.overtimeMillis) * 3n + BigInt(approval.doubleMillis) * 4n;
-      cents = Number((weighted * BigInt(rate.cents) + 3600000n) / 7200000n) + approval.adjustmentCents;
+      cents = Number((BigInt(total) * BigInt(rate.cents) + 1800000n) / 3600000n) +
+        (manual ? approval.premiumCents : 0) + approval.adjustmentCents;
     }
     if (cents !== null && cents < 0) issues.push('The adjustment makes gross pay negative. Review it with your payroll provider.');
     rows.push({ ...day, rate: rate || null, grossCents: cents, issues });
@@ -69,8 +105,8 @@ function preview(ledger, profile, start, end) {
   if (new Set(rows.filter(r => r.rate).map(r => r.rate.currency)).size > 1) blockers.push('Multiple currencies cannot be combined.');
   return { start, end, timeZone: ledger.timeZone, currency: rows.find(r => r.rate)?.rate.currency || null,
     workedDays: paidDays.length, rawMillis: paidDays.reduce((sum, day) => sum + day.rawMillis, 0),
-    approvedMillis: rows.reduce((sum, r) => sum + (r.approval?.status === 'approved' ? r.approval.regularMillis + r.approval.overtimeMillis + r.approval.doubleMillis : 0), 0),
+    approvedMillis: rows.reduce((sum, r) => sum + (r.approval?.status === 'approved' && Number.isSafeInteger(approvedMillis(r.approval)) ? approvedMillis(r.approval) : 0), 0),
     grossCents: rows.reduce((sum, row) => sum + (row.grossCents ?? 0), 0), rows, blockers: [...new Set(blockers)],
-    canFinalize: !blockers.length, fingerprint: hash({ ledger, profile, start, end }), paymentExecuted: false, taxWithholdingCalculated: false };
+    canFinalize: !blockers.length, fingerprint: hash({ ledger, profile, start, end, calculatorVersion: 'manual-reviewed-pay-v2' }), paymentExecuted: false, taxWithholdingCalculated: false };
 }
-module.exports = { daily, preview, hash };
+module.exports = { daily, preview, hash, scheduledPayCredit, overtimeContext, overtimeFingerprint };

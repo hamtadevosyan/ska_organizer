@@ -14,7 +14,8 @@ type Employee = { id: string; name: string; active: boolean; scheduleVersion: nu
 type WorkDay = { staffId: string; name: string; date: string; version: number; plannedMinutes: number; paidMillis: number; extraMillis: number;
   incomplete: boolean; status: string; reason: string; checkout: string | null; canCorrect: boolean; checkin?: string | null;
   timeZone?: string; plannedStart?: string | null; plannedEnd?: string | null; scheduleTimeZone?: string; earlyMillis?: number; lateMillis?: number; outsideMillis?: number; scheduleIssue?: string | null };
-export type WorkData = { today: string; timeZone: string; staff: Employee[]; items: WorkDay[] };
+type ShortDayWarning = { staffId: string; name: string; weekStart: string; weekEnd: string; count: number; dates: string[] };
+export type WorkData = { today: string; timeZone: string; staff: Employee[]; items: WorkDay[]; shortDayWarnings?: ShortDayWarning[]; overtimeReviewCount?: number };
 const url = API_BASE_URL + '/api/work-time';
 const validTime = (value: string) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 const clockLabel = (value: string) => {
@@ -99,6 +100,14 @@ function ClockComparison({ row, zone }: { row: WorkDay; zone: string }) {
   </>;
 }
 
+function ShortDayWarnings({ warnings }: { warnings: ShortDayWarning[] }) {
+  if (!warnings.length) return null;
+  return <section aria-label="Short workday warnings" className="payroll-note"><h2>Short workday warnings</h2>
+    <p>Three or more completed short days in one workweek need your attention. Paid credits do not change the actual time used for this warning.</p>
+    <ul>{warnings.map(warning => <li key={warning.staffId + ':' + warning.weekStart}><strong>{warning.name}: {warning.count} short days</strong><p>Week of {warning.weekStart} · {warning.dates.join(', ')}</p><Link className="ska-link" to={'/staff/work-time?staff=' + encodeURIComponent(warning.staffId)}>Review short workdays for {warning.name}</Link></li>)}</ul>
+  </section>;
+}
+
 function ManagerWorkTime({ admin, targetStaff, targetDate }: { admin: boolean; targetStaff: string; targetDate: string }) {
   const report = useUnsavedChanges(); const [dirty, setDirty] = useState(false); const [draft, setDraft] = useState(''); const [formTurn, setFormTurn] = useState(0);
   const [data, setData] = useState<WorkData | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [selected, setSelected] = useState(targetStaff), [message, setMessage] = useState('');
@@ -128,6 +137,7 @@ function ManagerWorkTime({ admin, targetStaff, targetDate }: { admin: boolean; t
     <div className="payroll-actions"><button disabled={busy} onClick={() => { if (discard()) setRevision(n => n + 1); }}>Refresh work time</button>{dirty && <button disabled={busy} onClick={discard}>Discard unsaved changes</button>}</div>
     {dirty && <p className="payroll-note">Save or discard this form before editing another one.</p>}
     {!data ? !error && <p role="status">Loading work time…</p> : <>
+      {admin && <ShortDayWarnings warnings={(data.shortDayWarnings || []).filter(warning => !selected || warning.staffId === selected)} />}
       <section><h2><CalendarClock size={23} aria-hidden="true" />1. Set approved schedule</h2><label>Employee<select aria-label="Work-time employee" value={selected} disabled={busy} onChange={event => { if (discard()) setSelected(event.target.value); }}><option value="">Choose an employee</option>{data.staff.map(employee => <option key={employee.id} value={employee.id}>{employee.name}{employee.active ? '' : ' · Inactive'}</option>)}</select></label>
         {person ? <ScheduleForm key={person.id + ':' + person.scheduleVersion + ':' + formTurn} person={person} today={data.today} timeZone={data.timeZone} disabled={locked('schedule')} onDirty={() => mark('schedule')} onSave={body => void save('/staff/' + encodeURIComponent(person.id) + '/schedule', body)} /> : <p>Choose an employee to set an approved start and end time.</p>}
       </section>
@@ -148,11 +158,15 @@ function ManagerWorkTime({ admin, targetStaff, targetDate }: { admin: boolean; t
 export function ExtraTimeAlerts() {
   const auth=useContext(AuthContext); const account=auth?.account, serverUnavailable=auth?.serverUnavailable;
   if(!account||account.disabled||account.mustChangePassword||serverUnavailable||!['admin','editor'].includes(account.role))return null;
-  return <ManagerExtraTimeAlerts key={account.id+':'+account.role}/>;
+  return <ManagerExtraTimeAlerts key={account.id+':'+account.role} admin={account.role === 'admin'}/>;
 }
-function ManagerExtraTimeAlerts(){
-  const [count,setCount]=useState<number|null>(null),[error,setError]=useState(false);const pending=useRef<AbortController|null>(null);
-  const refresh=useCallback(()=>{pending.current?.abort();const c=new AbortController();pending.current=c;void axios.get<{data:WorkData}>(url,{signal:c.signal}).then(r=>{if(!c.signal.aborted){setCount(r.data.data.items.filter(i=>i.status==='pending').length);setError(false);}}).catch(()=>{if(!c.signal.aborted){setCount(null);setError(true);}});},[]);
+function ManagerExtraTimeAlerts({ admin }: { admin: boolean }){
+  const [data,setData]=useState<WorkData|null>(null),[error,setError]=useState(false);const pending=useRef<AbortController|null>(null);
+  const refresh=useCallback(()=>{pending.current?.abort();const c=new AbortController();pending.current=c;void axios.get<{data:WorkData}>(url,{signal:c.signal}).then(r=>{if(!c.signal.aborted){setData(r.data.data);setError(false);}}).catch(()=>{if(!c.signal.aborted){setData(null);setError(true);}});},[]);
   useEffect(()=>{refresh();const visible=()=>{if(document.visibilityState!=='hidden')refresh();};const timer=window.setInterval(visible,60000);window.addEventListener('focus',visible);window.addEventListener('online',visible);return()=>{pending.current?.abort();window.clearInterval(timer);window.removeEventListener('focus',visible);window.removeEventListener('online',visible);};},[refresh]);
-  return <section className="ska-panel" aria-label="Extra employee time reminders"><div className="ska-panel-body"><h2>Extra employee time</h2>{error?<p>Could not check extra time. <button className="ska-button" onClick={refresh}>Retry time reminders</button></p>:count===null?<p>Checking work-time reviews…</p>:<p>{count?`${count} workday${count===1?' needs':'s need'} extra-time review.`:'No extra time waiting for review.'} <Link className="ska-link" to="/staff/work-time">Review work time</Link></p>}</div></section>;
+  const count = data?.items.filter(item => item.status === 'pending').length || 0;
+  return <section className="ska-panel" aria-label="Extra employee time reminders"><div className="ska-panel-body"><h2>Extra employee time</h2>{error?<p>Could not check extra time. <button className="ska-button" onClick={refresh}>Retry time reminders</button></p>:!data?<p>Checking work-time reviews…</p>:<><p>{count?`${count} workday${count===1?' needs':'s need'} extra-time review.`:'No extra time waiting for review.'} <Link className="ska-link" to="/staff/work-time">Review work time</Link></p>
+    {admin && (data.overtimeReviewCount || 0) > 0 && <div className="payroll-note"><h3>Overtime needs your review</h3><p>{data.overtimeReviewCount} workday{data.overtimeReviewCount === 1 ? '' : 's'} waiting for an administrator's pay decision.</p><Link className="ska-link" to="/staff/payroll">Review pay decisions</Link></div>}
+    {admin && <ShortDayWarnings warnings={(data.shortDayWarnings || []).filter(warning => warning.weekStart <= data.today && warning.weekEnd >= data.today)} />}
+  </>}</div></section>;
 }

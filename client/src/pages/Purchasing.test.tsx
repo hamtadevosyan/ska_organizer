@@ -87,13 +87,26 @@ test('opening saved values never recalculates; quantity, selection and check-off
   fireEvent.change(input(), { target: { value: '6' } }); fireEvent.click(checkoff());
   fireEvent.click(screen.getByRole('checkbox', { name: 'Buy Paint brushes at Art room' }));
   const saved = snapshot(); saved.version = 2; saved.lines[0].buyQuantity = '6'; saved.lines[0].checked = true; saved.lines[1].selected = false;
-  vi.mocked(savePurchasingList).mockResolvedValue(saved);
-  fireEvent.click(saveButton()); await screen.findByText('Purchasing list saved. Stock and saved plans were not changed.');
+  let finishSave!: (value: PurchasingList) => void;
+  vi.mocked(savePurchasingList).mockImplementation(() => new Promise(resolve => { finishSave = resolve; }));
+  fireEvent.click(saveButton());
+  expect(report).toHaveBeenLastCalledWith(true, true);
+  expect(input()).toBeDisabled(); expect(checkoff()).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
   expect(savePurchasingList).toHaveBeenCalledWith(week, { version: 1, choices: [
     { id: 'stock:stock-one', buyQuantity: '6', selected: true, checked: true },
     { id: 'stock:stock-two', buyQuantity: '3', selected: false, checked: false },
   ] }, expect.any(AbortSignal));
-  expect(screen.getByText('Saved version 2')).toBeInTheDocument(); expect(report).toHaveBeenLastCalledWith(false, false); expect(saveButton()).toBeDisabled();
+  await act(async () => finishSave(saved));
+  await waitFor(() => {
+    expect(screen.getByText('Purchasing list saved. Stock and saved plans were not changed.')).toBeInTheDocument();
+    expect(screen.getByText('Saved version 2')).toBeInTheDocument();
+    expect(report).toHaveBeenLastCalledWith(false, false);
+    expect(saveButton()).toBeDisabled();
+  });
+  expect(input()).toHaveValue('6'); expect(checkoff()).toBeChecked();
+  expect(input()).toBeEnabled(); expect(checkoff()).toBeEnabled();
+  expect(screen.getByRole('checkbox', { name: 'Buy Paint brushes at Art room' })).not.toBeChecked();
 });
 
 test('explicit refresh preserves manual amounts, updates suggestions and clears stale check-off without saving', async () => {

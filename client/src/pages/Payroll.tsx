@@ -7,7 +7,7 @@ import { useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
 import { staffAccountOptionsUrl } from '../api/staffAccountOptions';
 import type { StaffAccountOption } from '../api/staffAccountOptions';
-import { hours, localTime, money, payrollRequestId } from '../components/payroll/types';
+import { approvedPaidMillis, hours, localTime, money, payrollRequestId } from '../components/payroll/types';
 import type { ClockSession, Details, Preview } from '../components/payroll/types';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
 import PayCalculation from '../components/payroll/PayCalculation';
@@ -23,6 +23,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0); const [tab, setTab] = useState('pay'); const [dirty, setDirty] = useState(false); const [formTurn, setFormTurn] = useState(0);
   const [preview, setPreview] = useState<Preview | null>(null); const [snapshot, setSnapshot] = useState<{ sourceChanged: boolean; preview: Preview } | null>(null);
   const [correction, setCorrection] = useState<ClockSession | null>(null);
+  const [returningDays, setReturningDays] = useState<Record<string, boolean>>({});
   const [targetDay, setTargetDay] = useState('');
   const dayPanels = useRef(new Map<string, HTMLDetailsElement>());
   const correctionPanel = useRef<HTMLFormElement | null>(null);
@@ -68,7 +69,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   function choose(next: string, date = '') {
     if (next === tab && !date) return;
     if (busy || dirty && !window.confirm('Discard the unsaved payroll form changes?')) return;
-    snapshotLoad.current?.abort(); setTab(next); setTargetDay(date); setDirty(false); setFormTurn(n => n + 1);
+    snapshotLoad.current?.abort(); setTab(next); setTargetDay(date); setDirty(false); setReturningDays({}); setFormTurn(n => n + 1);
     const incomplete = next === 'time' && data?.ledger.days.some(day => day.date === date && day.incomplete);
     setCorrection(incomplete && data ? data.ledger.sessions.find(session => !session.voided && !session.end && today(data.ledger.timeZone, new Date(session.start)) <= date) || null : null);
   }
@@ -99,7 +100,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
     <h3>{result.canFinalize ? 'Gross pay before taxes' : 'Estimated subtotal'}: {money(result.grossCents, result.currency || 'USD')}</h3>
     <p>Gross only. Payment has not been executed. Taxes and withholding are not calculated.</p>
     {result.blockers.length > 0 && <div role="alert"><strong>Resolve before finalizing</strong><ul>{result.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
-    <div className="payroll-calculation-days">{result.rows.map(row => <article className="payroll-calculation-day" key={row.date}><h3>{row.date}</h3><dl className="payroll-grid"><div><dt>Clocked hours</dt><dd>{hours(row.rawMillis)}</dd></div><div><dt>Approved hours</dt><dd>{row.approval?.status === 'approved' ? hours(row.approval.regularMillis + row.approval.overtimeMillis + row.approval.doubleMillis) : 'Not approved'}</dd></div><div><dt>Hourly rate</dt><dd>{row.rate ? money(row.rate.cents, row.rate.currency) : 'Missing'}</dd></div><div><dt>Gross pay</dt><dd>{money(row.grossCents, row.rate?.currency || 'USD')}</dd></div></dl></article>)}</div></>;
+    <div className="payroll-calculation-days">{result.rows.map(row => <article className="payroll-calculation-day" key={row.date}><h3>{row.date}</h3><dl className="payroll-grid"><div><dt>Clocked hours</dt><dd>{hours(row.rawMillis)}</dd></div><div><dt>Approved hours</dt><dd>{row.approval?.status === 'approved' ? hours(approvedPaidMillis(row.approval)) : 'Not approved'}</dd></div><div><dt>Hourly rate</dt><dd>{row.rate ? money(row.rate.cents, row.rate.currency) : 'Missing'}</dd></div><div><dt>Gross pay</dt><dd>{money(row.grossCents, row.rate?.currency || 'USD')}</dd></div></dl></article>)}</div></>;
   return <><section><h2>{data.staff.name}</h2><p>{data.staff.active ? 'Active employee' : 'Inactive employee — records retained'}</p>
     {data.missingDocuments.length > 0 && <p className="payroll-note">Missing payroll documents: {data.missingDocuments.join(', ')}</p>}
     <nav className="payroll-menu" aria-label="Payroll sections"><button className="payroll-primary" disabled={busy} aria-pressed={tab === 'pay'} onClick={() => choose('pay')}>Calculate pay</button>
@@ -118,8 +119,8 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
       <p>Private identifiers are masked. Leave replacements blank to keep stored values.</p>
       {(['taxId','bankAccount','routingNumber'] as const).map(key => <div key={key}><label>{key === 'taxId' ? 'Employee SSN (optional)' : key === 'bankAccount' ? 'Bank account' : 'Routing number'}<input name={key} autoComplete="off" type="password" maxLength={100} placeholder={profile[key] || 'Not stored'} /></label><label className="payroll-check"><input name={'clear-' + key} type="checkbox" />Clear stored {key === 'taxId' ? 'tax identifier' : key === 'bankAccount' ? 'bank account' : 'routing number'}</label></div>)}
       <label>Required payroll document names, one per line<textarea name="requiredDocuments" defaultValue={profile.requiredDocuments.join('\n')} /></label>
-      <p>Set approved start/end times and review clocked time in <Link to="/staff/work-time" className="ska-link">Work time</Link>.</p><details ref={policyPanel}><summary>Advanced payroll settings</summary><h3>Payroll policy review</h3><p>Scheduled time is a planning reference, never an automatic cap. Workdays run midnight to midnight in the facility time zone; choose Other rules if your defined workday differs. Check-in and checkout times are retained without automatic rounding or deductions. Administrators review actual work, daily/weekly/seventh-day overtime and any premium or adjustment.</p>
-      <label>Rule set<select name="mode" defaultValue={profile.rules.mode}><option value="ca-standard">California standard non-exempt review</option><option value="external-review">Other rules — payroll provider review required</option></select></label>
+      <p>Set approved start/end times and review clocked time in <Link to="/staff/work-time" className="ska-link">Work time</Link>.</p><details ref={policyPanel}><summary>Advanced payroll settings</summary><h3>Payroll policy review</h3><p>Scheduled time is a planning reference, never an automatic cap. Workdays run midnight to midnight in the facility time zone; choose Other rules if your defined workday differs. Check-in and checkout times are retained without automatic rounding or deductions. Administrators review actual work, overtime and any additional pay or adjustment. No pay multiplier is chosen automatically.</p>
+      <label>Rule set<select name="mode" defaultValue={profile.rules.mode}><option value="ca-standard">Manual overtime review</option><option value="external-review">Other rules — payroll provider review required</option></select></label>
       <div className="payroll-grid"><label>Workweek starts<select name="workweekStart" defaultValue={profile.rules.workweekStart}>{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day,i) => <option key={day} value={i}>{day}</option>)}</select></label></div>
       <label>Payroll policy review notes<textarea name="reference" defaultValue={profile.rules.reference} /></label>
       <label className="payroll-check"><input name="confirmed" type="checkbox" defaultChecked={profile.rules.confirmed} />The applicable classification, workweek, overtime, premiums and adjustments have been reviewed.</label><p className="ska-muted">Set up once with your payroll provider or the person who handles payroll. Note who checked these settings and which policy was used.</p></details>
@@ -131,9 +132,17 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
       </fieldset></form></>}
     {tab === 'time' && <><h2>Work time and daily approvals</h2><p>{ledger.timeZone}. Clocked and approved hours are separate. Missing checkout is unresolved time, never zero pay.</p>
       {ledger.days.map(day => <details key={day.date} className="payroll-workday" data-payroll-date={day.date} ref={node => { if (node) dayPanels.current.set(day.date, node); else dayPanels.current.delete(day.date); }}><summary>{day.date} · {hours(day.rawMillis)} clocked hours · {hours(day.paidMillis)} paid hours · {day.approval?.status || 'Not approved'}{day.incomplete ? ' · INCOMPLETE' : ''}</summary>
-        <form onSubmit={event => submit(event, fields => void operation('approvals', { version: ledger.version, date: day.date, status: value(fields,'status'), regularMillis: asMillis(fields,'regular'), overtimeMillis: asMillis(fields,'overtime'), doubleMillis: asMillis(fields,'double'), adjustmentCents: Math.round(Number(value(fields,'adjustment')) * 100), rulesReviewed: fields.has('reviewed'), reason: value(fields,'reason') }))}><fieldset disabled={busy}>
-          <div className="payroll-grid">{field('Regular paid hours','regular',String((day.approval?.regularMillis ?? day.paidMillis)/3600000),'number',true)}{field('Overtime hours at 1.5×','overtime',String((day.approval?.overtimeMillis ?? 0)/3600000),'number',true)}{field('Double-time hours','double',String((day.approval?.doubleMillis ?? 0)/3600000),'number',true)}{field('Premium / adjustment amount','adjustment',String((day.approval?.adjustmentCents ?? 0)/100),'number',true)}</div>
-          <label>Decision<select name="status"><option value="approved">Approve paid hours</option><option value="returned">Return for correction</option></select></label><label className="payroll-check"><input name="reviewed" type="checkbox" defaultChecked={day.approval?.rulesReviewed} />I reviewed actual work, overtime and adjustments for this date.</label>
+        <p>Actual recorded time: {hours(day.paidMillis)} hours. Proposed paid time: {hours(day.review?.suggestedPaidMillis ?? day.paidMillis)} hours.</p>
+        <form onSubmit={event => submit(event, fields => void operation('approvals', {
+          version: ledger.version, profileVersion: profile.version, date: day.date, status: value(fields,'status'), mode: 'manual-reviewed',
+          paidMillis: asMillis(fields,'paid'), premiumCents: Math.round(Number(value(fields,'premium')) * 100),
+          adjustmentCents: Math.round(Number(value(fields,'adjustment')) * 100), rulesReviewed: fields.has(day.review?.requiresOvertimeReview ? 'overtimeReviewed' : 'reviewed'),
+          overtimeReviewed: fields.has('overtimeReviewed'), reason: value(fields,'reason'),
+        }))}><fieldset disabled={busy}>
+          <div className="payroll-grid">{field('Paid hours','paid',String((day.approval?.mode === 'manual-reviewed' && day.approval.status === 'approved' ? approvedPaidMillis(day.approval) : day.review?.suggestedPaidMillis ?? day.paidMillis)/3600000),'number',true)}{field('Additional pay ($)','premium',day.approval?.mode === 'manual-reviewed' ? String((day.approval.premiumCents ?? 0)/100) : day.review?.requiresOvertimeReview ? '' : '0','number',!returningDays[day.date])}{field('Premium / adjustment amount','adjustment',String((day.approval?.adjustmentCents ?? 0)/100),'number',true)}</div>
+          <p>Enter any overtime or other additional pay as an explicit amount. The app does not apply an overtime multiplier. Recorded work is never reduced automatically.</p>
+          <label>Decision<select name="status" value={returningDays[day.date] ? 'returned' : 'approved'} onChange={event => setReturningDays(previous => ({ ...previous, [day.date]: event.target.value === 'returned' }))}><option value="approved">Approve paid hours</option><option value="returned">Return for correction</option></select></label>{!day.review?.requiresOvertimeReview && <label className="payroll-check"><input name="reviewed" type="checkbox" required={!returningDays[day.date]} disabled={returningDays[day.date]} />I reviewed actual work and paid hours for this date.</label>}
+          {day.review?.requiresOvertimeReview && <label className="payroll-check"><input name="overtimeReviewed" type="checkbox" required={!returningDays[day.date]} disabled={returningDays[day.date]} />I reviewed overtime and additional pay for this date.</label>}
           {field('Approval / return reason, including any difference from clocked time','reason',day.approval?.reason || '','text',true)}<button>Save daily decision</button>
         </fieldset></form>
       </details>)}
@@ -146,7 +155,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
       <PayCalculation data={data} busy={busy} dirty={dirty} onDirty={next => { setDirty(next); if (next) clearResults(); }} onPeriodChange={clearResults} onSection={choose}
         onSave={(path, body) => operation(path, body)} onCalculate={period => { snapshotRequest.current = payrollRequestId(); clearResults(); void operation('preview', period, result => setPreview(result as Preview), false); }} />
       <div ref={resultPanel} className="payroll-result">{preview && <>{renderPreview(preview)}<button disabled={busy || dirty || !preview.canFinalize} onClick={() => void saveCalculation()}>Save calculation</button></>}
-      {snapshot && <>{snapshot.sourceChanged && <p role="alert">Source records changed after this snapshot. This historical calculation is retained unchanged; review a correction with your payroll provider.</p>}{renderPreview(snapshot.preview)}</>}
+      {snapshot && <>{snapshot.sourceChanged && <p role="alert">Source records or calculation rules changed after this snapshot. This historical calculation is retained unchanged; review a correction with your payroll provider.</p>}{renderPreview(snapshot.preview)}</>}
       </div>
       <h3>Saved calculation snapshots</h3><ul>{data.snapshots.map(row => <li key={row.id}>{row.start}–{row.end} · {money(row.grossCents,row.currency)} · {row.at}<button disabled={busy || dirty} onClick={() => openSnapshot(row.id)}>Open calculation snapshot</button></li>)}</ul>
     </>}

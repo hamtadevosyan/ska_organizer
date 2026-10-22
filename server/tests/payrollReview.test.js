@@ -40,7 +40,7 @@ async function setup({ hours = 3, rate = true, policy = true, schedule, arrival 
 }
 async function approve(admin, id, values = {}) {
   const detail = await service.get(admin, id), day = detail.ledger.days[0];
-  await service.approve(admin, id, { version: detail.ledger.version, date: day.date, status: 'approved', regularMillis: day.paidMillis, overtimeMillis: 0, doubleMillis: 0, adjustmentCents: 0, rulesReviewed: true, reason: 'Synthetic verified approval', ...values });
+  await service.approve(admin, id, { version: detail.ledger.version, profileVersion: detail.profile.version, date: day.date, status: 'approved', mode: 'manual-reviewed', paidMillis: day.paidMillis, premiumCents: 0, overtimeReviewed: true, adjustmentCents: 0, rulesReviewed: true, reason: 'Synthetic verified administrator additional-pay review', ...values });
 }
 const row = async ({ admin, person }) => (await service.get(admin, person.id)).ledger.days[0];
 
@@ -69,8 +69,10 @@ test('a short day outside approved start/end times explains both its cause and o
   const work = (await service.workTime(context.admin)).items[0];
   await service.reviewWork(context.admin, context.person.id, { version: work.version, date: work.date, decision: 'worked', reason: 'Verified early work' });
   const reviewed = await row(context);
-  expect(reviewed.review.state).toBe('awaiting-approval');
-  expect(reviewed.review.canApproveRecorded).toBe(true);
+  expect(reviewed.review.state).toBe('needs-attention');
+  expect(reviewed.review.canApproveRecorded).toBe(false);
+  expect(reviewed.review.requiresOvertimeReview).toBe(true);
+  expect(reviewed.review.reasons).toContainEqual(expect.objectContaining({code:'OVERTIME_REVIEW'}));
   expect(reviewed.review.workTime).toMatchObject({ status: 'confirmed', checkin: day.review.workTime.checkin, checkout: day.review.workTime.checkout });
   expect(reviewed.paidMillis).toBe(day.paidMillis);
 });
@@ -92,37 +94,29 @@ test('a changed payroll policy uses the same stale-approval explanation as calcu
   const issue = preview.rows[0].issues.find(message => message.includes('policy changed'));
   expect(day.review).toMatchObject({ state: 'needs-attention', canApproveRecorded: false });
   expect(day.review.reasons).toContainEqual({ code: 'POLICY_CHANGED', message: issue, action: 'time' });
-  expect(day.review.reasons).toContainEqual({ code: 'WORKWEEK_APPROVALS', date: day.date, action: 'time', message: expect.stringContaining(day.date + ' (payroll policy changed)') });
 });
 test('daily overtime is visible before allocation and a valid approved allocation stays approved', async () => {
   const context = await setup({ hours: 9 });
   let day = await row(context);
-  expect(day.review.reasons).toContainEqual({ code: 'DAILY_OVERTIME', message: expect.stringContaining('9 hr'), action: 'time' });
+  expect(day.review.reasons).toContainEqual({ code: 'OVERTIME_REVIEW', message: expect.stringContaining('9 hr'), action: 'time' });
   const work = (await service.workTime(context.admin)).items[0];
   await service.reviewWork(context.admin, context.person.id, { version: work.version, date: work.date, decision: 'worked', reason: 'Verified all recorded work' });
-  await approve(context.admin, context.person.id, { regularMillis: 8 * HOUR, overtimeMillis: HOUR, adjustmentCents: 100 });
+  await approve(context.admin, context.person.id, { paidMillis: 9 * HOUR, premiumCents: 100 });
   day = await row(context);
   expect(day.review).toMatchObject({ state: 'approved', reasons: [], canApproveRecorded: false });
 });
-test('an approved day points to the actual unapproved and incomplete workweek dates', async () => {
+test('later unapproved or unfinished workdays do not reopen an earlier ordinary approval', async () => {
   const context = await setup(); await approve(context.admin, context.person.id);
   jest.setSystemTime(new Date('2026-10-20T15:00:00Z')); await clock(context.teacher, 'checkin');
   jest.setSystemTime(new Date('2026-10-20T17:00:00Z')); await clock(context.teacher, 'checkout');
   jest.setSystemTime(new Date('2026-10-21T15:00:00Z')); await clock(context.teacher, 'checkin');
-  const days = (await service.get(context.admin, context.person.id)).ledger.days, day = days[0];
-  expect(day.date).toBe('2026-10-19'); expect(day.approval.status).toBe('approved');
-  expect(day.review.reasons).toContainEqual({
-    code: 'WORKWEEK_APPROVALS', action: 'time', date: '2026-10-20',
-    message: 'Recorded days in this workweek still need review: 2026-10-20 (not approved), 2026-10-21 (missing checkout). Review those dates before calculating.',
-  });
-  expect(day.review.reasons.find(reason => reason.code === 'WORKWEEK_APPROVALS').message).not.toContain('2026-10-19');
-  expect(days[1].approval).toBeNull();
-  expect(days[1].review.reasons).toContainEqual({
-    code: 'WORKWEEK_CHECKOUT', action: 'time', date: '2026-10-21',
-    message: 'Checkout is missing on these workweek dates: 2026-10-21. Record the actual departures before reviewing overtime.',
-  });
+  const days = (await service.get(context.admin, context.person.id)).ledger.days;
+  expect(days[0].date).toBe('2026-10-19');
+  expect(days[0].review).toMatchObject({ state: 'approved', reasons: [] });
+  expect(days[1].review).toMatchObject({ state: 'awaiting-approval' });
+  expect(days[2].review.reasons).toEqual(expect.arrayContaining([expect.objectContaining({code:'MISSING_CHECKOUT'})]));
 });
-test('weekly and seventh-day review causes are visible even when the selected day has a short shift', async () => {
+test('weekly and seventh-day review apply to the affected later workday without reopening earlier short work', async () => {
   const context = await setup({ hours: 1 });
   for (let date = 20; date <= 25; date++) {
     jest.setSystemTime(new Date(`2026-10-${date}T15:00:00Z`));
@@ -130,13 +124,11 @@ test('weekly and seventh-day review causes are visible even when the selected da
     jest.setSystemTime(new Date(Date.now() + 8 * HOUR));
     await clock(context.teacher, 'checkout');
   }
-  const day = await row(context);
-  expect(day.paidMillis).toBe(HOUR);
-  expect(day.review).toMatchObject({ state: 'needs-attention', canApproveRecorded: false });
-  expect(day.review.reasons).toEqual(expect.arrayContaining([
-    { code: 'WEEKLY_OVERTIME', message: expect.stringContaining('49 hr'), action: 'time' },
-    { code: 'SEVENTH_DAY', message: expect.stringContaining('all seven days'), action: 'time' },
-  ]));
+  const days = (await service.get(context.admin, context.person.id)).ledger.days;
+  expect(days[0].review).toMatchObject({state:'awaiting-approval', requiresOvertimeReview:false});
+  const day = days.at(-1);
+  expect(day.review).toMatchObject({state:'needs-attention', canApproveRecorded:false, requiresOvertimeReview:true});
+  expect(day.review.reasons).toContainEqual({code:'OVERTIME_REVIEW',message:expect.stringMatching(/49 hr.*seventh recorded workday/),action:'time'});
 });
 test.each(['editor', 'viewer', 'teacher'])('%s cannot read private per-day payroll explanations', async role => {
   const context = await setup(), value = await actor(role);

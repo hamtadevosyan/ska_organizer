@@ -6,7 +6,7 @@ async function data<T>(response: APIResponse, status = 200): Promise<T> { expect
 type Http = Awaited<ReturnType<typeof authenticatedApi>>;
 type PayReviewDetail = {
   profile: { version: number; rules: { mode: string; workweekStart: number; confirmed: boolean; reference: string; dailyScheduledMinutes: number } };
-  ledger: { days: { date: string; review: { state: string; reasons: { code: string; message: string; action: string }[] } }[] };
+  ledger: { days: { date: string; review: { state: string; requiresOvertimeReview?: boolean; reasons: { code: string; message: string; action: string }[] } }[] };
 };
 async function configurePay(http: Http, staffId: string) {
   const base = api + '/payroll/staff/' + staffId;
@@ -141,6 +141,43 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
       paidMillis: day.paidMillis, outsideMillis: day.outsideMillis, status: 'confirmed',
       reason: 'Manager verified the actual work outside the approved window',
     });
+    // Operational confirmation by an editor cannot approve overtime pay for an administrator.
+    const needsAdminReview = await data<PayReviewDetail>(await http.get(api + '/payroll/staff/' + employee.id));
+    expect(needsAdminReview.ledger.days.find(item => item.date === initial.today)?.review.requiresOvertimeReview).toBe(true);
+    await page.goto('/staff/payroll');
+    await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(employee.id);
+    await page.getByLabel('Pay period start', { exact: true }).fill(initial.today);
+    await page.getByLabel('Pay period end', { exact: true }).fill(initial.today);
+    const manualCard = page.getByRole('article', { name: 'Pay review for ' + initial.today, exact: true });
+    const premium = manualCard.getByLabel('Additional pay for ' + initial.today + ' ($)', { exact: true });
+    const approval = manualCard.getByRole('button', { name: 'Approve reviewed pay for ' + initial.today, exact: true });
+    await expect(premium).toHaveValue('');
+    await expect(manualCard.getByLabel('I reviewed overtime and additional pay for ' + initial.today + '.', { exact: true })).not.toBeChecked();
+    await expect(page.getByLabel(/Overtime hours at 1\.5/)).toHaveCount(0);
+    await expect(page.getByLabel('Double-time hours', { exact: true })).toHaveCount(0);
+    const approvalWrites: unknown[] = [];
+    page.on('request', request => { if (request.method() === 'POST' && request.url() === api + '/payroll/staff/' + employee.id + '/approvals') approvalWrites.push(request.postDataJSON()); });
+    await approval.click();
+    expect(approvalWrites).toHaveLength(0);
+    await premium.fill('12.34');
+    await manualCard.getByLabel('Pay review reason for ' + initial.today, { exact: true }).fill('Administrator explicitly reviewed the outside work and entered this additional amount');
+    await expect(manualCard.getByLabel('I checked the hours and overtime for ' + initial.today + '.', { exact: true })).toHaveCount(0);
+    await approval.click();
+    expect(approvalWrites).toHaveLength(0);
+    await manualCard.getByLabel('I reviewed overtime and additional pay for ' + initial.today + '.', { exact: true }).check();
+    const savedApproval = page.waitForResponse(response => response.url() === api + '/payroll/staff/' + employee.id + '/approvals' && response.request().method() === 'POST');
+    await approval.click();
+    expect((await savedApproval).status()).toBe(200);
+    expect(approvalWrites).toEqual([expect.objectContaining({ mode: 'manual-reviewed', paidMillis: day.paidMillis, premiumCents: 1234, overtimeReviewed: true })]);
+    const savedPay = await data<{ ledger: { days: { date: string; paidMillis: number; approval: { mode: string; paidMillis: number; premiumCents: number; overtimeReviewed: boolean }; review: { state: string } }[] } }>(await http.get(api + '/payroll/staff/' + employee.id));
+    expect(savedPay.ledger.days.find(item => item.date === initial.today)).toMatchObject({
+      paidMillis: day.paidMillis, approval: { mode: 'manual-reviewed', paidMillis: day.paidMillis, premiumCents: 1234, overtimeReviewed: true }, review: { state: 'approved' },
+    });
+    await page.getByRole('button', { name: 'Calculate gross pay', exact: true }).click();
+    const expectedCents = Math.round(day.paidMillis / 3600000 * 2000) + 1234;
+    const expectedMoney = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(expectedCents / 100);
+    await expect(page.getByRole('heading', { name: 'Gross pay before taxes: ' + expectedMoney, exact: true })).toBeVisible();
+    expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
     expect(await editor.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
   } finally { await editorContext.close(); await teacherContext.close(); }
 });
@@ -238,11 +275,9 @@ test('editor receives a home reminder and corrects a verified late clockout with
   const payCard=page.getByRole('article',{name:'Pay review for 2026-09-22',exact:true});
   await expect(payCard.getByText('Needs attention',{exact:true})).toBeVisible();
   await expect(payCard.getByText(overtimeReason.message,{exact:true})).toBeVisible();
-  await payCard.getByRole('button',{name:'Review overtime and adjustments for 2026-09-22',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Work time and daily approvals',exact:true})).toBeVisible();
-  await expect(page.locator('details.payroll-workday[open]')).toHaveCount(1);
-  await expect(page.locator('details.payroll-workday[open]>summary')).toContainText('2026-09-22');
-  await expect(page.getByLabel('Regular paid hours',{exact:true})).toBeVisible();
+  await expect(payCard.getByRole('link',{name:'Review outside time for 2026-09-22',exact:true})).toBeVisible();
+  await expect(page.getByLabel(/Overtime hours at 1\.5/)).toHaveCount(0);
+  await expect(page.getByLabel('Double-time hours',{exact:true})).toHaveCount(0);
   await login('editor');await other.goto('/dashboard');await expect(other.getByRole('region',{name:'Extra employee time reminders'})).toContainText('needs extra-time review');await other.getByRole('link',{name:'Review work time',exact:true}).click();
   await expect(other).toHaveURL(/\/staff\/work-time$/);
   const sections=other.getByRole('navigation',{name:'Staff sections'});
@@ -254,5 +289,18 @@ test('editor receives a home reminder and corrects a verified late clockout with
   await other.getByText('Correct a late clock-out mistake',{exact:true}).click();await other.getByLabel('Actual work ended at (America/Los_Angeles)',{exact:true}).fill('16:00:00');await other.getByLabel('Clock correction reason',{exact:true}).fill('Verified employee stopped work at 4 PM and forgot to clock out');await other.getByLabel('I verified no work was performed after this time.',{exact:true}).check();await other.getByRole('button',{name:'Save verified clock correction',exact:true}).click();
   await expect(other.getByText('No extra time is waiting for review.',{exact:true})).toBeVisible();expect(await other.locator('main').evaluate(e=>e.scrollWidth)).toBeLessThanOrEqual(391);
   const result=await data<{ledger:{sessions:{end:string}[];history:{type:string;before?:{end:string}}[]}}>(await http.get(base));expect(result.ledger.sessions[0].end).toBe('2026-09-22T23:00:00.000Z');expect(result.ledger.history.some(h=>h.type==='clock-error-review'&&h.before?.end==='2026-09-23T00:00:00.000Z')).toBe(true);
+  await page.reload();
+  await page.getByRole('combobox',{name:'Payroll employee',exact:true}).selectOption(employee.id);
+  await page.getByLabel('Pay period start',{exact:true}).fill('2026-09-22');await page.getByLabel('Pay period end',{exact:true}).fill('2026-09-22');
+  const correctedPayCard=page.getByRole('article',{name:'Pay review for 2026-09-22',exact:true});
+  await expect(correctedPayCard.getByText('Awaiting approval',{exact:true})).toBeVisible();
+  await correctedPayCard.getByText('Change paid hours or add an adjustment',{exact:true}).click();
+  await correctedPayCard.getByRole('button',{name:'Open detailed approval for 2026-09-22',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Work time and daily approvals',exact:true})).toBeVisible();
+  await expect(page.locator('details.payroll-workday[open]')).toHaveCount(1);
+  await expect(page.locator('details.payroll-workday[open]>summary')).toContainText('2026-09-22');
+  await expect(page.getByLabel('Paid hours',{exact:true})).toBeVisible();
+  await expect(page.getByLabel(/Overtime hours at 1\.5/)).toHaveCount(0);
+  await expect(page.getByLabel('Double-time hours',{exact:true})).toHaveCount(0);
  }finally{await context.close();}
 });
