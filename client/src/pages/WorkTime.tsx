@@ -103,7 +103,7 @@ function ClockComparison({ row, zone }: { row: WorkDay; zone: string }) {
 function ShortDayWarnings({ warnings }: { warnings: ShortDayWarning[] }) {
   if (!warnings.length) return null;
   return <section aria-label="Short workday warnings" className="payroll-note"><h2>Short workday warnings</h2>
-    <p>Three or more completed short days in one workweek need your attention. Paid credits do not change the actual time used for this warning.</p>
+    <p>Two or more completed short days in one workweek need your attention. Paid credits do not change the actual time used for this warning.</p>
     <ul>{warnings.map(warning => <li key={warning.staffId + ':' + warning.weekStart}><strong>{warning.name}: {warning.count} short days</strong><p>Week of {warning.weekStart} · {warning.dates.join(', ')}</p><Link className="ska-link" to={'/staff/work-time?staff=' + encodeURIComponent(warning.staffId)}>Review short workdays for {warning.name}</Link></li>)}</ul>
   </section>;
 }

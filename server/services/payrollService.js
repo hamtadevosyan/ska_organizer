@@ -63,10 +63,26 @@ function shortDayGroups(rows, rules) {
   return groups;
 }
 function shortDayWarnings(staff, rows, rules, start, end) {
-  return [...shortDayGroups(rows, rules).values()].filter(group => group.dates.length > 2 && (!start || group.weekEnd >= start) && (!end || group.weekStart <= end)).map(group => ({
+  return [...shortDayGroups(rows, rules).values()].filter(group => group.dates.length > 1 && (!start || group.weekEnd >= start) && (!end || group.weekStart <= end)).map(group => ({
     staffId: staff.id, name: staff.name, weekStart: group.weekStart, weekEnd: group.weekEnd, count: group.dates.length, dates: group.dates,
     ...(group.planned.size === 1 ? { plannedMinutes: [...group.planned][0] } : {}),
   }));
+}
+function roundingReview(day, work, rows, rules) {
+  const credit = math.scheduledPayCredit(day, work), context = math.overtimeContext(day, [], rules);
+  const shortDates = shortDayGroups(rows, rules).get(context.weekStart)?.dates || [];
+  const shortDayOrdinal = shortDates.includes(day.date) ? shortDates.filter(date => date <= day.date).length : 0;
+  const requiresRoundingReview = credit.roundingCreditMillis > 0 && (!credit.eligible || shortDayOrdinal > 1);
+  const fingerprint = math.hash({ policy: 'whole-hour-round-up-v1', date: day.date, paidMillis: day.paidMillis,
+    sessionIds: day.sessionIds, incomplete: day.incomplete, suggestedPaidMillis: credit.suggestedPaidMillis,
+    plannedStart: work?.plannedStart, plannedEnd: work?.plannedEnd, plannedMinutes: work?.plannedMinutes,
+    outsideMillis: work?.outsideMillis, scheduleIssue: work?.scheduleIssue, workweekStart: context.weekStart, shortDayOrdinal });
+  const approval = day.approval;
+  const current = approval?.status === 'approved' && approval.rulesReviewed &&
+    (approval.paidMillis ?? approval.regularMillis) >= credit.suggestedPaidMillis && approval.roundingFingerprint === fingerprint;
+  const belowProposal = approval?.status === 'approved' && (approval.paidMillis ?? approval.regularMillis) < credit.suggestedPaidMillis;
+  return { ...credit, requiresRoundingReview, shortDayOrdinal, fingerprint,
+    pending: !day.incomplete && (belowProposal || requiresRoundingReview && !current) };
 }
 function overtimeReview(day, days, work, rules, rates) {
   const context = math.overtimeContext(day, days, rules);
@@ -89,7 +105,7 @@ async function payrollReviewDays(staffId, ledger, profile, days) {
     const reasons = [], approval = day.approval, work = workByDate.get(day.date), preview = previewByDate.get(day.date);
     const add = (code, message, action, date) => { if (!reasons.some(reason => reason.code === code && reason.message === message)) reasons.push({ code, message, action, ...(date ? { date } : {}) }); };
     const review = overtimeReview(day, days, work, rules, profile.rates);
-    const credit = math.scheduledPayCredit(day, work);
+    const credit = roundingReview(day, work, workRowsForStaff, rules);
     const week = days.filter(row => row.date >= review.weekStart && row.date <= review.weekEnd);
     if (day.incomplete) add('MISSING_CHECKOUT', 'Checkout is missing. Record the actual departure before approving this day.', 'time');
     if (!rules.confirmed || !rules.reference.trim()) add('POLICY_UNCONFIRMED', 'The employee\'s payroll rules have not been reviewed and confirmed.', 'profile');
@@ -98,6 +114,10 @@ async function payrollReviewDays(staffId, ledger, profile, days) {
     else if (preview.rate.currency !== 'USD') add('CURRENCY_UNSUPPORTED', 'The saved hourly rate uses ' + preview.rate.currency + '. This calculator supports USD; review the rate or use your payroll provider.', 'rates');
     if (approval?.status === 'returned') add('APPROVAL_RETURNED', 'Returned for correction: ' + approval.reason, 'time');
     if (approval?.status === 'needs-review') add('CLOCK_CHANGED', 'Clock records changed after approval. Review the updated recorded time and approve this day again.', 'time');
+    if (credit.pending) {
+      const cause = credit.eligible && credit.shortDayOrdinal > 1 ? ' Short workdays have repeated this week. Please review this day.' : credit.eligible ? ' Update the earlier paid-hours decision.' : ' No matching approved daily schedule is available for this day.';
+      add('ROUNDING_REVIEW', 'Review rounding from ' + readableDuration(day.paidMillis) + ' to ' + readableDuration(credit.suggestedPaidMillis) + ' paid time.' + cause, 'approve');
+    }
     if (work?.status === 'pending') {
       if (work.scheduleIssue) add('SCHEDULE_ISSUE', work.scheduleIssue, 'work-time');
       else if (work.plannedStart && work.plannedEnd) {
@@ -116,7 +136,7 @@ async function payrollReviewDays(staffId, ledger, profile, days) {
     const missingCheckouts = review.requiresOvertimeReview ? week.filter(row => row.incomplete && row.date < day.date) : [];
     if (missingCheckouts.length) add('WORKWEEK_CHECKOUT', 'Checkout is missing on these workweek dates: ' + missingCheckouts.map(row => row.date).join(', ') + '. Record the actual departures before reviewing overtime.', 'time', missingCheckouts[0].date);
     for (const message of preview.issues) {
-      if (['Missing checkout.', 'Daily paid time is not approved.', 'No effective hourly rate.'].includes(message) || message.startsWith('Overtime needs explicit')) continue;
+      if (['Missing checkout.', 'Daily paid time is not approved.', 'No effective hourly rate.'].includes(message) || message.startsWith('Overtime needs explicit') || message.startsWith('Paid time needs rounding review.')) continue;
       if (message === 'The complete workweek needs approved time for overtime review.') {
         const unresolved = week.filter(row => row.incomplete || row.approval?.status !== 'approved' || row.approval.rulesFingerprint !== rulesFingerprint);
         const dates = unresolved.map(row => row.date + ' (' + (row.incomplete ? 'missing checkout' : row.approval?.status !== 'approved' ? 'not approved' : 'payroll policy changed') + ')');
@@ -131,6 +151,7 @@ async function payrollReviewDays(staffId, ledger, profile, days) {
     const workTime = work ? Object.fromEntries(['plannedStart', 'plannedEnd', 'plannedMinutes', 'hasCapturedAllowance', 'scheduleTimeZone', 'timeZone', 'checkin', 'checkout', 'earlyMillis', 'lateMillis', 'outsideMillis', 'status', 'reason', 'scheduleIssue'].map(key => [key, work[key]])) : undefined;
     return { ...day, review: { state: attention ? 'needs-attention' : approval?.status === 'approved' ? 'approved' : 'awaiting-approval', reasons, canApproveRecorded, workTime,
       suggestedPaidMillis: credit.suggestedPaidMillis, scheduledCreditMillis: credit.scheduledCreditMillis,
+      roundingCreditMillis: credit.roundingCreditMillis, requiresRoundingReview: credit.requiresRoundingReview, shortDayOrdinal: credit.shortDayOrdinal,
       requiresOvertimeReview: review.requiresOvertimeReview, shortDayCount: shortGroups.get(review.weekStart)?.dates.length || 0, workweekStart: review.weekStart } };
   });
 }
@@ -232,8 +253,9 @@ exports.approve = (token, staffId, payload) => authorized(token, true, async act
   const days = math.daily(ledger.data), day = days.find(row => row.date === date); if (!day) throw auth.problem('No time records exist on this day.', 404);
   if (!['approved', 'returned'].includes(payload.status) || typeof payload.rulesReviewed !== 'boolean') throw auth.problem('Choose approved or returned and confirm the daily rule review.');
   if (payload.status === 'approved' && day.incomplete) throw auth.problem('Record the missing checkout before approving.', 409);
-  const profile = await read('profile', staffId), work = (await workRows(staffId, ledger, date, date))[0];
-  const review = overtimeReview(day, days, work, profile.data.rules, profile.data.rates), credit = math.scheduledPayCredit(day, work);
+  const profile = await read('profile', staffId), context = math.overtimeContext(day, days, profile.data.rules);
+  const workWeek = await workRows(staffId, ledger, context.weekStart, context.weekEnd), work = workWeek.find(row => row.date === date);
+  const review = overtimeReview(day, days, work, profile.data.rules, profile.data.rates), credit = roundingReview(day, work, workWeek, profile.data.rules);
   const manual = payload.mode === 'manual-reviewed' || payload.paidMillis !== undefined;
   if (manual && payload.profileVersion !== profile.version) throw auth.problem('The employee pay setup changed. Refresh the profile, rate and overtime amount before saving.', 409, 'PAYROLL_CONFLICT');
   if (payload.mode !== undefined && payload.mode !== 'manual-reviewed') throw auth.problem('Use a manually reviewed paid-hours and additional-pay decision.');
@@ -245,6 +267,7 @@ exports.approve = (token, staffId, payload) => authorized(token, true, async act
   const overtimeReviewed = payload.overtimeReviewed === true;
   if (payload.status === 'approved' && review.requiresOvertimeReview && (!manual || !overtimeReviewed)) throw auth.problem('Overtime always needs administrator review. Enter the additional-pay amount explicitly and confirm the review.');
   if (payload.status === 'approved' && paidMillis < day.paidMillis) throw auth.problem('Paid hours cannot be below the actual recorded work. Correct a verified clock error first; actual work is never capped.');
+  if (payload.status === 'approved' && paidMillis < credit.suggestedPaidMillis) throw auth.problem('Approve at least ' + readableDuration(credit.suggestedPaidMillis) + ' of whole-hour paid time. Actual recorded work is kept unchanged.');
   const adjustmentCents = payload.adjustmentCents === undefined ? day.approval?.adjustmentCents || 0 : payload.adjustmentCents;
   if (!Number.isSafeInteger(adjustmentCents) || Math.abs(adjustmentCents) > 100000000) throw auth.problem('Approved time or adjustment is outside the supported range.');
   const approval = { mode: 'manual-reviewed', rulesFingerprint: math.hash(profile.data.rules), date, status: payload.status,
@@ -253,6 +276,9 @@ exports.approve = (token, staffId, payload) => authorized(token, true, async act
     // Preserve these keys for older readers without choosing a multiplier.
     regularMillis: paidMillis, overtimeMillis: 0, doubleMillis: 0, adjustmentCents,
     scheduledCreditMillis: credit.eligible && paidMillis === credit.suggestedPaidMillis ? credit.scheduledCreditMillis : 0,
+    roundingCreditMillis: paidMillis === credit.suggestedPaidMillis ? credit.roundingCreditMillis : 0,
+    roundingReviewed: payload.status === 'approved' && payload.rulesReviewed,
+    roundingFingerprint: credit.fingerprint,
     rulesReviewed: payload.rulesReviewed, reason: reason(payload.reason), ...stamp(actor) };
   if (approval.status === 'approved' && !approval.rulesReviewed) throw auth.problem('Review actual hours, overtime and adjustments first.');
   ledger.data.history.push({ type: 'approval', ...stamp(actor), reason: approval.reason, before: ledger.data.approvals[date] || null, after: approval }); ledger.data.approvals[date] = approval;
@@ -265,6 +291,10 @@ async function calculate(staffId, payload) {
   const result = math.preview(ledger.data, profile.data, start, end);
   const work = await workRows(staffId, ledger, start, end);
   for (const row of work) if (row.status === 'pending') result.blockers.push(row.date + ': Extra work time needs manager review in Work time.');
+  const days = math.daily(ledger.data), reviewDays = await payrollReviewDays(staffId, ledger, profile.data, days);
+  for (const day of reviewDays.filter(row => row.date >= start && row.date <= end)) {
+    for (const issue of day.review.reasons.filter(reason => reason.code === 'ROUNDING_REVIEW')) result.blockers.push(day.date + ': ' + issue.message);
+  }
   result.canFinalize = !result.blockers.length;
   return result;
 }

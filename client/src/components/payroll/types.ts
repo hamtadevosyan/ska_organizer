@@ -3,8 +3,8 @@ export type Approval = { status: string; regularMillis: number; overtimeMillis: 
  mode?: 'manual-reviewed'; paidMillis?: number; premiumCents?: number; overtimeReviewed?: boolean; scheduledCreditMillis?: number };
 export type PayReviewReason = { code: string; message: string; date?: string; action: 'approve' | 'time' | 'work-time' | 'rates' | 'profile' };
 export type PayDayReview = { state: 'awaiting-approval' | 'needs-attention' | 'approved'; reasons: PayReviewReason[]; canApproveRecorded: boolean;
-  suggestedPaidMillis?: number; scheduledCreditMillis?: number; requiresOvertimeReview?: boolean;
-  workTime?: { plannedStart: string | null; plannedEnd: string | null; plannedMinutes: number; scheduleTimeZone: string; timeZone?: string;
+  suggestedPaidMillis?: number; scheduledCreditMillis?: number; roundingCreditMillis?: number; requiresRoundingReview?: boolean; shortDayOrdinal?: number; requiresOvertimeReview?: boolean;
+  workTime?: { plannedStart: string | null; plannedEnd: string | null; plannedMinutes: number; hasCapturedAllowance?: boolean; scheduleTimeZone: string; timeZone?: string;
     checkin: string | null; checkout: string | null; earlyMillis: number; lateMillis: number; outsideMillis: number; status: string; reason: string; scheduleIssue: string | null } };
 export type Day = { date: string; rawMillis: number; unpaidMillis: number; paidMillis: number; incomplete: boolean; approval: Approval | null; review?: PayDayReview };
 export type Rate = { id: string; effectiveOn: string; cents: number; currency: string; reason: string; sequence: number };
@@ -17,6 +17,13 @@ export type Details = { shortDayWarnings?: ShortDayWarning[]; staff: { id: strin
  documents: { id: string; title: string; category: string; version: number; revisions: { revision: number; documentDate: string; filename: string; byteLength: number; at: string }[] }[]; missingDocuments: string[];
  snapshots: { id: string; start: string; end: string; at: string; grossCents: number; currency: string }[] };
 export const hours = (millis: number) => (millis / 3600000).toFixed(3);
+export const duration = (millis: number) => {
+  if (!Number.isFinite(millis) || millis < 0) return 'Not available';
+  if (millis > 0 && millis < 1000) return 'Less than 1 sec';
+  const totalSeconds = Math.floor(millis / 1000);
+  const values = [Math.floor(totalSeconds / 3600), Math.floor(totalSeconds % 3600 / 60), totalSeconds % 60];
+  return values.map((value, index) => value ? `${value} ${['hr', 'min', 'sec'][index]}` : '').filter(Boolean).join(' ') || '0 min';
+};
 export const approvedPaidMillis = (approval: Approval) => approval.mode === 'manual-reviewed' ? approval.paidMillis ?? approval.regularMillis : approval.regularMillis + approval.overtimeMillis + approval.doubleMillis;
 export const money = (cents: number | null, currency = 'USD') => cents === null ? 'Unresolved' : new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
 export const localTime = (instant: string | null, zone: string) => instant ? new Date(instant).toLocaleString('en-US', { timeZone: zone }) : 'Open';

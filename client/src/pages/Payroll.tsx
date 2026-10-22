@@ -7,7 +7,7 @@ import { useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
 import { staffAccountOptionsUrl } from '../api/staffAccountOptions';
 import type { StaffAccountOption } from '../api/staffAccountOptions';
-import { approvedPaidMillis, hours, localTime, money, payrollRequestId } from '../components/payroll/types';
+import { approvedPaidMillis, duration, localTime, money, payrollRequestId } from '../components/payroll/types';
 import type { ClockSession, Details, Preview } from '../components/payroll/types';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
 import PayCalculation from '../components/payroll/PayCalculation';
@@ -31,7 +31,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   const resultPanel = useRef<HTMLDivElement | null>(null);
   const snapshotLoad = useRef<AbortController | null>(null);
   const mounted = useRef(true); const controller = useRef<AbortController | null>(null); const snapshotRequest = useRef(payrollRequestId());
-  useEffect(() => { if (preview || snapshot) resultPanel.current?.scrollIntoView?.({ block: 'start' }); }, [preview, snapshot]);
+  useEffect(() => { if (preview || snapshot || error) { resultPanel.current?.focus({ preventScroll: true }); resultPanel.current?.scrollIntoView?.({ block: 'start' }); } }, [preview, snapshot, error]);
   useEffect(() => {
     if (tab !== 'time' || !targetDay) return;
     const panel = dayPanels.current.get(targetDay);
@@ -59,7 +59,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
           const latest = await axios.get<{ data: Details }>(base + encodeURIComponent(staffId));
           if (mounted.current) { setData(latest.data.data); setPreview(null); setFormTurn(n => n + 1); setMessage('Saved.'); }
         } catch { if (mounted.current) { setData(null); setError('The change was saved, but the latest record could not be loaded. Retry payroll before making another change.'); } return false; }
-      } else setMessage('Preview calculated.');
+      }
       return true;
     } catch (failure) { if (mounted.current) setError(authError(failure, 'Could not save the payroll change. Refresh and review the latest record.')); return false; }
     finally { if (mounted.current) setBusy(false); }
@@ -69,7 +69,7 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   function choose(next: string, date = '') {
     if (next === tab && !date) return;
     if (busy || dirty && !window.confirm('Discard the unsaved payroll form changes?')) return;
-    snapshotLoad.current?.abort(); setTab(next); setTargetDay(date); setDirty(false); setReturningDays({}); setFormTurn(n => n + 1);
+    clearResults(); setTab(next); setTargetDay(date); setDirty(false); setReturningDays({}); setFormTurn(n => n + 1); setError(''); setMessage('');
     const incomplete = next === 'time' && data?.ledger.days.some(day => day.date === date && day.incomplete);
     setCorrection(incomplete && data ? data.ledger.sessions.find(session => !session.voided && !session.end && today(data.ledger.timeZone, new Date(session.start)) <= date) || null : null);
   }
@@ -96,18 +96,19 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
   if (!data) return <section>{error ? <p role="alert">{error}</p> : <p role="status">Loading private payroll records…</p>}<button onClick={() => { setError(''); setRevision(n => n + 1); }}>Retry payroll</button></section>;
   const profile = data.profile; const ledger = data.ledger;
   const field = (label: string, name: string, initial = '', type = 'text', required = false) => <label>{label}<input name={name} type={type} defaultValue={initial} required={required} step={type === 'number' ? 'any' : undefined} maxLength={type === 'text' ? 2000 : undefined} /></label>;
-  const renderPreview = (result: Preview) => <><p>{result.start}–{result.end} · {result.timeZone} · {result.workedDays} worked days · {hours(result.approvedMillis)} approved hours</p>
+  const renderPreview = (result: Preview) => <><p>{result.start}–{result.end}</p>
     <h3>{result.canFinalize ? 'Gross pay before taxes' : 'Estimated subtotal'}: {money(result.grossCents, result.currency || 'USD')}</h3>
-    <p>Gross only. Payment has not been executed. Taxes and withholding are not calculated.</p>
-    {result.blockers.length > 0 && <div role="alert"><strong>Resolve before finalizing</strong><ul>{result.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
-    <div className="payroll-calculation-days">{result.rows.map(row => <article className="payroll-calculation-day" key={row.date}><h3>{row.date}</h3><dl className="payroll-grid"><div><dt>Clocked hours</dt><dd>{hours(row.rawMillis)}</dd></div><div><dt>Approved hours</dt><dd>{row.approval?.status === 'approved' ? hours(approvedPaidMillis(row.approval)) : 'Not approved'}</dd></div><div><dt>Hourly rate</dt><dd>{row.rate ? money(row.rate.cents, row.rate.currency) : 'Missing'}</dd></div><div><dt>Gross pay</dt><dd>{money(row.grossCents, row.rate?.currency || 'USD')}</dd></div></dl></article>)}</div></>;
-  return <><section><h2>{data.staff.name}</h2><p>{data.staff.active ? 'Active employee' : 'Inactive employee — records retained'}</p>
+    <p>{result.workedDays} {result.workedDays === 1 ? 'workday' : 'workdays'} · {duration(result.approvedMillis)} approved paid time</p>
+    <small>Before taxes. No payment has been sent.</small>
+    {result.blockers.length > 0 && <div role="alert"><strong>Review the flagged days below</strong><ul>{result.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
+    <div className="payroll-calculation-days">{result.rows.map(row => <article className="payroll-calculation-day" key={row.date} aria-label={'Pay for ' + row.date}><div className="payroll-day-total"><h4>{row.date}</h4><strong>{money(row.grossCents, row.rate?.currency || 'USD')}</strong></div><dl className="payroll-result-times"><div><dt>Actual time</dt><dd>{duration(row.rawMillis)}</dd></div><div><dt>Approved paid time</dt><dd>{row.approval?.status === 'approved' ? duration(approvedPaidMillis(row.approval)) : 'Not approved'}</dd></div><div><dt>Hourly rate</dt><dd>{row.rate ? money(row.rate.cents, row.rate.currency) : 'Missing'}</dd></div></dl></article>)}</div></>;
+  return <><section className="payroll-employee-tools">{!data.staff.active && <p>Inactive employee — records retained</p>}
     {data.missingDocuments.length > 0 && <p className="payroll-note">Missing payroll documents: {data.missingDocuments.join(', ')}</p>}
-    <nav className="payroll-menu" aria-label="Payroll sections"><button className="payroll-primary" disabled={busy} aria-pressed={tab === 'pay'} onClick={() => choose('pay')}>Calculate pay</button>
+    <nav className="payroll-menu" aria-label="Payroll sections">{tab !== 'pay' && <button disabled={busy} onClick={() => choose('pay')}>Back to pay</button>}
       <details open={tab !== 'pay'}><summary>Employee setup &amp; records</summary><div className="payroll-actions">{[['profile','Private profile'],['rates','Hourly rates'],['time','Time & approvals'],['documents','Payroll documents']].map(([id,label]) => <button key={id} disabled={busy} aria-pressed={tab === id} onClick={() => choose(id)}>{label}</button>)}</div></details></nav>
-    {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
   </section>
-  <section key={tab + ':' + (tab === 'pay' ? 'guided' : formTurn)} onChange={() => { if (tab !== 'pay') setDirty(true); }}>
+  <section className="payroll-workspace" key={tab + ':' + (tab === 'pay' ? 'guided' : formTurn)} onChange={() => { if (tab !== 'pay') setDirty(true); }}>
+    {tab !== 'pay' && <>{error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}</>}
     {tab === 'profile' && <form onSubmit={event => submit(event, fields => {
       const body: Record<string, unknown> = { version: profile.version, reason: value(fields,'reason'), legalName: value(fields,'legalName'), paymentMethod: value(fields,'paymentMethod'), payFrequency: value(fields,'payFrequency'), providerReference: value(fields,'providerReference'), instructions: value(fields,'instructions'), requiredDocuments: value(fields,'requiredDocuments').split('\n').map(s => s.trim()).filter(Boolean), rules: { mode: value(fields,'mode'), workweekStart: Number(value(fields,'workweekStart')), dailyScheduledMinutes: profile.rules.dailyScheduledMinutes, confirmed: fields.has('confirmed'), reference: value(fields,'reference') } };
       for (const key of ['taxId','bankAccount','routingNumber']) { if (fields.has('clear-' + key)) body[key] = null; else if (value(fields,key)) body[key] = value(fields,key); }
@@ -131,8 +132,8 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
         <div className="payroll-grid">{field('Effective date','effectiveOn',targetDay || today(ledger.timeZone),'date',true)}{field('Hourly rate','rate','','number',true)}</div>{field('Currency','currency','USD','text',true)}{field('Reason / correction explanation','reason','','text',true)}<button>Add effective rate</button>
       </fieldset></form></>}
     {tab === 'time' && <><h2>Work time and daily approvals</h2><p>{ledger.timeZone}. Clocked and approved hours are separate. Missing checkout is unresolved time, never zero pay.</p>
-      {ledger.days.map(day => <details key={day.date} className="payroll-workday" data-payroll-date={day.date} ref={node => { if (node) dayPanels.current.set(day.date, node); else dayPanels.current.delete(day.date); }}><summary>{day.date} · {hours(day.rawMillis)} clocked hours · {hours(day.paidMillis)} paid hours · {day.approval?.status || 'Not approved'}{day.incomplete ? ' · INCOMPLETE' : ''}</summary>
-        <p>Actual recorded time: {hours(day.paidMillis)} hours. Proposed paid time: {hours(day.review?.suggestedPaidMillis ?? day.paidMillis)} hours.</p>
+      {ledger.days.map(day => <details key={day.date} className="payroll-workday" data-payroll-date={day.date} ref={node => { if (node) dayPanels.current.set(day.date, node); else dayPanels.current.delete(day.date); }}><summary>{day.date} · {duration(day.rawMillis)} actual time · {day.approval?.status || 'Not approved'}{day.incomplete ? ' · INCOMPLETE' : ''}</summary>
+        <p>Actual recorded time: {duration(day.paidMillis)}. Proposed paid time: {duration(day.review?.suggestedPaidMillis ?? day.paidMillis)}.</p>
         <form onSubmit={event => submit(event, fields => void operation('approvals', {
           version: ledger.version, profileVersion: profile.version, date: day.date, status: value(fields,'status'), mode: 'manual-reviewed',
           paidMillis: asMillis(fields,'paid'), premiumCents: Math.round(Number(value(fields,'premium')) * 100),
@@ -153,11 +154,13 @@ function StaffPayroll({ staffId, onWork }: { staffId: string; onWork: (dirty: bo
     </>}
     {tab === 'pay' && <>
       <PayCalculation data={data} busy={busy} dirty={dirty} onDirty={next => { setDirty(next); if (next) clearResults(); }} onPeriodChange={clearResults} onSection={choose}
-        onSave={(path, body) => operation(path, body)} onCalculate={period => { snapshotRequest.current = payrollRequestId(); clearResults(); void operation('preview', period, result => setPreview(result as Preview), false); }} />
-      <div ref={resultPanel} className="payroll-result">{preview && <>{renderPreview(preview)}<button disabled={busy || dirty || !preview.canFinalize} onClick={() => void saveCalculation()}>Save calculation</button></>}
-      {snapshot && <>{snapshot.sourceChanged && <p role="alert">Source records or calculation rules changed after this snapshot. This historical calculation is retained unchanged; review a correction with your payroll provider.</p>}{renderPreview(snapshot.preview)}</>}
-      </div>
-      <h3>Saved calculation snapshots</h3><ul>{data.snapshots.map(row => <li key={row.id}>{row.start}–{row.end} · {money(row.grossCents,row.currency)} · {row.at}<button disabled={busy || dirty} onClick={() => openSnapshot(row.id)}>Open calculation snapshot</button></li>)}</ul>
+        onSave={(path, body) => { clearResults(); return operation(path, body); }} onCalculate={period => { snapshotRequest.current = payrollRequestId(); clearResults(); void operation('preview', period, result => setPreview(result as Preview), false); }}
+        result={<div ref={resultPanel} tabIndex={-1} role={preview || snapshot ? 'region' : undefined} aria-label={preview || snapshot ? 'Pay calculation result' : undefined} className="payroll-result">
+          {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
+          {preview && <>{renderPreview(preview)}<button className="payroll-primary" disabled={busy || dirty || !preview.canFinalize} onClick={() => void saveCalculation()}>Save calculation</button></>}
+          {snapshot && <>{snapshot.sourceChanged && <p role="alert">Source records or calculation rules changed after this snapshot. This historical calculation is retained unchanged; review a correction with your payroll provider.</p>}{renderPreview(snapshot.preview)}</>}
+        </div>} />
+      <details className="payroll-saved"><summary>Saved calculations</summary>{!data.snapshots.length ? <p>No saved calculations yet.</p> : <ul>{data.snapshots.map(row => <li key={row.id}>{row.start}–{row.end} · {money(row.grossCents,row.currency)} · {row.at}<button disabled={busy || dirty} onClick={() => openSnapshot(row.id)}>Open calculation snapshot</button></li>)}</ul>}</details>
     </>}
     {tab === 'documents' && <><h2>Private payroll documents</h2><p>PDF, PNG or JPG, up to 5 MB each. Revisions are retained. Downloads are authorized and audited; files stay out of the app’s offline cache.</p>
       <form onSubmit={event => submit(event, fields => {
@@ -176,7 +179,7 @@ export default function Payroll() {
     return () => request.abort();
   }, [account?.id, account?.role]);
   if (account?.role !== 'admin') return <p role="alert">Administrator payroll access is required.</p>;
-  return <div className="payroll-page ska-core-page"><header><h1>Staff pay & time</h1><p>Calculate gross pay in three steps. Employee setup and detailed records are available below.</p></header>{error && <p role="alert">{error}</p>}
+  return <div className="payroll-page ska-core-page"><header><h1>Staff pay</h1><p>Choose an employee and pay dates to calculate their pay.</p></header>{error && <p role="alert">{error}</p>}
     <section><label>Payroll employee<select aria-label="Payroll employee" value={selected} onChange={event => { if (work.current.busy || work.current.dirty && !window.confirm('Discard the unsaved payroll form changes?')) return; setSelected(event.target.value); }}><option value="">Choose an employee</option>{staff.map(person => <option key={person.id} value={person.id}>{person.name}{person.active ? '' : ' · Inactive'}</option>)}</select></label></section>
     {selected && <StaffPayroll key={account.id + ':' + selected} staffId={selected} onWork={onWork} />}
   </div>;

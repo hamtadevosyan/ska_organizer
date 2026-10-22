@@ -24,10 +24,13 @@ function daily(ledger) {
 }
 const HOUR = 3600000;
 function scheduledPayCredit(day, work) {
-  const eligible = !day.incomplete && day.paidMillis > 8 * HOUR && day.paidMillis < 9 * HOUR &&
-    work?.plannedMinutes === 540 && !!work.plannedStart && !!work.plannedEnd && work.outsideMillis === 0 && !work.scheduleIssue;
-  const suggestedPaidMillis = eligible ? 9 * HOUR : day.paidMillis;
-  return { eligible, suggestedPaidMillis, scheduledCreditMillis: suggestedPaidMillis - day.paidMillis };
+  // A paid-hours proposal is separate from actual work. Never round down or
+  // round a still-open day whose departure has not been recorded.
+  const suggestedPaidMillis = !day.incomplete && day.paidMillis > 0 ? Math.ceil(day.paidMillis / HOUR) * HOUR : day.paidMillis;
+  const roundingCreditMillis = suggestedPaidMillis - day.paidMillis;
+  const eligible = roundingCreditMillis > 0 && work?.plannedMinutes * 60000 === suggestedPaidMillis &&
+    !!work.plannedStart && !!work.plannedEnd && work.outsideMillis === 0 && !work.scheduleIssue;
+  return { eligible, suggestedPaidMillis, roundingCreditMillis, scheduledCreditMillis: eligible ? roundingCreditMillis : 0 };
 }
 function overtimeContext(day, allDays, rules = {}) {
   const firstDay = Number.isInteger(rules.workweekStart) && rules.workweekStart >= 0 && rules.workweekStart <= 6 ? rules.workweekStart : 1;
@@ -75,6 +78,7 @@ function preview(ledger, profile, start, end) {
     if (approval?.status === 'approved') {
       if (!Number.isSafeInteger(total) || total < 0 || total > 48 * HOUR) { issues.push('The saved paid-hours amount is invalid. Review and approve this day again.'); validAmount = false; }
       if (total < day.paidMillis) issues.push('Approved time is below clocked paid time. Correct the original error with a reason or obtain payroll-provider review; time is never silently capped.');
+      if (!day.incomplete && total < scheduledPayCredit(day).suggestedPaidMillis) issues.push('Paid time needs rounding review. Approve the proposed whole-hour paid time before calculating again.');
       if (manual && (!Number.isSafeInteger(approval.premiumCents) || approval.premiumCents < 0 || approval.premiumCents > 100000000)) { issues.push('Enter a valid reviewed additional-pay amount.'); validAmount = false; }
       if (legacyMultiplier) issues.push('An earlier overtime allocation uses automatic multipliers. Enter a reviewed paid-hours and additional-pay decision before calculating again.');
       // Thresholds only flag a decision for explicit administrator review. They
@@ -107,6 +111,6 @@ function preview(ledger, profile, start, end) {
     workedDays: paidDays.length, rawMillis: paidDays.reduce((sum, day) => sum + day.rawMillis, 0),
     approvedMillis: rows.reduce((sum, r) => sum + (r.approval?.status === 'approved' && Number.isSafeInteger(approvedMillis(r.approval)) ? approvedMillis(r.approval) : 0), 0),
     grossCents: rows.reduce((sum, row) => sum + (row.grossCents ?? 0), 0), rows, blockers: [...new Set(blockers)],
-    canFinalize: !blockers.length, fingerprint: hash({ ledger, profile, start, end, calculatorVersion: 'manual-reviewed-pay-v2' }), paymentExecuted: false, taxWithholdingCalculated: false };
+    canFinalize: !blockers.length, fingerprint: hash({ ledger, profile, start, end, calculatorVersion: 'manual-reviewed-pay-v3-rounded-hours' }), paymentExecuted: false, taxWithholdingCalculated: false };
 }
 module.exports = { daily, preview, hash, scheduledPayCredit, overtimeContext, overtimeFingerprint };

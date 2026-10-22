@@ -80,21 +80,35 @@ test('an unfinished legacy entry neither deducts guessed time nor blocks a compl
 });
 
 test.each([
- [8,0,false],[8+1/3600000,1*3600000-1,true],[8.5,1800000,true],[9,0,false],[9.5,0,false],
-])('nine-hour paid credit for %s real hours preserves actual time', (hours,credit,eligible)=>{
- const day={date:'2026-10-19',paidMillis:hours*3600000,incomplete:false};
+ [0,0,false],[8*3600000,8*3600000,false],[8*3600000+1,9*3600000,true],[8.5*3600000,9*3600000,true],[9*3600000,9*3600000,false],[9.5*3600000,10*3600000,false],
+])('whole-hour proposal for %s actual milliseconds preserves actual time', (actual,suggested,eligible)=>{
+ const day={date:'2026-10-19',paidMillis:actual,incomplete:false};
  const work={plannedMinutes:540,plannedStart:'08:00',plannedEnd:'17:00',outsideMillis:0,scheduleIssue:null};
  const before=structuredClone(day);
- expect(scheduledPayCredit(day,work)).toEqual({eligible,suggestedPaidMillis:day.paidMillis+credit,scheduledCreditMillis:credit});
+ expect(scheduledPayCredit(day,work)).toEqual({eligible,suggestedPaidMillis:suggested,roundingCreditMillis:suggested-actual,scheduledCreditMillis:eligible?suggested-actual:0});
  expect(day).toEqual(before);
 });
 test.each([
  {outsideMillis:60000}, {scheduleIssue:'Review daylight-saving change'}, {plannedStart:null}, {plannedEnd:null}, {plannedMinutes:480},
-])('outside, uncertain or duration-only schedules cannot receive nine-hour credit (%j)', changes=>{
+])('outside, uncertain or duration-only schedules still round up but cannot receive schedule exemption (%j)', changes=>{
  const day={paidMillis:8.5*3600000,incomplete:false};
  const work={plannedMinutes:540,plannedStart:'08:00',plannedEnd:'17:00',outsideMillis:0,scheduleIssue:null,...changes};
- expect(scheduledPayCredit(day,work)).toEqual({eligible:false,suggestedPaidMillis:day.paidMillis,scheduledCreditMillis:0});
- expect(scheduledPayCredit({...day,incomplete:true},{...work,...{outsideMillis:0,scheduleIssue:null}}).eligible).toBe(false);
+ expect(scheduledPayCredit(day,work)).toEqual({eligible:false,suggestedPaidMillis:9*3600000,roundingCreditMillis:1800000,scheduledCreditMillis:0});
+ expect(scheduledPayCredit({...day,incomplete:true},{...work,...{outsideMillis:0,scheduleIssue:null}})).toEqual({eligible:false,suggestedPaidMillis:day.paidMillis,roundingCreditMillis:0,scheduledCreditMillis:0});
+});
+test('six hours forty-one minutes rounds to seven without changing the actual clock record',()=>{
+ const day={date:'2026-10-19',paidMillis:6.695*3600000,incomplete:false};
+ expect(scheduledPayCredit(day)).toEqual({eligible:false,suggestedPaidMillis:7*3600000,roundingCreditMillis:18*60000+18000,scheduledCreditMillis:0});
+ expect(scheduledPayCredit(day,{plannedMinutes:420,plannedStart:'08:00',plannedEnd:'15:00',outsideMillis:0,scheduleIssue:null})).toEqual({eligible:true,suggestedPaidMillis:7*3600000,roundingCreditMillis:18*60000+18000,scheduledCreditMillis:18*60000+18000});
+ expect(day.paidMillis).toBe(6.695*3600000);
+});
+test('an earlier fractional approval blocks fresh finalization until whole-hour time is explicitly approved',()=>{
+ const data=ledger([session('2026-10-19',6.695)],{'2026-10-19':manualApproval(6.695*3600000)});
+ const before=structuredClone(data),p=profile();
+ expect(preview(data,p,'2026-10-19','2026-10-19').blockers.join(' ')).toMatch(/rounding review/);
+ expect(data).toEqual(before);
+ data.approvals['2026-10-19']=manualApproval(7*3600000);
+ expect(preview(data,p,'2026-10-19','2026-10-19')).toMatchObject({canFinalize:true,grossCents:14000,rawMillis:6.695*3600000,approvedMillis:7*3600000});
 });
 test('manually approved paid credit remains separate from actual hours and does not manufacture weekly overtime',()=>{
  const dates=['2026-10-19','2026-10-20','2026-10-21','2026-10-22','2026-10-23'];

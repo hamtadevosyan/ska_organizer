@@ -25,13 +25,13 @@ async function actor(role, person) {
   const account = await db.createAccount({ id: randomUUID(), username: 'manual-pay-' + randomUUID(), displayName: 'Synthetic manual pay actor', role, staffMemberId: person?.id || null, disabled: false, mustChangePassword: false, passwordHash: 'not used', roomId: null });
   return { token: await token(account), account };
 }
-async function setup() {
+async function setup({ schedule = true } = {}) {
   freeze('2026-10-19T14:00:00Z');
   const person = await db.createStaff({ id: randomUUID(), name: 'Synthetic scheduled employee', role: 'Teacher', active: true, roomId: null, version: 1 });
   const admin = await token(fixture.credentials().account), teacher = await actor('teacher', person), editor = await actor('editor');
   await service.profile(admin, person.id, { version: 0, reason: 'Synthetic manually reviewed payroll setup', rules });
   await service.rate(admin, person.id, { version: 1, effectiveOn: '2026-01-01', cents: 2000, currency: 'USD', reason: 'Synthetic hourly rate' });
-  await service.schedule(admin, person.id, { version: 0, effectiveOn: '2026-10-19', startTime: '08:00', endTime: '17:00', reason: 'Approved nine-hour work window' });
+  if (schedule) await service.schedule(admin, person.id, { version: 0, effectiveOn: '2026-10-19', startTime: '08:00', endTime: '17:00', reason: 'Approved nine-hour work window' });
   return { person, admin, teacher, editor };
 }
 async function clock(context, action) {
@@ -67,25 +67,86 @@ test('nine-hour scheduled credit is separate from actual work and needs an expli
   expect((await service.workTime(context.admin)).overtimeReviewCount).toBe(0);
 });
 
-test('the eight-hour boundary and out-of-window work are not rounded or capped', async () => {
+test('a seven-hour approved window rounds the first short day silently and the second asks for review', async () => {
+  const context = await setup();
+  await service.schedule(context.admin, context.person.id, { version: 1, effectiveOn: '2026-10-19', startTime: '08:00', endTime: '15:00', reason: 'Approved seven-hour workday' });
+  await work(context, '2026-10-19', 6.695);
+  let detail = await service.get(context.admin, context.person.id), first = detail.ledger.days[0];
+  const originalSessions = structuredClone(detail.ledger.sessions);
+  expect(first).toMatchObject({ paidMillis: 6.695 * HOUR, review: { state: 'awaiting-approval', suggestedPaidMillis: 7 * HOUR, roundingCreditMillis: 18 * 60000 + 18000, scheduledCreditMillis: 18 * 60000 + 18000, requiresRoundingReview: false, shortDayOrdinal: 1, requiresOvertimeReview: false } });
+  expect(first.review.reasons.map(reason => reason.code)).toEqual(['APPROVAL_REQUIRED']);
+  expect(detail.shortDayWarnings).toEqual([]);
+  await service.approve(context.admin, context.person.id, await decision(context, first.date, { overtimeReviewed: false }));
+  detail = await service.get(context.admin, context.person.id);
+  expect(detail.ledger.sessions).toEqual(originalSessions);
+  const firstFingerprint = detail.ledger.days[0].approval.roundingFingerprint;
+  expect(await service.preview(context.admin, context.person.id, { start: first.date, end: first.date })).toMatchObject({ canFinalize: true, grossCents: 14000, approvedMillis: 7 * HOUR, rawMillis: 6.695 * HOUR });
+
+  await work(context, '2026-10-20', 6.75);
+  detail = await service.get(context.admin, context.person.id);
+  const second = detail.ledger.days[1];
+  expect(second.review).toMatchObject({ state: 'needs-attention', suggestedPaidMillis: 7 * HOUR, requiresRoundingReview: true, shortDayOrdinal: 2 });
+  expect(second.review.reasons).toContainEqual({ code: 'ROUNDING_REVIEW', action: 'approve', message: expect.stringMatching(/rounding from 6 hr 45 min to 7 hr paid time.*Short workdays have repeated this week/) });
+  expect(detail.shortDayWarnings[0]).toMatchObject({ count: 2, dates: [first.date, second.date] });
+  expect(detail.ledger.days[0].review).toMatchObject({ state: 'approved', requiresRoundingReview: false, shortDayOrdinal: 1 });
+  expect(detail.ledger.days[0].approval.roundingFingerprint).toBe(firstFingerprint);
+  await service.approve(context.admin, context.person.id, await decision(context, second.date, { overtimeReviewed: false }));
+  expect((await service.get(context.admin, context.person.id)).ledger.days[1].review).toMatchObject({ state: 'approved', reasons: [] });
+
+  await work(context, '2026-10-26', 6.695);
+  detail = await service.get(context.admin, context.person.id);
+  const nextWeek = detail.ledger.days.at(-1);
+  expect(nextWeek.review).toMatchObject({ state: 'awaiting-approval', requiresRoundingReview: false, shortDayOrdinal: 1, suggestedPaidMillis: 7 * HOUR });
+  expect(nextWeek.review.reasons.map(reason => reason.code)).toEqual(['APPROVAL_REQUIRED']);
+  expect((await service.workTime(context.admin, { start: nextWeek.date, end: nextWeek.date })).shortDayWarnings).toEqual([]);
+});
+
+test('unscheduled fractional work proposes seven hours with a visible review warning and rejects the old fraction', async () => {
+  const context = await setup({ schedule: false }); await work(context, '2026-10-19', 6.695);
+  const before = await db.getPayrollRecord('ledger:' + context.person.id);
+  const detail = await service.get(context.admin, context.person.id), day = detail.ledger.days[0];
+  expect(day.review).toMatchObject({ state: 'needs-attention', suggestedPaidMillis: 7 * HOUR, roundingCreditMillis: 18 * 60000 + 18000, scheduledCreditMillis: 0, requiresRoundingReview: true });
+  expect(day.review.reasons).toContainEqual({ code: 'ROUNDING_REVIEW', action: 'approve', message: expect.stringContaining('Review rounding from 6 hr 41 min 42 sec to 7 hr paid time.') });
+  expect(await db.getPayrollRecord(before.id)).toEqual(before);
+  await expect(service.approve(context.admin, context.person.id, await decision(context, day.date, { paidMillis: day.paidMillis, overtimeReviewed: false }))).rejects.toMatchObject({ status: 400 });
+  expect(await db.getPayrollRecord(before.id)).toEqual(before);
+  await service.approve(context.admin, context.person.id, await decision(context, day.date, { overtimeReviewed: false, adjustmentCents: 123 }));
+  const after = await service.get(context.admin, context.person.id);
+  expect(after.ledger.sessions).toEqual(detail.ledger.sessions);
+  expect(after.ledger.days[0].approval).toMatchObject({ paidMillis: 7 * HOUR, roundingCreditMillis: 18 * 60000 + 18000, scheduledCreditMillis: 0, adjustmentCents: 123, roundingReviewed: true });
+  expect(after.ledger.days[0].review).toMatchObject({ state: 'approved', reasons: [] });
+  expect(await service.preview(context.admin, context.person.id, { start: day.date, end: day.date })).toMatchObject({ grossCents: 14123, canFinalize: true, rawMillis: 6.695 * HOUR });
+});
+
+test('an unfinished day has no rounded proposal and cannot be approved', async () => {
+  const context = await setup(); await work(context, '2026-10-19', null);
+  jest.setSystemTime(new Date('2026-10-19T21:41:42Z'));
+  const day = (await service.get(context.admin, context.person.id)).ledger.days[0];
+  expect(day).toMatchObject({ incomplete: true, paidMillis: 6.695 * HOUR, review: { suggestedPaidMillis: 6.695 * HOUR, roundingCreditMillis: 0, requiresRoundingReview: false } });
+  expect(day.review.reasons.map(reason => reason.code)).not.toContain('ROUNDING_REVIEW');
+  await expect(service.approve(context.admin, context.person.id, await decision(context, day.date))).rejects.toMatchObject({ status: 409 });
+});
+
+test('exact whole hours stay unchanged, while out-of-window fractions round up with required review and are never capped', async () => {
   const context = await setup(); await work(context, '2026-10-19', 8);
   let day = (await service.get(context.admin, context.person.id)).ledger.days[0];
   expect(day.review).toMatchObject({ suggestedPaidMillis:8*HOUR,scheduledCreditMillis:0,requiresOvertimeReview:false });
   await work(context, '2026-10-20', 8.5, '14:30:00Z');
   day = (await service.get(context.admin, context.person.id)).ledger.days[1];
-  expect(day.review).toMatchObject({suggestedPaidMillis:8.5*HOUR,scheduledCreditMillis:0,requiresOvertimeReview:true,workTime:{earlyMillis:.5*HOUR}});
+  expect(day.review).toMatchObject({suggestedPaidMillis:9*HOUR,scheduledCreditMillis:0,roundingCreditMillis:.5*HOUR,requiresRoundingReview:true,requiresOvertimeReview:true,workTime:{earlyMillis:.5*HOUR}});
+  expect(day.review.reasons).toContainEqual(expect.objectContaining({code:'ROUNDING_REVIEW'}));
   await work(context, '2026-10-21', 10);
   day = (await service.get(context.admin, context.person.id)).ledger.days[2];
   expect(day.review).toMatchObject({suggestedPaidMillis:10*HOUR,scheduledCreditMillis:0,requiresOvertimeReview:true});
 });
 
-test('the third completed short day warns only administrators and still counts days rounded up for pay', async () => {
+test('the second completed short day warns only administrators and still counts days rounded up for pay', async () => {
   const context = await setup();
-  for (const [date, hours] of [['2026-10-19',8.5],['2026-10-20',8.75]]) {
-    await work(context,date,hours);
-    expect((await service.get(context.admin,context.person.id)).shortDayWarnings).toEqual([]);
-    expect((await service.workTime(context.admin)).shortDayWarnings).toEqual([]);
-  }
+  await work(context,'2026-10-19',8.5);
+  expect((await service.get(context.admin,context.person.id)).shortDayWarnings).toEqual([]);
+  expect((await service.workTime(context.admin)).shortDayWarnings).toEqual([]);
+  await work(context,'2026-10-20',8.75);
+  expect((await service.get(context.admin,context.person.id)).shortDayWarnings[0]).toMatchObject({count:2,dates:['2026-10-19','2026-10-20']});
   await work(context,'2026-10-21',8.25);
   let detail=await service.get(context.admin,context.person.id);
   expect(detail.ledger.days.map(day=>day.review.suggestedPaidMillis)).toEqual([9*HOUR,9*HOUR,9*HOUR]);
@@ -148,13 +209,13 @@ test('weekly overtime uses actual work and flags the crossing day without reopen
   expect((await service.workTime(context.admin)).overtimeReviewCount).toBe(1);
 });
 
-test('a frozen legacy nine-hour allowance warns about three short days without inventing start/end times or paid credit', async () => {
+test('a frozen legacy allowance warns from the second short day and cannot grant a schedule-rounding exemption', async () => {
   const context=await setup();
   await service.schedule(context.admin,context.person.id,{version:1,effectiveOn:'2026-10-19',approvedHours:9,reason:'Synthetic earlier hours-only approved allowance'});
   for (const date of ['2026-10-19','2026-10-20','2026-10-21']) await work(context,date,8.5);
   const detail=await service.get(context.admin,context.person.id);
   expect(detail.shortDayWarnings[0]).toMatchObject({count:3,plannedMinutes:540});
-  for(const day of detail.ledger.days) expect(day.review).toMatchObject({suggestedPaidMillis:8.5*HOUR,scheduledCreditMillis:0,workTime:{hasCapturedAllowance:true,plannedStart:null,plannedEnd:null}});
+  for(const day of detail.ledger.days) expect(day.review).toMatchObject({suggestedPaidMillis:9*HOUR,scheduledCreditMillis:0,roundingCreditMillis:.5*HOUR,requiresRoundingReview:true,workTime:{hasCapturedAllowance:true,plannedStart:null,plannedEnd:null}});
   // A restored old ledger with no captured allowance cannot acquire a guessed
   // attendance threshold merely from today's fallback configuration.
   const raw=await db.getPayrollRecord('ledger:'+context.person.id), ledger=vault.open(raw);

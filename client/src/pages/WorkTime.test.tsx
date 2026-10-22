@@ -187,14 +187,15 @@ test('the home alert tells an editor that extra-time review is pending', async (
   expect(screen.getByRole('link', { name: 'Review work time' })).toHaveAttribute('href', '/staff/work-time');
 });
 
-test('the administrator sees third-short-day warnings and overtime still awaiting a pay decision', async () => {
+test('the administrator sees second-short-day warnings and overtime still awaiting a pay decision', async () => {
   data.items[0].status = 'confirmed';
   data.overtimeReviewCount = 1;
-  data.shortDayWarnings = [{ staffId: 'a', name: 'Ari Employee', weekStart: '2026-10-19', weekEnd: '2026-10-25', count: 3, dates: ['2026-10-19', '2026-10-20', '2026-10-21'] }];
+  data.shortDayWarnings = [{ staffId: 'a', name: 'Ari Employee', weekStart: '2026-10-19', weekEnd: '2026-10-25', count: 2, dates: ['2026-10-19', '2026-10-20'] }];
   render(view('admin', true));
   const warning = await screen.findByRole('region', { name: 'Short workday warnings' });
-  expect(within(warning).getByText('Ari Employee: 3 short days')).toBeVisible();
-  expect(warning).toHaveTextContent('2026-10-19, 2026-10-20, 2026-10-21');
+  expect(within(warning).getByText('Ari Employee: 2 short days')).toBeVisible();
+  expect(warning).toHaveTextContent('2026-10-19, 2026-10-20');
+  expect(warning).toHaveTextContent('Two or more completed short days in one workweek need your attention.');
   expect(screen.getByRole('heading', { name: 'Overtime needs your review' })).toBeVisible();
   expect(screen.getByRole('link', { name: 'Review pay decisions' })).toHaveAttribute('href', '/staff/payroll');
   expect(screen.getByText('No extra time waiting for review.')).toBeVisible();
