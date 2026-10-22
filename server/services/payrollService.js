@@ -63,6 +63,7 @@ exports.clock = (token, payload) => authorized(token, false, async actor => {
   if (!actor.staffMemberId) throw auth.problem('An active linked staff identity is required.', 403);
   const staff = await employee(actor.staffMemberId); if (!staff.active) throw auth.problem('Staff record is inactive.', 403);
   const ledger = await read('ledger', staff.id); const data = ledger.data;
+  const previouslyClocked = new Set(math.daily(data).map(day => day.date));
   const replay = data.requests.find(r => r.id === requestId);
   if (replay) { if (replay.action !== payload.action) throw auth.problem('Request identifier was already used for another action.', 409); return { replayed: true }; }
   expectVersion(payload, ledger.version);
@@ -80,7 +81,7 @@ exports.clock = (token, payload) => authorized(token, false, async actor => {
   invalidate(data, [payload.action === 'checkin' ? data.sessions.at(-1) : open]); data.requests.push({ id: requestId, action: payload.action });
   if (data.requests.length > 20000) throw auth.problem('Time ledger requires archival.', 409);
   data.history.push({ type: payload.action, sessionId: (payload.action === 'checkin' ? data.sessions.at(-1) : open).id, requestId, ...stamp(actor) });
-  await captureWorkLimits(data, staff.id);
+  await captureWorkLimits(data, staff.id, previouslyClocked);
   await write('ledger', staff.id, data, ledger.version); await auth.audit(actor, 'employee_clock.' + payload.action.replace('-', '_'), staff.id);
   return { replayed: false };
 });
@@ -197,28 +198,88 @@ async function workSchedule(staffId) {
   const profile = await read('profile', staffId);
   return { data: { fallbackMinutes: profile.data.rules.dailyScheduledMinutes, entries: [] }, version: 0 };
 }
-function limitOn(schedule, date) {
-  return [...schedule.data.entries].filter(entry => entry.effectiveOn <= date).sort((a,b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.sequence-a.sequence)[0]?.minutes ?? schedule.data.fallbackMinutes;
+function scheduleEntryOn(schedule, date, legacyOnly = false) {
+  return [...schedule.data.entries].filter(entry => entry.effectiveOn <= date && (!legacyOnly || !entry.startTime)).sort((a,b) => b.effectiveOn.localeCompare(a.effectiveOn) || b.sequence-a.sequence)[0];
 }
-async function captureWorkLimits(ledger, staffId) {
-  ledger.workLimits ||= {};
+function limitOn(schedule, date, legacyOnly = false) {
+  return scheduleEntryOn(schedule, date, legacyOnly)?.minutes ?? schedule.data.fallbackMinutes;
+}
+async function captureWorkLimits(ledger, staffId, previouslyClocked) {
+  ledger.workLimits ||= {}; ledger.workWindows ||= {};
   const schedule = await workSchedule(staffId);
-  for (const day of math.daily(ledger)) if (!Object.hasOwn(ledger.workLimits, day.date)) ledger.workLimits[day.date] = limitOn(schedule, day.date);
+  for (const day of math.daily(ledger)) if (!Object.hasOwn(ledger.workLimits, day.date)) {
+    // Old started days keep their duration-only allowance. Never assign new
+    // wall-clock times retrospectively to an existing attendance record.
+    const oldDay = previouslyClocked.has(day.date);
+    ledger.workLimits[day.date] = limitOn(schedule, day.date, oldDay);
+    const entry = !oldDay && scheduleEntryOn(schedule, day.date);
+    if (entry?.startTime && entry.endTime) ledger.workWindows[day.date] = {
+      startTime: entry.startTime, endTime: entry.endTime, timeZone: entry.timeZone,
+      effectiveOn: entry.effectiveOn, sequence: entry.sequence,
+    };
+  }
+}
+function windowFingerprint(sessions, date, minutes, window) {
+  // Preserve the original shape for duration-only records and their decisions.
+  return math.hash({ sessions, date, minutes, ...(window ? { window } : {}) });
+}
+function wallTimeChoices(date, clock, zone) {
+  const target = date + 'T' + clock + ':00', guess = Date.parse(target + 'Z'), offsets = new Set();
+  for (let hours = -36; hours <= 36; hours += 6) {
+    const sample = guess + hours*3600000;
+    offsets.add(Date.parse(time.localTime(sample, zone) + 'Z') - sample);
+  }
+  return [...offsets].map(offset => guess-offset).filter(value => time.localTime(value, zone) === target).sort((a,b) => a-b);
+}
+function paidIntervals(sessions, bounds) {
+  const from = Date.parse(bounds.from), to = Date.parse(bounds.to); const intervals = [];
+  for (const session of sessions) {
+    let pieces = [[Math.max(Date.parse(session.start),from), Math.min(session.end ? Date.parse(session.end) : Date.now(),to)]];
+    // Honor only known historical unpaid intervals; never infer a missing end.
+    for (const rest of session.breaks.filter(item => !item.paid && item.end)) {
+      const start = Date.parse(rest.start), end = Date.parse(rest.end);
+      pieces = pieces.flatMap(([a,b]) => end <= a || start >= b ? [[a,b]] : [[a,Math.min(b,start)],[Math.max(a,end),b]]).filter(([a,b]) => b>a);
+    }
+    intervals.push(...pieces.filter(([a,b]) => b>a));
+  }
+  const merged = [];
+  for (const [start,end] of intervals.sort((a,b)=>a[0]-b[0])) {
+    const last = merged.at(-1);
+    if (last && start <= last[1]) last[1] = Math.max(last[1],end);
+    else merged.push([start,end]);
+  }
+  return merged;
+}
+function outsideWindow(sessions, date, zone, window) {
+  if (!window) return { earlyMillis:0, lateMillis:0, outsideMillis:0, scheduleIssue:null };
+  if (window.timeZone !== zone) return { earlyMillis:0, lateMillis:0, outsideMillis:0, scheduleIssue:'The approved schedule and recorded work use different time zones. Review this day manually.' };
+  const starts = wallTimeChoices(date,window.startTime,zone), ends = wallTimeChoices(date,window.endTime,zone);
+  if (!starts.length || !ends.length) return { earlyMillis:0, lateMillis:0, outsideMillis:0, scheduleIssue:'An approved clock time does not occur on this date because the clocks changed. Review this day manually.' };
+  // Include both repeated occurrences on a fall-back date. This never guesses
+  // a deduction or removes recorded work from payroll.
+  const start = starts[0], end = ends.at(-1), intervals = paidIntervals(sessions,time.dayBounds(date,zone));
+  const earlyMillis = intervals.reduce((sum,[a,b])=>sum+Math.max(0,Math.min(b,start)-a),0);
+  const lateMillis = intervals.reduce((sum,[a,b])=>sum+Math.max(0,b-Math.max(a,end)),0);
+  return {earlyMillis,lateMillis,outsideMillis:earlyMillis+lateMillis,scheduleIssue:null};
 }
 async function workRows(staffId, ledger, start, end) {
   const schedule = await workSchedule(staffId);
   return math.daily(ledger.data).filter(day => day.date >= start && day.date <= end).map(day => {
     const sessions = ledger.data.sessions.filter(s => !s.voided && day.sessionIds.includes(s.id));
-    const last = [...sessions].sort((a,b) => b.start.localeCompare(a.start))[0];
-    const minutes = ledger.data.workLimits?.[day.date] ?? limitOn(schedule, day.date);
-    const fingerprint = math.hash({ sessions, date: day.date, minutes });
+    const ordered = [...sessions].sort((a,b) => a.start.localeCompare(b.start)), first = ordered[0], last = ordered.at(-1);
+    const window = ledger.data.workWindows?.[day.date] || null;
+    const minutes = ledger.data.workLimits?.[day.date] ?? limitOn(schedule,day.date,true);
+    const fingerprint = windowFingerprint(sessions,day.date,minutes,window);
     const decision = ledger.data.workReviews?.[day.date]; const current = decision?.fingerprint === fingerprint ? decision : null;
-    const extraMillis = Math.max(0, day.paidMillis - minutes*60000);
+    const outside = outsideWindow(sessions,day.date,ledger.data.timeZone,window);
+    const extraMillis = window ? outside.outsideMillis : Math.max(0,day.paidMillis-minutes*60000);
     return { staffId, date: day.date, version: ledger.version, timeZone: ledger.data.timeZone,
-      plannedMinutes: minutes, rawMillis: day.rawMillis, paidMillis: day.paidMillis, extraMillis, incomplete: day.incomplete,
-      status: day.incomplete ? 'incomplete' : extraMillis && !current ? 'pending' : current?.decision === 'worked' ? 'confirmed' : current?.decision === 'clock-error' ? 'corrected' : 'within-schedule',
+      plannedMinutes: minutes, plannedStart:window?.startTime || null, plannedEnd:window?.endTime || null,
+      scheduleTimeZone:window?.timeZone || ledger.data.timeZone, checkin:first?.start || null,
+      ...outside, rawMillis: day.rawMillis, paidMillis: day.paidMillis, extraMillis, incomplete: day.incomplete,
+      status: day.incomplete ? 'incomplete' : (extraMillis || outside.scheduleIssue) && !current ? 'pending' : current?.decision === 'worked' ? 'confirmed' : current?.decision === 'clock-error' ? 'corrected' : 'within-schedule',
       reason: current?.reason || '', sessionId: last?.id, checkout: last?.end || null,
-      canCorrect: ledger.data.timeZone === time.timeZone() && !!last?.end && time.dateAt(last.start, ledger.data.timeZone) === day.date && time.dateAt(last.end, ledger.data.timeZone) === day.date };
+      canCorrect: !outside.scheduleIssue && (!window || !outside.earlyMillis) && ledger.data.timeZone === time.timeZone() && !!last?.end && time.dateAt(last.start, ledger.data.timeZone) === day.date && time.dateAt(last.end, ledger.data.timeZone) === day.date };
   });
 }
 exports.workTime = (token, { start, end } = {}) => authorized(token, 'manager', async actor => {
@@ -235,13 +296,24 @@ exports.workTime = (token, { start, end } = {}) => authorized(token, 'manager', 
   return { today, timeZone:time.timeZone(), start, end, staff, items: items.sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name)) };
 });
 exports.schedule = (token, staffId, payload) => authorized(token,'manager',async actor => {
-  v.object(payload,['version','effectiveOn','approvedHours','reason']); await employee(staffId);
+  v.object(payload,['version','effectiveOn','approvedHours','startTime','endTime','reason']); await employee(staffId);
   const schedule = await workSchedule(staffId); expectVersion(payload,schedule.version);
-  const minutes = Math.round(payload.approvedHours*60);
-  if (typeof payload.approvedHours !== 'number' || !Number.isFinite(payload.approvedHours) || minutes<0 || minutes>1440 || Math.abs(payload.approvedHours*60-minutes)>0.000001) throw auth.problem('Enter daily hours between 0 and 24, to the nearest minute.');
+  const hasWindow = payload.startTime !== undefined || payload.endTime !== undefined;
+  let minutes, window = {};
+  if (hasWindow) {
+    if (payload.approvedHours !== undefined || typeof payload.startTime !== 'string' || typeof payload.endTime !== 'string' ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(payload.startTime) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(payload.endTime)) throw auth.problem('Enter approved start and end times in HH:mm format without a separate daily-hours value.');
+    const asMinutes = value => Number(value.slice(0,2))*60+Number(value.slice(3));
+    minutes = asMinutes(payload.endTime)-asMinutes(payload.startTime);
+    if (minutes <= 0) throw auth.problem('Choose an approved end after the start on the same day. Overnight schedules are not supported here.');
+    window = {startTime:payload.startTime,endTime:payload.endTime,timeZone:time.timeZone()};
+  } else {
+    minutes = Math.round(payload.approvedHours*60);
+    if (typeof payload.approvedHours !== 'number' || !Number.isFinite(payload.approvedHours) || minutes<0 || minutes>1440 || Math.abs(payload.approvedHours*60-minutes)>0.000001) throw auth.problem('Enter daily hours between 0 and 24, to the nearest minute.');
+  }
   const effectiveOn = time.validateDate(payload.effectiveOn);
-  if (effectiveOn < time.dateAt()) throw auth.problem('Schedule changes apply today or later. Existing clocked days keep their original daily limit.');
-  schedule.data.entries.push({effectiveOn,minutes,sequence:schedule.data.entries.length+1,reason:reason(payload.reason),...stamp(actor)});
+  if (effectiveOn < time.dateAt()) throw auth.problem('Schedule changes apply today or later. Existing clocked days keep their original approved schedule.');
+  schedule.data.entries.push({effectiveOn,minutes,...window,sequence:schedule.data.entries.length+1,reason:reason(payload.reason),...stamp(actor)});
   await write('profile',staffId,schedule.data,schedule.version,'profile:work-schedule:'+staffId);
   await auth.audit(actor,'employee_time.schedule_set',staffId); return {saved:true};
 });
@@ -261,11 +333,11 @@ exports.reviewWork = (token,staffId,payload) => authorized(token,'manager',async
     ledger.data.history.push({type:'clock-error-review',before,after:structuredClone(next),reason:why,...stamp(actor)});
     invalidate(ledger.data,[before,next]); Object.assign(session,next);
     const updated = (await workRows(staffId,ledger,date,date))[0];
-    if (updated.extraMillis) throw auth.problem('The corrected day still exceeds its daily limit. Confirm actual extra work or use administrator review.');
+    if (updated.extraMillis || updated.scheduleIssue) throw auth.problem('The corrected day still has time outside its approved schedule. Confirm actual work or use administrator review.');
   }
   const day = math.daily(ledger.data).find(d=>d.date===date); const sessions=ledger.data.sessions.filter(s=>!s.voided&&day.sessionIds.includes(s.id));
   ledger.data.workReviews ||= {};
-  const decision = {decision:payload.decision,reason:why,fingerprint:math.hash({sessions,date,minutes:row.plannedMinutes}),...stamp(actor)};
+  const decision = {decision:payload.decision,reason:why,fingerprint:windowFingerprint(sessions,date,row.plannedMinutes,ledger.data.workWindows?.[date]),...stamp(actor)};
   ledger.data.history.push({type:'extra-time-review',date,after:decision,...stamp(actor)}); ledger.data.workReviews[date]=decision;
   await write('ledger',staffId,ledger.data,ledger.version); await auth.audit(actor,'employee_time.'+payload.decision.replace('-','_'),staffId); return {saved:true};
 });

@@ -1,46 +1,142 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
+import { CalendarClock, ClipboardCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AuthContext, useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
 import { API_BASE_URL } from '../lib/api';
-import { hours, localTime } from '../components/payroll/types';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
 import './payroll.css';
-export type WorkData = {today:string;timeZone:string;staff:{id:string;name:string;active:boolean;scheduleVersion:number;defaultMinutes:number;entries:{effectiveOn:string;minutes:number;reason:string}[]}[];
-  items:{staffId:string;name:string;date:string;version:number;plannedMinutes:number;paidMillis:number;extraMillis:number;incomplete:boolean;status:string;reason:string;checkout:string|null;canCorrect:boolean}[]};
+
+type ScheduleEntry = { effectiveOn: string; minutes: number; reason: string; startTime?: string; endTime?: string; timeZone?: string };
+type Employee = { id: string; name: string; active: boolean; scheduleVersion: number; defaultMinutes: number; entries: ScheduleEntry[] };
+type WorkDay = { staffId: string; name: string; date: string; version: number; plannedMinutes: number; paidMillis: number; extraMillis: number;
+  incomplete: boolean; status: string; reason: string; checkout: string | null; canCorrect: boolean; checkin?: string | null;
+  timeZone?: string; plannedStart?: string | null; plannedEnd?: string | null; scheduleTimeZone?: string; earlyMillis?: number; lateMillis?: number; outsideMillis?: number; scheduleIssue?: string | null };
+export type WorkData = { today: string; timeZone: string; staff: Employee[]; items: WorkDay[] };
 const url = API_BASE_URL + '/api/work-time';
+const validTime = (value: string) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+const clockLabel = (value: string) => {
+  if (!validTime(value)) return value;
+  const [hour, minute] = value.split(':').map(Number);
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+};
+const duration = (millis: number) => {
+  if (millis > 0 && millis < 1000) return 'Less than 1 sec';
+  const seconds = Math.max(0, Math.floor(millis / 1000));
+  const parts = [Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)} hr` : '', Math.floor(seconds % 3600 / 60) ? `${Math.floor(seconds % 3600 / 60)} min` : '', seconds % 60 ? `${seconds % 60} sec` : ''].filter(Boolean);
+  return parts.join(' ') || '0 min';
+};
+const localClock = (instant: string | null | undefined, zone: string, empty: string) => instant ? new Date(instant).toLocaleTimeString('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', second: '2-digit' }) : empty;
+const approvedWindow = (row: WorkDay) => row.plannedStart && row.plannedEnd ? `${clockLabel(row.plannedStart)}–${clockLabel(row.plannedEnd)}` : `Earlier daily-hours schedule · ${duration(row.plannedMinutes * 60000)}`;
+function statusLabel(row: WorkDay) {
+  if (row.incomplete) return 'Checkout missing';
+  if (row.status === 'pending') return 'Needs manager review';
+  if (row.status === 'confirmed') return 'Outside time confirmed';
+  if (row.status === 'corrected') return 'Clock time corrected';
+  return row.plannedStart ? 'Within approved schedule' : 'Within earlier daily-hours limit';
+}
+
 export default function WorkTime() {
   const { account, serverUnavailable } = useAuth();
   if (serverUnavailable) return <p role="alert">The connection is interrupted. Reconnect before reviewing work time.</p>;
-  if (!account || account.disabled || account.mustChangePassword || !['admin','editor'].includes(account.role)) return <p role="alert">Manager work-time access is required.</p>;
-  return <ManagerWorkTime key={account.id+':'+account.role} />;
+  if (!account || account.disabled || account.mustChangePassword || !['admin', 'editor'].includes(account.role)) return <p role="alert">Manager work-time access is required.</p>;
+  return <ManagerWorkTime key={account.id + ':' + account.role} admin={account.role === 'admin'} />;
 }
-function ManagerWorkTime() {
-  const report = useUnsavedChanges(); const [dirty,setDirty] = useState(false);
-  const [data,setData] = useState<WorkData|null>(null), [error,setError] = useState(''), [busy,setBusy] = useState(false), [selected,setSelected] = useState(''), [message,setMessage] = useState('');
-  const [revision,setRevision] = useState(0); const mounted = useRef(true);
-  useEffect(()=>{report(dirty,busy);return()=>report(false,false);},[dirty,busy,report]);
-  useEffect(()=>{if(!dirty&&!busy)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty,busy]);
-  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  useEffect(()=>{const c=new AbortController();void axios.get<{data:WorkData}>(url,{signal:c.signal}).then(r=>{if(!c.signal.aborted){setData(r.data.data);setError('');}}).catch(e=>{if(!c.signal.aborted&&!axios.isCancel(e)){setData(null);setError(authError(e,'Could not load employee work time.'));}});return()=>c.abort();},[revision]);
-  async function save(path:string,body:unknown){if(busy)return;setBusy(true);setError('');setMessage('');try{await axios.post(url+path,body);if(mounted.current){setDirty(false);setData(null);setRevision(n=>n+1);setMessage('Saved.');}}catch(e){if(mounted.current)setError(authError(e,'Could not save this review. Refresh and review the latest record.'));}finally{if(mounted.current)setBusy(false);}}
-  function submit(e:FormEvent<HTMLFormElement>,run:(f:FormData)=>void){e.preventDefault();run(new FormData(e.currentTarget));}
-  const person=data?.staff.find(s=>s.id===selected); const pending=data?.items.filter(i=>i.status==='pending')||[];
-  return <div className="payroll-page ska-core-page"><header><h1>Work time</h1><p>Approved daily hours and extra-time reviews. Pay rates and tax records are restricted to administrators.</p></header>
-    {error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}<button disabled={busy} onClick={()=>{if(dirty&&!window.confirm('Discard unsaved work-time form changes?'))return;setDirty(false);setRevision(n=>n+1);}}>Refresh work time</button>
-    {!data?<p role="status">Loading work time…</p>:<><section><h2>Approved daily hours</h2><label>Employee<select aria-label="Work-time employee" value={selected} disabled={busy} onChange={e=>{if(dirty&&!window.confirm('Discard unsaved work-time form changes?'))return;setDirty(false);setSelected(e.target.value);}}><option value="">Choose an employee</option>{data.staff.map(s=><option key={s.id} value={s.id}>{s.name}{s.active?'':' · Inactive'}</option>)}</select></label>
-      {person&&<form onChange={()=>setDirty(true)} key={person.id+':'+person.scheduleVersion} onSubmit={e=>submit(e,f=>void save('/staff/'+encodeURIComponent(person.id)+'/schedule',{version:person.scheduleVersion,approvedHours:Number(f.get('hours')),effectiveOn:f.get('effectiveOn'),reason:f.get('reason')}))}><fieldset disabled={busy}><p>Daily limit: {person.defaultMinutes/60} hours before the first scheduled change. Changes apply to new workdays; an already started day keeps its original limit.</p>
-        <label>Approved hours per day<input name="hours" type="number" min="0" max="24" step="any" defaultValue={(person.entries.at(-1)?.minutes??person.defaultMinutes)/60} required /></label>
-        <label>Effective date<input name="effectiveOn" type="date" min={data.today} defaultValue={data.today} required /></label><label>Reason for schedule change<input name="reason" maxLength={1000} required /></label><button>Save daily hours</button>
-        <ul>{person.entries.map((entry,i)=><li key={i}>{entry.effectiveOn} · {entry.minutes/60} hours/day · {entry.reason}</li>)}</ul></fieldset></form>}
-    </section><section><h2>Extra time needs review ({pending.length})</h2><p>Recorded checkouts are kept. Confirm actual work, or correct a verified clock mistake. Actual work is not removed because it was unapproved.</p><p>{data.timeZone} · Last 60 days</p>
-      {!pending.length&&<p>No extra time is waiting for review.</p>}{pending.map(row=><article className="payroll-calculation-day" key={row.staffId+':'+row.date}><h3>{row.name} · {row.date}</h3><p>{row.plannedMinutes/60} approved daily hours · {hours(row.paidMillis)} recorded hours · {Math.ceil(row.extraMillis/60000)} extra minutes</p><p>Checkout: {localTime(row.checkout,data.timeZone)}</p>
-        <form onChange={()=>setDirty(true)} onSubmit={e=>submit(e,f=>void save('/staff/'+encodeURIComponent(row.staffId)+'/review',{version:row.version,date:row.date,decision:'worked',reason:f.get('reason')}))}><fieldset disabled={busy}><label>Extra-work review note<input name="reason" required maxLength={1000} /></label><button>Confirm extra time was worked</button></fieldset></form>
-        {row.canCorrect&&<details><summary>Correct a late clock-out mistake</summary><form onChange={()=>setDirty(true)} onSubmit={e=>submit(e,f=>void save('/staff/'+encodeURIComponent(row.staffId)+'/review',{version:row.version,date:row.date,decision:'clock-error',workEndedAt:row.date+'T'+String(f.get('end')),occurrence:f.get('occurrence')||undefined,noWorkAfterEnd:f.has('confirmed'),reason:f.get('reason')}))}><fieldset disabled={busy}><label>Actual work ended at ({data.timeZone})<input name="end" type="time" step="1" required /></label><label>Repeated daylight-saving time<select name="occurrence"><option value="">Not applicable</option><option value="earlier">First occurrence</option><option value="later">Second occurrence</option></select></label><label>Clock correction reason<input name="reason" required maxLength={1000} /></label><label className="payroll-check"><input name="confirmed" type="checkbox" required />I verified no work was performed after this time.</label><button>Save verified clock correction</button></fieldset></form></details>}
-      </article>)}
-    </section><section><h2>Recent work-time decisions</h2><ul>{data.items.filter(i=>['confirmed','corrected'].includes(i.status)).map(row=><li key={row.staffId+':'+row.date}>{row.name} · {row.date} · {row.status==='confirmed'?'Extra work confirmed':'Clock mistake corrected'} · {row.reason}</li>)}</ul><Link to="/staff">Staff directory</Link></section></>}
+
+function ScheduleForm({ person, today, timeZone, disabled, onDirty, onSave }: {
+  person: Employee; today: string; timeZone: string; disabled: boolean; onDirty: () => void;
+  onSave: (body: unknown) => void;
+}) {
+  const current = person.entries.filter(entry => entry.effectiveOn <= today).sort((a, b) => a.effectiveOn.localeCompare(b.effectiveOn)).at(-1);
+  const [startTime, setStartTime] = useState(current?.startTime || '');
+  const [endTime, setEndTime] = useState(current?.endTime || '');
+  const [invalid, setInvalid] = useState(false);
+  const valid = validTime(startTime) && validTime(endTime) && endTime > startTime;
+  const minutes = valid ? Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3)) - Number(startTime.slice(0, 2)) * 60 - Number(startTime.slice(3)) : 0;
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!valid) { setInvalid(true); return; }
+    const fields = new FormData(event.currentTarget);
+    onSave({ version: person.scheduleVersion, startTime, endTime, effectiveOn: fields.get('effectiveOn'), reason: fields.get('reason') });
+  }
+  return <form className="work-time-schedule-form" onChange={onDirty} onSubmit={submit}><fieldset disabled={disabled}>
+    <div className="work-time-current"><strong>Current approved schedule</strong>
+      <p>{current?.startTime && current?.endTime ? `${clockLabel(current.startTime)}–${clockLabel(current.endTime)} · ${current.timeZone || timeZone}` : 'Start and end times have not been set.'}</p>
+    </div>
+    <div className="payroll-grid">
+      <label>Approved start time<input type="time" name="startTime" step="60" value={startTime} onChange={event => { setStartTime(event.target.value); setInvalid(false); }} required aria-invalid={invalid} aria-describedby="approved-shift-help" /></label>
+      <label>Approved end time<input type="time" name="endTime" step="60" value={endTime} onChange={event => { setEndTime(event.target.value); setInvalid(false); }} required aria-invalid={invalid} aria-describedby="approved-shift-help" /></label>
+    </div>
+    <p id="approved-shift-help" className="ska-muted">Use the facility time zone: {timeZone}. Choose an end time after the start on the same day.</p>
+    {valid && <p role="status" className="work-time-window-preview">{clockLabel(startTime)}–{clockLabel(endTime)} · {duration(minutes * 60000)} scheduled. No automatic deductions.</p>}
+    {invalid && <p role="alert">Choose an approved end time after the start time on the same day.</p>}
+    <div className="payroll-grid"><label>Effective date<input name="effectiveOn" type="date" min={today} defaultValue={today} required /></label><label>Reason for schedule change<input name="reason" maxLength={1000} required /></label></div>
+    <p>Applies to new workdays from this date. A day already started keeps its saved schedule. Actual recorded time is never capped by the schedule.</p>
+    <button className="payroll-primary">Save approved schedule</button>
+    {!!person.entries.length && <details><summary>Schedule history</summary><ul>{person.entries.map((entry, index) => <li key={index}><strong>From {entry.effectiveOn}</strong> · {entry.startTime && entry.endTime ? `${clockLabel(entry.startTime)}–${clockLabel(entry.endTime)}` : `Earlier daily-hours schedule · ${duration(entry.minutes * 60000)}`}<br /><span>{entry.reason}</span></li>)}</ul></details>}
+  </fieldset></form>;
+}
+
+function ClockComparison({ row, zone }: { row: WorkDay; zone: string }) {
+  const recordedZone = row.timeZone || zone;
+  const scheduledZone = row.scheduleTimeZone || recordedZone;
+  return <><dl className="work-time-comparison">
+    <div><dt>Approved schedule</dt><dd>{approvedWindow(row)}</dd>{row.plannedStart && <small>{scheduledZone}</small>}</div>
+    <div><dt>Actual check-in</dt><dd>{localClock(row.checkin, recordedZone, 'Not available in earlier records')}</dd></div>
+    <div><dt>Actual checkout</dt><dd>{localClock(row.checkout, recordedZone, row.incomplete ? 'Checkout missing' : 'Not available')}</dd></div>
+    <div><dt>Recorded paid time</dt><dd>{duration(row.paidMillis)}</dd></div>
+    <div><dt>{row.plannedStart ? 'Time outside approved schedule' : 'Time over earlier daily-hours limit'}</dt><dd>{duration(row.plannedStart ? (row.outsideMillis ?? row.extraMillis) : row.extraMillis)}</dd></div>
+  </dl>
+  {recordedZone !== zone && <p>Recorded time zone: {recordedZone}</p>}
+  {(row.earlyMillis || 0) > 0 && <p className="work-time-attention">Before approved start: {duration(row.earlyMillis || 0)}</p>}
+  {(row.lateMillis || 0) > 0 && <p className="work-time-attention">After approved end: {duration(row.lateMillis || 0)}</p>}
+  {row.scheduleIssue && <p role="alert">{row.scheduleIssue}</p>}
+  </>;
+}
+
+function ManagerWorkTime({ admin }: { admin: boolean }) {
+  const report = useUnsavedChanges(); const [dirty, setDirty] = useState(false); const [draft, setDraft] = useState(''); const [formTurn, setFormTurn] = useState(0);
+  const [data, setData] = useState<WorkData | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [selected, setSelected] = useState(''), [message, setMessage] = useState('');
+  const [revision, setRevision] = useState(0); const mounted = useRef(true); const saving = useRef(false);
+  useEffect(() => { report(dirty, busy); return () => report(false, false); }, [dirty, busy, report]);
+  useEffect(() => { if (!dirty && !busy) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, [dirty, busy]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { const c = new AbortController(); void axios.get<{ data: WorkData }>(url, { signal: c.signal }).then(response => { if (!c.signal.aborted) { setData(response.data.data); setError(''); } }).catch(failure => { if (!c.signal.aborted && !axios.isCancel(failure)) { setData(null); setError(authError(failure, 'Could not load employee work time.')); } }); return () => c.abort(); }, [revision]);
+  function discard() { if (dirty && !window.confirm('Discard unsaved work-time form changes?')) return false; setDirty(false); setDraft(''); setFormTurn(n => n + 1); return true; }
+  function mark(id: string) { setDirty(true); setDraft(id); }
+  const locked = (id: string) => busy || dirty && draft !== id;
+  async function save(path: string, body: unknown) {
+    if (saving.current) return; saving.current = true; setBusy(true); setError(''); setMessage('');
+    try { await axios.post(url + path, body); if (mounted.current) { setDirty(false); setDraft(''); setData(null); setRevision(n => n + 1); setMessage('Saved.'); } }
+    catch (failure) { if (mounted.current) setError(authError(failure, 'Could not save this review. Refresh and review the latest record.')); }
+    finally { saving.current = false; if (mounted.current) setBusy(false); }
+  }
+  function submit(event: FormEvent<HTMLFormElement>, run: (fields: FormData) => void) { event.preventDefault(); run(new FormData(event.currentTarget)); }
+  const person = data?.staff.find(employee => employee.id === selected);
+  const pending = data?.items.filter(row => row.status === 'pending' && (!selected || row.staffId === selected)) || [];
+  const recorded = data?.items.filter(row => row.staffId === selected) || [];
+  return <div className="payroll-page ska-core-page work-time-page"><header><h1>Work time</h1><p>Set when each employee is approved to work, compare their actual clock times, then review any time outside that schedule.</p><p>Schedule approval and paid-hour approval are separate. Private pay rates and tax records are administrator-only.</p></header>
+    {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
+    <div className="payroll-actions"><button disabled={busy} onClick={() => { if (discard()) setRevision(n => n + 1); }}>Refresh work time</button>{dirty && <button disabled={busy} onClick={discard}>Discard unsaved changes</button>}</div>
+    {dirty && <p className="payroll-note">Save or discard this form before editing another one.</p>}
+    {!data ? !error && <p role="status">Loading work time…</p> : <>
+      <section><h2><CalendarClock size={23} aria-hidden="true" />1. Set approved schedule</h2><label>Employee<select aria-label="Work-time employee" value={selected} disabled={busy} onChange={event => { if (discard()) setSelected(event.target.value); }}><option value="">Choose an employee</option>{data.staff.map(employee => <option key={employee.id} value={employee.id}>{employee.name}{employee.active ? '' : ' · Inactive'}</option>)}</select></label>
+        {person ? <ScheduleForm key={person.id + ':' + person.scheduleVersion + ':' + formTurn} person={person} today={data.today} timeZone={data.timeZone} disabled={locked('schedule')} onDirty={() => mark('schedule')} onSave={body => void save('/staff/' + encodeURIComponent(person.id) + '/schedule', body)} /> : <p>Choose an employee to set an approved start and end time.</p>}
+      </section>
+      <section><h2><ClipboardCheck size={23} aria-hidden="true" />2. Review clocked time</h2><p>{data.timeZone} · Last 60 days. These are actual clock records, not a pay calculation.</p>
+        {!person ? <p>Choose an employee above to see their approved schedule beside every recorded day.</p> : !recorded.length ? <p>No clocked workdays for {person.name} in this period.</p> : <div className="work-time-day-list">{recorded.map(row => <article key={row.staffId + ':' + row.date} className="work-time-day" aria-label={person.name + ' time on ' + row.date}><div className="work-time-day-head"><h3>{row.date}</h3><span className={'payroll-status ' + (row.status === 'within-schedule' || row.status === 'confirmed' || row.status === 'corrected' ? 'is-ready' : '')}>{statusLabel(row)}</span></div><ClockComparison row={row} zone={data.timeZone} /></article>)}</div>}
+      </section>
+      <section><h2>3. Review time outside schedule ({pending.length})</h2><p>Confirm actual work, or correct a verified late clock-out mistake. Recorded time is kept until an explicit reviewed correction; it is never silently removed.</p>
+        {!pending.length && <p>No extra time is waiting for review.</p>}
+        {pending.map(row => { const id = row.staffId + ':' + row.date; return <article className="payroll-calculation-day" key={id + ':' + formTurn}><h3>{row.name} · {row.date}</h3><ClockComparison row={row} zone={data.timeZone} />
+          <form onChange={() => mark('review:' + id)} onSubmit={event => submit(event, fields => void save('/staff/' + encodeURIComponent(row.staffId) + '/review', { version: row.version, date: row.date, decision: 'worked', reason: fields.get('reason') }))}><fieldset disabled={locked('review:' + id)}><label>Extra-work review note<input name="reason" required maxLength={1000} /></label><button>Confirm extra time was worked</button></fieldset></form>
+          {row.canCorrect && (!row.plannedStart || ((row.lateMillis || 0) > 0 && !row.earlyMillis && !row.scheduleIssue)) && <details><summary>Correct a late clock-out mistake</summary><form onChange={() => mark('correction:' + id)} onSubmit={event => submit(event, fields => void save('/staff/' + encodeURIComponent(row.staffId) + '/review', { version: row.version, date: row.date, decision: 'clock-error', workEndedAt: row.date + 'T' + String(fields.get('end')), occurrence: fields.get('occurrence') || undefined, noWorkAfterEnd: fields.has('confirmed'), reason: fields.get('reason') }))}><fieldset disabled={locked('correction:' + id)}><label>Actual work ended at ({data.timeZone})<input name="end" type="time" step="1" required /></label><label>Repeated daylight-saving time<select name="occurrence"><option value="">Not applicable</option><option value="earlier">First occurrence</option><option value="later">Second occurrence</option></select></label><label>Clock correction reason<input name="reason" required maxLength={1000} /></label><label className="payroll-check"><input name="confirmed" type="checkbox" required />I verified no work was performed after this time.</label><button>Save verified clock correction</button></fieldset></form></details>}
+        </article>; })}
+      </section>
+      <section><h2>Recent work-time decisions</h2><ul>{data.items.filter(row => ['confirmed', 'corrected'].includes(row.status) && (!selected || row.staffId === selected)).map(row => <li key={row.staffId + ':' + row.date}>{row.name} · {row.date} · {row.status === 'confirmed' ? 'Outside time confirmed' : 'Clock time corrected'} · {row.reason}</li>)}</ul><p>{admin ? <Link to="/staff/payroll">Continue to pay calculation</Link> : 'An administrator approves paid hours and calculates pay after this review.'}</p><Link to="/staff">Staff directory</Link></section>
+    </>}
   </div>;
 }
 export function ExtraTimeAlerts() {

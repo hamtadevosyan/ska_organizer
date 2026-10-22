@@ -9,9 +9,12 @@ async function actor(role = 'teacher', person) { const account = await db.create
 const api = (t, method, route, body) => http(app)[method]('/api' + route).set('Cookie','skao_session=' + t).set('Origin',fixture.origin).set('X-CSRF-Token',auth.csrfToken(t)).send(body);
 async function clock(t, action, requestId = randomUUID()) { const own = await service.own(t); await service.clock(t,{ action, requestId, version: own.version }); return service.own(t); }
 function advance(ms) { jest.setSystemTime(new Date(Date.now() + ms)); }
-async function day() {
+function freeze(value) {
   jest.useFakeTimers({ doNotFake: ['setTimeout','clearTimeout','setInterval','clearInterval','setImmediate','clearImmediate','nextTick','queueMicrotask','performance','hrtime'] });
-  jest.setSystemTime(new Date('2026-10-19T15:00:00Z'));
+  jest.setSystemTime(new Date(value));
+}
+async function day() {
+  freeze('2026-10-19T15:00:00Z');
   const person = await staff(), t = await admin(), teacher = await actor('teacher', person);
   await clock(teacher.token,'checkin'); advance(8 * 3600000); await clock(teacher.token,'checkout');
   return { person, t, teacher };
@@ -160,4 +163,117 @@ test('work-time HTTP writes require CSRF and viewers cannot query or change the 
   const audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic work review audit failure'));
   try{await expect(service.reviewWork(editor.token,person.id,body)).rejects.toThrow('Synthetic work review audit failure');}finally{audit.mockRestore();}
   expect((await service.workTime(t)).items[0].status).toBe('pending');
+});
+
+
+async function scheduledDay({startTime='08:00',endTime='17:00',arrival='2026-10-19T15:00:00Z',departure='2026-10-20T00:00:00Z',date='2026-10-19'}={}) {
+  freeze(arrival); const person=await staff(),t=await admin(),teacher=await actor('teacher',person);
+  await service.schedule(t,person.id,{version:0,effectiveOn:date,startTime,endTime,reason:'Synthetic approved clock times'});
+  await clock(teacher.token,'checkin');jest.setSystemTime(new Date(departure));await clock(teacher.token,'checkout');
+  const list=await service.workTime(t,{start:date,end:date});return {person,t,teacher,row:list.items.find(row=>row.staffId===person.id)};
+}
+test('approved start and end times are strict, same-day, effective dated and cannot mix with legacy daily hours',async()=>{
+  freeze('2026-10-19T15:00:00Z');const person=await staff(),t=await admin();
+  for(const fields of [
+    {startTime:'8:00',endTime:'17:00'},{startTime:'08:00'},{endTime:'17:00'},
+    {startTime:'08:00',endTime:'24:00'},{startTime:'08:60',endTime:'17:00'},
+    {startTime:'08:00',endTime:'08:00'},{startTime:'17:00',endTime:'08:00'},
+    {startTime:'08:00',endTime:'17:00',approvedHours:9},
+  ]) await expect(service.schedule(t,person.id,{version:0,effectiveOn:'2026-10-19',reason:'Invalid synthetic schedule',...fields})).rejects.toMatchObject({status:400});
+  await expect(service.schedule(t,person.id,{version:0,effectiveOn:'2026-10-18',startTime:'08:00',endTime:'17:00',reason:'Retroactive'})).rejects.toMatchObject({status:400});
+  expect(await db.getPayrollRecord('profile:work-schedule:'+person.id)).toBeNull();
+  await service.schedule(t,person.id,{version:0,effectiveOn:'2026-10-19',startTime:'08:00',endTime:'17:00',reason:'Approved daily window'});
+  const list=await service.workTime(t),schedule=list.staff.find(row=>row.id===person.id);
+  expect(schedule).toMatchObject({scheduleVersion:1,entries:[{startTime:'08:00',endTime:'17:00',timeZone:'America/Los_Angeles',minutes:540}]});
+  expect(list.items).toEqual([]);
+});
+test.each([
+  ['inside the approved clock times','2026-10-19T15:00:00Z','2026-10-20T00:00:00Z',0,0,'within-schedule'],
+  ['early arrival despite fewer total hours','2026-10-19T14:30:00Z','2026-10-19T22:00:00Z',1800000,0,'pending'],
+  ['late checkout despite exactly the daily span','2026-10-19T16:00:00Z','2026-10-20T01:00:00Z',0,3600000,'pending'],
+  ['both early arrival and late checkout','2026-10-19T14:30:00Z','2026-10-20T00:30:00Z',1800000,1800000,'pending'],
+])('%s compares actual work with the frozen window without capping pay',async(_,arrival,departure,earlyMillis,lateMillis,status)=>{
+  const {person,t,row}=await scheduledDay({arrival,departure});
+  expect(row).toMatchObject({plannedMinutes:540,plannedStart:'08:00',plannedEnd:'17:00',scheduleTimeZone:'America/Los_Angeles',checkin:new Date(arrival).toISOString(),checkout:new Date(departure).toISOString(),earlyMillis,lateMillis,outsideMillis:earlyMillis+lateMillis,extraMillis:earlyMillis+lateMillis,status,scheduleIssue:null});
+  expect(row.paidMillis).toBe(Date.parse(departure)-Date.parse(arrival));
+  const ledger=vault.open(await db.getPayrollRecord('ledger:'+person.id));
+  expect(ledger.workWindows['2026-10-19']).toMatchObject({startTime:'08:00',endTime:'17:00',timeZone:'America/Los_Angeles'});
+  if(status==='pending') {
+    await configure(t,person.id);await approve(t,person.id,Math.min(row.paidMillis,8*3600000));
+    expect((await service.preview(t,person.id,{start:row.date,end:row.date})).blockers).toContain(row.date+': Extra work time needs manager review in Work time.');
+    const current=(await service.workTime(t)).items.find(row=>row.staffId===person.id);
+    await service.reviewWork(t,person.id,{version:current.version,date:row.date,decision:'worked',reason:'Verified recorded work outside the approved clock times'});
+    expect((await service.workTime(t)).items.find(row=>row.staffId===person.id)).toMatchObject({status:'confirmed',paidMillis:row.paidMillis});
+  }
+});
+test('changing a schedule freezes the started day and applies the new clock times only to later days',async()=>{
+  freeze('2026-10-19T15:00:00Z');const person=await staff(),t=await admin(),teacher=await actor('teacher',person);
+  await service.schedule(t,person.id,{version:0,effectiveOn:'2026-10-19',startTime:'08:00',endTime:'17:00',reason:'Original approved clock times'});
+  await clock(teacher.token,'checkin');
+  await service.schedule(t,person.id,{version:1,effectiveOn:'2026-10-19',startTime:'09:00',endTime:'18:00',reason:'Change for the next unstarted day'});
+  advance(9*3600000);await clock(teacher.token,'checkout');
+  let rows=(await service.workTime(t)).items.filter(row=>row.staffId===person.id);
+  expect(rows[0]).toMatchObject({plannedStart:'08:00',plannedEnd:'17:00',status:'within-schedule'});
+  jest.setSystemTime(new Date('2026-10-20T16:00:00Z'));await clock(teacher.token,'checkin');advance(9*3600000);await clock(teacher.token,'checkout');
+  rows=(await service.workTime(t)).items.filter(row=>row.staffId===person.id);
+  expect(rows.map(row=>({date:row.date,start:row.plannedStart,end:row.plannedEnd,status:row.status}))).toEqual([
+    {date:'2026-10-20',start:'09:00',end:'18:00',status:'within-schedule'},
+    {date:'2026-10-19',start:'08:00',end:'17:00',status:'within-schedule'},
+  ]);
+});
+test('existing duration-only days and confirmed decisions never gain clock windows retrospectively',async()=>{
+  const {person,t,teacher}=await day();await clock(teacher.token,'checkin');advance(3600000);await clock(teacher.token,'checkout');
+  let row=(await service.workTime(t)).items.find(row=>row.staffId===person.id);
+  await service.reviewWork(t,person.id,{version:row.version,date:row.date,decision:'worked',reason:'Legacy duration-only extra work verified'});
+  const original=vault.open(await db.getPayrollRecord('ledger:'+person.id)).workReviews[row.date];
+  await service.schedule(t,person.id,{version:0,effectiveOn:row.date,startTime:'09:00',endTime:'17:00',reason:'New clock schedule must not rewrite old work'});
+  row=(await service.workTime(t)).items.find(row=>row.staffId===person.id);
+  expect(row).toMatchObject({plannedStart:null,plannedEnd:null,plannedMinutes:480,extraMillis:3600000,status:'confirmed'});
+  expect(vault.open(await db.getPayrollRecord('ledger:'+person.id)).workReviews[row.date]).toEqual(original);
+  // Older ledgers without frozen numeric limits must also remain duration-only.
+  const raw=await db.getPayrollRecord('ledger:'+person.id),data=vault.open(raw);delete data.workLimits;delete data.workWindows;
+  await db.savePayrollRecord({...raw,ciphertext:vault.seal(raw,data)});
+  expect((await service.workTime(t)).items.find(row=>row.staffId===person.id)).toMatchObject({plannedStart:null,plannedEnd:null,plannedMinutes:480,status:'confirmed'});
+});
+test('completed historical unpaid intervals are excluded from early work; unfinished legacy intervals do not infer deductions',async()=>{
+  const {person,t}=await scheduledDay({arrival:'2026-10-19T14:00:00Z'});let detail=await service.get(t,person.id),session=detail.ledger.sessions[0];
+  await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:session.end,voided:false,breaks:[{start:session.start,end:'2026-10-19T15:00:00Z',paid:false}],reason:'Preserve a recorded historical unpaid interval'});
+  expect((await service.workTime(t)).items.find(row=>row.staffId===person.id)).toMatchObject({earlyMillis:0,extraMillis:0,status:'within-schedule',paidMillis:9*3600000});
+  detail=await service.get(t,person.id);session=detail.ledger.sessions[0];
+  await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:session.end,voided:false,breaks:[{start:session.start,end:null,paid:false}],reason:'Retain an unfinished historical entry without a guessed end'});
+  expect((await service.workTime(t)).items.find(row=>row.staffId===person.id)).toMatchObject({earlyMillis:3600000,extraMillis:3600000,status:'pending',paidMillis:10*3600000,incomplete:false});
+});
+test('a verified late clock error may shorten only the recorded tail and cannot erase early actual work',async()=>{
+  const {person,t,row}=await scheduledDay({arrival:'2026-10-19T14:00:00Z',departure:'2026-10-20T01:00:00Z'});
+  const raw=await db.getPayrollRecord('ledger:'+person.id),original=vault.open(raw);
+  await expect(service.reviewWork(t,person.id,{version:row.version,date:row.date,decision:'clock-error',workEndedAt:'2026-10-20T00:00:00Z',noWorkAfterEnd:true,reason:'Late checkout corrected but early time remains real'})).rejects.toMatchObject({status:400});
+  expect(vault.open(await db.getPayrollRecord(raw.id))).toEqual(original);
+  expect((await service.workTime(t)).items.find(row=>row.staffId===person.id)).toMatchObject({status:'pending',earlyMillis:3600000,lateMillis:3600000,paidMillis:11*3600000});
+});
+test('a new-window late checkout correction retains the original time and records a current review fingerprint',async()=>{
+  const {person,t,row}=await scheduledDay({departure:'2026-10-20T01:00:00Z'});
+  expect(row).toMatchObject({canCorrect:true,status:'pending',lateMillis:3600000});
+  await service.reviewWork(t,person.id,{version:row.version,date:row.date,decision:'clock-error',workEndedAt:'2026-10-20T00:00:00Z',noWorkAfterEnd:true,reason:'Employee verified no work after 5 PM'});
+  const next=(await service.workTime(t)).items.find(item=>item.staffId===person.id);
+  expect(next).toMatchObject({status:'corrected',lateMillis:0,paidMillis:9*3600000});
+  const ledger=vault.open(await db.getPayrollRecord('ledger:'+person.id));
+  expect(ledger.sessions[0].original.end).toBe('2026-10-20T01:00:00.000Z');
+  expect(ledger.workReviews[row.date]).toMatchObject({decision:'clock-error',reason:'Employee verified no work after 5 PM'});
+});
+test('new windows use facility clock changes and request explicit review when an approved local time does not exist',async()=>{
+  const {person,t,row}=await scheduledDay({startTime:'01:00',endTime:'03:00',date:'2026-11-01',arrival:'2026-11-01T08:00:00Z',departure:'2026-11-01T11:00:00Z'});
+  expect(row).toMatchObject({plannedMinutes:120,paidMillis:3*3600000,outsideMillis:0,status:'within-schedule'});
+  const spring=await scheduledDay({startTime:'02:30',endTime:'04:00',date:'2027-03-14',arrival:'2027-03-14T10:00:00Z',departure:'2027-03-14T11:00:00Z'});
+  expect(spring.row).toMatchObject({plannedStart:'02:30',plannedEnd:'04:00',paidMillis:3600000,status:'pending'});expect(spring.row.scheduleIssue).toMatch(/clocks changed/);
+});
+test('schedule and outside-time audit failures roll back encrypted fields, versions and decisions together',async()=>{
+  freeze('2026-10-19T15:00:00Z');let person=await staff(),t=await admin();
+  let audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic schedule audit failure'));
+  try{await expect(service.schedule(t,person.id,{version:0,effectiveOn:'2026-10-19',startTime:'08:00',endTime:'17:00',reason:'Synthetic rollback'})).rejects.toThrow('Synthetic schedule audit failure');}finally{audit.mockRestore();}
+  expect(await db.getPayrollRecord('profile:work-schedule:'+person.id)).toBeNull();
+  const result=await scheduledDay({departure:'2026-10-20T01:00:00Z'});({person,t}=result);
+  const before=await db.getPayrollRecord('ledger:'+person.id);audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic window decision audit failure'));
+  try{await expect(service.reviewWork(t,person.id,{version:result.row.version,date:result.row.date,decision:'worked',reason:'Actual extra work verified'})).rejects.toThrow('Synthetic window decision audit failure');}finally{audit.mockRestore();}
+  expect(await db.getPayrollRecord(before.id)).toEqual(before);
+  expect((await service.workTime(t)).items.find(row=>row.staffId===person.id)).toMatchObject({status:'pending',lateMillis:3600000});
 });

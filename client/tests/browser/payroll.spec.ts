@@ -3,6 +3,108 @@ import { expect, test } from '@playwright/test';
 import type { APIResponse } from '@playwright/test';
 import { api, authenticatedApi, origin } from './auth-helpers';
 async function data<T>(response: APIResponse, status = 200): Promise<T> { expect(response.status(), await response.text()).toBe(status); return (await response.json()).data as T; }
+type ScheduledWorkDay = {
+  staffId: string; date: string; plannedStart: string | null; plannedEnd: string | null; plannedMinutes: number;
+  checkin: string; checkout: string; paidMillis: number; outsideMillis: number; status: string; reason: string;
+};
+type WorkSchedule = {
+  today: string; timeZone: string; items: ScheduledWorkDay[];
+  staff: { id: string; scheduleVersion: number; entries: { startTime?: string; endTime?: string; minutes: number; effectiveOn: string; reason: string }[] }[];
+};
+for (const width of [320, 390]) test(`approved start and end times persist and flag short work outside the window at ${width}px`, async ({ page, browser }) => {
+  test.setTimeout(90_000);
+  const http = await authenticatedApi(page);
+  const suffix = randomUUID().slice(0, 8);
+  const employee = await data<{ id: string; name: string }>(await http.post(api + '/staff', { data: { name: 'Approved window ' + suffix, role: 'Other' } }), 201);
+  const temporary = 'Synthetic window temporary 20!', password = 'Synthetic window changed 20!';
+  for (const role of ['editor', 'teacher']) await data(await http.post(api + '/admin/accounts', { data: {
+    username: 'window-' + role + '-' + suffix, displayName: role + ' Window example', role, password: temporary,
+    ...(role === 'teacher' ? { staffMemberId: employee.id } : {}),
+  } }), 201);
+  const editorContext = await browser.newContext({ viewport: { width, height: 1000 } });
+  const teacherContext = await browser.newContext({ viewport: { width, height: 1000 } });
+  try {
+    const editor = await editorContext.newPage(), teacher = await teacherContext.newPage();
+    editor.setDefaultTimeout(10_000);
+    async function login(accountPage: typeof editor, role: string) {
+      const response = await accountPage.request.post(api + '/auth/login', { headers: { Origin: origin }, data: { username: 'window-' + role + '-' + suffix, password: temporary, rememberMe: true } });
+      expect(response.status()).toBe(200);
+      const changed = await accountPage.request.post(api + '/auth/password', { headers: { Origin: origin, 'X-CSRF-Token': (await response.json()).csrfToken }, data: { currentPassword: temporary, password } });
+      expect(changed.status()).toBe(200);
+      const cookies = (await accountPage.context().cookies(api)).filter(cookie => cookie.name === 'skao_session');
+      await accountPage.context().addCookies(cookies.map(cookie => ({ ...cookie, expires: -1 })));
+      return { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken };
+    }
+    await login(editor, 'editor');
+    const headers = await login(teacher, 'teacher');
+    const initialResponse = await editor.request.get(api + '/work-time');
+    const initial = await data<WorkSchedule>(initialResponse);
+    // Use the fixture server's current facility clock, so this works at any time of day.
+    const serverNow = new Date(initialResponse.headers().date);
+    expect(Number.isFinite(serverNow.getTime())).toBe(true);
+    const localHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: initial.timeZone, hour: '2-digit', hourCycle: 'h23' }).format(serverNow));
+    const outsideStart = localHour < 12 ? '16:00' : '08:00', outsideEnd = localHour < 12 ? '17:00' : '09:00';
+    const outsideLabel = localHour < 12 ? '4:00 PM–5:00 PM' : '8:00 AM–9:00 AM';
+
+    await editor.goto('/staff/work-time');
+    await editor.getByRole('combobox', { name: 'Work-time employee', exact: true }).selectOption(employee.id);
+    await editor.getByLabel('Approved start time', { exact: true }).fill('08:00');
+    await editor.getByLabel('Approved end time', { exact: true }).fill('17:00');
+    await expect(editor.getByText('8:00 AM–5:00 PM · 9 hr scheduled. No automatic deductions.', { exact: true })).toBeVisible();
+    await editor.getByLabel('Effective date', { exact: true }).fill(initial.today);
+    await editor.getByLabel('Reason for schedule change', { exact: true }).fill('Agreed 8 AM to 5 PM schedule');
+    await editor.getByRole('button', { name: 'Save approved schedule', exact: true }).click();
+    await expect(editor.getByLabel('Reason for schedule change', { exact: true })).toHaveValue('');
+    await editor.reload();
+    await editor.getByRole('combobox', { name: 'Work-time employee', exact: true }).selectOption(employee.id);
+    await expect(editor.getByLabel('Approved start time', { exact: true })).toHaveValue('08:00');
+    await expect(editor.getByLabel('Approved end time', { exact: true })).toHaveValue('17:00');
+    await editor.getByText('Schedule history', { exact: true }).click();
+    await expect(editor.getByRole('listitem').filter({ hasText: 'Agreed 8 AM to 5 PM schedule' })).toContainText('8:00 AM–5:00 PM');
+    const saved = await data<WorkSchedule>(await editor.request.get(api + '/work-time'));
+    expect(saved.staff.find(person => person.id === employee.id)?.entries).toMatchObject([
+      { startTime: '08:00', endTime: '17:00', minutes: 540, effectiveOn: initial.today, reason: 'Agreed 8 AM to 5 PM schedule' },
+    ]);
+
+    // Save a different window before this employee's first clock, then record only a few real milliseconds.
+    await editor.getByLabel('Approved start time', { exact: true }).fill(outsideStart);
+    await editor.getByLabel('Approved end time', { exact: true }).fill(outsideEnd);
+    await editor.getByLabel('Reason for schedule change', { exact: true }).fill('Approved window for outside-time review');
+    await editor.getByRole('button', { name: 'Save approved schedule', exact: true }).click();
+    await expect(editor.getByLabel('Reason for schedule change', { exact: true })).toHaveValue('');
+    await data(await teacher.request.post(api + '/time-clock', { headers, data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
+    const own = await data<{ version: number; checkedIn: boolean }>(await teacher.request.get(api + '/time-clock'));
+    await data(await teacher.request.post(api + '/time-clock', { headers, data: { action: 'checkout', version: own.version, requestId: randomUUID() } }));
+    const recorded = await data<WorkSchedule>(await editor.request.get(api + '/work-time'));
+    const day = recorded.items.find(item => item.staffId === employee.id && item.date === initial.today)!;
+    expect(day).toMatchObject({ plannedStart: outsideStart, plannedEnd: outsideEnd, plannedMinutes: 60, status: 'pending' });
+    expect(day.paidMillis).toBeGreaterThan(0);
+    expect(day.paidMillis).toBeLessThan(day.plannedMinutes * 60_000);
+    expect(day.outsideMillis).toBe(day.paidMillis);
+
+    await editor.getByRole('button', { name: 'Refresh work time', exact: true }).click();
+    const dayLog = editor.getByRole('article', { name: employee.name + ' time on ' + initial.today, exact: true });
+    await expect(dayLog.getByText('Needs manager review', { exact: true })).toBeVisible();
+    await expect(dayLog.getByText('Approved schedule', { exact: true }).locator('..').locator('dd')).toHaveText(outsideLabel);
+    const localClock = (instant: string) => new Date(instant).toLocaleTimeString('en-US', { timeZone: initial.timeZone, hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    await expect(dayLog.getByText('Actual check-in', { exact: true }).locator('..').locator('dd')).toHaveText(localClock(day.checkin));
+    await expect(dayLog.getByText('Actual checkout', { exact: true }).locator('..').locator('dd')).toHaveText(localClock(day.checkout));
+    await expect(dayLog.getByText('Time outside approved schedule', { exact: true })).toBeVisible();
+    expect((await editor.request.get(api + '/payroll/staff/' + employee.id)).status()).toBe(403);
+    await expect(editor.getByRole('navigation', { name: 'Staff sections' }).getByRole('link', { name: 'Pay & time', exact: true })).toHaveCount(0);
+    const review = editor.getByRole('article').filter({ has: editor.getByRole('heading', { name: employee.name + ' · ' + initial.today, exact: true }) });
+    await review.getByLabel('Extra-work review note', { exact: true }).fill('Manager verified the actual work outside the approved window');
+    await review.getByRole('button', { name: 'Confirm extra time was worked', exact: true }).click();
+    await expect(dayLog.getByText('Outside time confirmed', { exact: true })).toBeVisible();
+    const reviewed = await data<WorkSchedule>(await editor.request.get(api + '/work-time'));
+    expect(reviewed.items.find(item => item.staffId === employee.id && item.date === initial.today)).toMatchObject({
+      plannedStart: outsideStart, plannedEnd: outsideEnd, checkin: day.checkin, checkout: day.checkout,
+      paidMillis: day.paidMillis, outsideMillis: day.outsideMillis, status: 'confirmed',
+      reason: 'Manager verified the actual work outside the approved window',
+    });
+    expect(await editor.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
+  } finally { await editorContext.close(); await teacherContext.close(); }
+});
 for (const width of [320, 1280]) test(`own clock and private pay review through HTTP at ${width}px`, async ({ page, browser }) => {
   test.setTimeout(90_000); page.setDefaultTimeout(10_000); await page.setViewportSize({ width, height: 1000 }); const http = await authenticatedApi(page); const suffix = randomUUID().slice(0, 8);
   const room = await data<{ id: string }>(await http.post(api + '/rooms', { data: { name: 'Clock class ' + suffix, ageMinMonths: 0, ageMaxMonths: 60, capacity: 10 } }), 201);

@@ -93,7 +93,7 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
         <div className="payroll-review-days">{selected.map(dayCard)}</div>
         {!!related.length && <details><summary>Related workweek days</summary><p>These dates are outside the pay period. Review them when needed to check the complete overtime workweek; their pay is not included in this period.</p><div className="payroll-review-days">{related.map(dayCard)}</div></details>}
       </>}
-      <p>For a late checkout, <Link to="/staff/work-time">review extra work time</Link> before finalizing.</p>
+      <p>For work outside the approved schedule, <Link to="/staff/work-time">review work time</Link> before finalizing.</p>
     </div>
     <div className="payroll-step"><h3><CheckCircle2 size={21} aria-hidden="true" />3. Calculate gross pay</h3><p>The server checks the saved hours, effective rate and overtime rules. It will show anything still needing attention.</p>
       {dirty && <p role="status">Save or discard your changes before calculating. <button type="button" disabled={busy} onClick={() => { if (!window.confirm('Discard the unsaved payroll form changes?')) return; setDraftTurn(n => n + 1); setReviewing(''); onDirty(false); }}>Discard unsaved changes</button></p>}
