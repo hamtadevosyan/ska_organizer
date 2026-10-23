@@ -70,9 +70,9 @@ if "$access_only"; then
 fi
 
 if "$payroll_only"; then
-  server_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollReview.test.js tests/payrollPolicy.test.js tests/payrollMath.test.js tests/payrollLocalCheckout.test.js tests/clockStations.test.js tests/staffAccountAccess.test.js tests/authentication.test.js)
-  postgres_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollReview.test.js tests/payrollPolicy.test.js tests/payrollMath.test.js tests/payrollLocalCheckout.test.js tests/clockStations.test.js tests/clockStations.postgres.test.js tests/payroll.postgres.test.js tests/childDocuments.postgres.test.js tests/staffAccountLinks.postgres.test.js tests/staffAccountAccess.test.js)
-  client_tests+=(-- src/App.test.tsx src/auth/AuthFlow.test.tsx src/pages/MyTime.test.tsx src/pages/TimeClockStation.test.tsx src/components/staff/StaffClock.test.tsx src/components/staff/ClockStationSetup.test.tsx src/pages/Payroll.test.tsx src/pages/WorkTime.test.tsx src/pages/Classroom.test.tsx src/pages/TeacherCare.test.tsx src/pages/Dashboard.test.tsx src/components/AppShell.test.tsx src/router/index.test.tsx)
+  server_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollRates.test.js tests/payrollReview.test.js tests/payrollPolicy.test.js tests/payrollMath.test.js tests/payrollLocalCheckout.test.js tests/clockStations.test.js tests/staffAccountAccess.test.js tests/authentication.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollRates.test.js tests/payrollReview.test.js tests/payrollPolicy.test.js tests/payrollMath.test.js tests/payrollLocalCheckout.test.js tests/clockStations.test.js tests/clockStations.postgres.test.js tests/payroll.postgres.test.js tests/childDocuments.postgres.test.js tests/staffAccountLinks.postgres.test.js tests/staffAccountAccess.test.js)
+  client_tests+=(-- src/App.test.tsx src/auth/AuthFlow.test.tsx src/pages/MyTime.test.tsx src/pages/TimeClockStation.test.tsx src/components/staff/StaffClock.test.tsx src/components/staff/ClockStationSetup.test.tsx src/pages/Payroll.test.tsx src/components/payroll/ClockSessions.test.tsx src/components/payroll/RateAllocationFields.test.tsx src/pages/WorkTime.test.tsx src/pages/Classroom.test.tsx src/pages/TeacherCare.test.tsx src/pages/Dashboard.test.tsx src/components/AppShell.test.tsx src/router/index.test.tsx)
   browser_tests+=(-- tests/browser/payroll.spec.ts tests/browser/clock-station.spec.ts tests/browser/staff-account-links.spec.ts tests/browser/classroom-access.spec.ts tests/browser/teacher-care.spec.ts)
 fi
 

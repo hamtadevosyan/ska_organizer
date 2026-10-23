@@ -79,8 +79,11 @@ test('the employee day log separates the approved window, actual clocks, and out
   render(view()); await chooseEmployee();
   const day = within(screen.getByRole('article', { name: 'Ari Employee time on 2026-10-21' }));
   expect(day.getByText('8:00 AM–5:00 PM')).toBeVisible();
-  expect(day.getByText('8:00:00 AM')).toBeVisible();
-  expect(day.getByText('5:30:00 PM')).toBeVisible();
+  expect(day.getByText('Oct 21, 2026, 8:00:00 AM')).toBeVisible();
+  expect(day.getByText('Oct 21, 2026, 5:30:00 PM')).toBeVisible();
+  expect(day.getByText('Earlier record summary (individual sessions unavailable)')).toBeVisible();
+  expect(day.getByText('First recorded arrival')).toBeVisible();
+  expect(day.getByText('Last recorded departure')).toBeVisible();
   expect(day.getByText('9 hr 30 min')).toBeVisible();
   expect(day.getByText('Time outside approved schedule')).toBeVisible();
   expect(day.getByText('30 min')).toBeVisible();
@@ -113,6 +116,75 @@ test('an incomplete clock record stays visible without any break instruction', a
   expect(day.getByText('1 hr')).toBeVisible();
   expect(screen.queryByText(/break/i)).not.toBeInTheDocument();
   expect(screen.getByText('No extra time is waiting for review.')).toBeVisible();
+});
+
+test('separate clock sessions appear in chronological order without pairing aggregate endpoints', async () => {
+  data.items[0] = { ...data.items[0], checkin: '2026-10-18T15:00:00Z', checkout: '2026-10-23T00:30:00Z',
+    status: 'within-schedule', extraMillis: 0, lateMillis: 0, outsideMillis: 0,
+    sessions: [
+      { id: 'second', start: '2026-10-21T20:00:00Z', end: '2026-10-21T23:00:00Z', dayStart: '2026-10-21T20:00:00Z', dayEnd: '2026-10-21T23:00:00Z', originalStart: '2026-10-21T20:00:00Z', originalEnd: '2026-10-21T23:00:00Z' },
+      { id: 'first', start: '2026-10-21T15:00:00Z', end: '2026-10-21T19:00:00Z', dayStart: '2026-10-21T15:00:00Z', dayEnd: '2026-10-21T19:00:00Z', originalStart: '2026-10-21T15:00:00Z', originalEnd: '2026-10-21T19:00:00Z' },
+    ] };
+  render(view()); await chooseEmployee();
+  const day = within(screen.getByRole('article', { name: 'Ari Employee time on 2026-10-21' }));
+  const sessions = within(day.getByRole('list', { name: 'Recorded sessions for 2026-10-21' })).getAllByRole('listitem');
+  expect(sessions).toHaveLength(2);
+  expect(sessions[0]).toHaveAccessibleName('Recorded session 1 for 2026-10-21');
+  expect(within(sessions[0]).getByText('Check-in')).toBeVisible();
+  expect(within(sessions[0]).getByText('Oct 21, 2026, 8:00:00 AM')).toBeVisible();
+  expect(within(sessions[0]).getByText('Checkout')).toBeVisible();
+  expect(within(sessions[0]).getByText('Oct 21, 2026, 12:00:00 PM')).toBeVisible();
+  expect(sessions[1]).toHaveAccessibleName('Recorded session 2 for 2026-10-21');
+  expect(within(sessions[1]).getByText('Oct 21, 2026, 1:00:00 PM')).toBeVisible();
+  expect(within(sessions[1]).getByText('Oct 21, 2026, 4:00:00 PM')).toBeVisible();
+  expect(day.queryByText('Earlier record summary (individual sessions unavailable)')).not.toBeInTheDocument();
+  expect(day.queryByText('Oct 18, 2026, 8:00:00 AM')).not.toBeInTheDocument();
+  expect(day.queryByText('Oct 22, 2026, 5:30:00 PM')).not.toBeInTheDocument();
+  expect(day.queryByText(/Time counted on/)).not.toBeInTheDocument();
+});
+
+test('an open session keeps its missing checkout beside its own arrival after an earlier completed session', async () => {
+  data.items[0] = { ...data.items[0], checkout: null, incomplete: true, status: 'incomplete', canCorrect: false,
+    sessions: [
+      { id: 'afternoon-open', start: '2026-10-21T21:00:00Z', end: null, dayStart: '2026-10-21T21:00:00Z', dayEnd: null, originalStart: '2026-10-21T21:00:00Z', originalEnd: null },
+      { id: 'morning-closed', start: '2026-10-21T15:00:00Z', end: '2026-10-21T20:00:00Z', dayStart: '2026-10-21T15:00:00Z', dayEnd: '2026-10-21T20:00:00Z', originalStart: '2026-10-21T15:00:00Z', originalEnd: '2026-10-21T20:00:00Z' },
+    ] };
+  render(view()); await chooseEmployee();
+  const day = within(screen.getByRole('article', { name: 'Ari Employee time on 2026-10-21' }));
+  const sessions = within(day.getByRole('list', { name: 'Recorded sessions for 2026-10-21' })).getAllByRole('listitem');
+  expect(sessions).toHaveLength(2);
+  expect(within(sessions[0]).getByText('Oct 21, 2026, 8:00:00 AM')).toBeVisible();
+  expect(within(sessions[0]).getByText('Oct 21, 2026, 1:00:00 PM')).toBeVisible();
+  expect(within(sessions[0]).queryByText('Checkout missing')).not.toBeInTheDocument();
+  expect(within(sessions[1]).getByText('Oct 21, 2026, 2:00:00 PM')).toBeVisible();
+  expect(within(sessions[1]).getByText('Checkout missing')).toBeVisible();
+  expect(within(sessions[1]).queryByText('Oct 21, 2026, 1:00:00 PM')).not.toBeInTheDocument();
+  expect(screen.queryByText(/break/i)).not.toBeInTheDocument();
+});
+
+test('an overnight session shows both actual dates on each day and labels the counted daily portions separately', async () => {
+  const overnight = { id: 'overnight', start: '2026-10-21T06:00:00Z', end: '2026-10-21T09:00:00Z',
+    originalStart: '2026-10-21T06:00:00Z', originalEnd: '2026-10-21T09:00:00Z' };
+  data.items = [
+    { ...data.items[0], date: '2026-10-20', checkin: overnight.start, checkout: '2026-10-21T07:00:00Z',
+      status: 'within-schedule', paidMillis: 3600000, extraMillis: 0, lateMillis: 0, outsideMillis: 0,
+      sessions: [{ ...overnight, dayStart: overnight.start, dayEnd: '2026-10-21T07:00:00Z' }] },
+    { ...data.items[0], checkin: '2026-10-21T07:00:00Z', checkout: overnight.end,
+      status: 'within-schedule', paidMillis: 7200000, extraMillis: 0, lateMillis: 0, outsideMillis: 0,
+      sessions: [{ ...overnight, dayStart: '2026-10-21T07:00:00Z', dayEnd: overnight.end }] },
+  ];
+  render(view()); await chooseEmployee();
+  for (const date of ['2026-10-20', '2026-10-21']) {
+    const day = within(screen.getByRole('article', { name: 'Ari Employee time on ' + date }));
+    const session = within(day.getByRole('list', { name: 'Recorded sessions for ' + date })).getByRole('listitem');
+    const punches = within(session).getAllByRole('definition');
+    expect(punches).toHaveLength(2);
+    expect(punches[0]).toHaveTextContent('Oct 20, 2026, 11:00:00 PM');
+    expect(punches[1]).toHaveTextContent('Oct 21, 2026, 2:00:00 AM');
+    const portion = within(session).getByText(new RegExp('Time counted on ' + date + ':'));
+    expect(portion).toHaveTextContent('Oct 21, 2026, 12:00:00 AM');
+    expect(portion).toHaveTextContent(date === '2026-10-20' ? 'Oct 20, 2026, 11:00:00 PM' : 'Oct 21, 2026, 2:00:00 AM');
+  }
 });
 
 test('schedule history includes future windows while the form starts with the current window', async () => {
@@ -160,8 +232,8 @@ test('historical clock times retain their recorded time zone after a facility ti
   data.items[0].timeZone = 'America/Los_Angeles';
   render(view()); await chooseEmployee();
   const day = within(screen.getByRole('article', { name: 'Ari Employee time on 2026-10-21' }));
-  expect(day.getByText('8:00:00 AM')).toBeVisible();
-  expect(day.getByText('5:30:00 PM')).toBeVisible();
+  expect(day.getByText('Oct 21, 2026, 8:00:00 AM')).toBeVisible();
+  expect(day.getByText('Oct 21, 2026, 5:30:00 PM')).toBeVisible();
   expect(day.getByText('Recorded time zone: America/Los_Angeles')).toBeVisible();
 });
 

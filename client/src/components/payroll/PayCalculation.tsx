@@ -2,7 +2,9 @@ import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { CalendarDays, ClipboardCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { approvedPaidMillis, duration } from './types';
+import { approvedPaidMillis, duration, rateDecision } from './types';
+import ClockSessions from './ClockSessions';
+import RateAllocationFields, { PayRateSummary } from './RateAllocationFields';
 import type { Day, Details, PayDayReview, PayReviewReason } from './types';
 
 type Period = { start: string; end: string };
@@ -18,7 +20,6 @@ const shift = (date: string, days: number) => { const d = new Date(date + 'T12:0
 const weekStart = (date: string, firstDay: number) => shift(date, -((new Date(date + 'T12:00:00Z').getUTCDay() - firstDay + 7) % 7));
 const valid = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date + 'T12:00:00Z')) && new Date(date + 'T12:00:00Z').toISOString().slice(0, 10) === date;
 const clockLabel = (value: string) => { const [hour, minute] = value.split(':').map(Number); return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`; };
-const actualClock = (instant: string | null, zone: string) => instant ? new Date(instant).toLocaleTimeString('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', second: '2-digit' }) : 'Checkout missing';
 const localDateTime = (instant: string, zone: string) => {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant));
   const get = (type: string) => parts.find(part => part.type === type)?.value;
@@ -72,7 +73,7 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
     if (!data.profile.rates.some(rate => rate.effectiveOn <= day.date)) add('RATE_MISSING', 'No hourly rate is saved for this date.', 'rates');
     if (day.approval?.status === 'returned') add('APPROVAL_RETURNED', `This day was returned for correction: ${day.approval.reason}`, 'time');
     if (day.approval?.status === 'needs-review') add('CLOCK_CHANGED', 'Clock records changed after approval. Review the updated time and approve this day again.', 'time');
-    if (requiresOvertimeReview && !reviewedOvertime) add('OVERTIME_REVIEW', 'Overtime needs your review. Enter the additional pay amount explicitly; no multiplier is applied automatically.', 'time');
+    if (requiresOvertimeReview && !reviewedOvertime) add('OVERTIME_REVIEW', 'Overtime needs your review. Choose the hours and pay multiplier; no rate is chosen automatically.', 'time');
     if (day.approval?.mode !== 'manual-reviewed' && (day.approval?.overtimeMillis || day.approval?.doubleMillis)) add('LEGACY_OVERTIME', 'This earlier overtime allocation needs a new manual pay decision before calculating.', 'time');
     if (roundingCreditMillis > 0) add('ROUNDING_REVIEW', `Paid time is rounded up from ${duration(day.paidMillis)} to ${duration(suggestedPaidMillis)}. Review this rounded amount before approving.`, 'approve');
     if (day.approval?.status !== 'approved' && !reasons.length) add('APPROVAL_REQUIRED', 'Recorded time has not been approved yet.', 'approve');
@@ -87,7 +88,8 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
     const suggestedPaidMillis = review.suggestedPaidMillis ?? day.paidMillis;
     const scheduledCreditMillis = review.scheduledCreditMillis ?? 0;
     const roundingCreditMillis = review.roundingCreditMillis ?? scheduledCreditMillis;
-    const setupReady = policyReady && data.profile.rates.some(rate => rate.effectiveOn <= day.date);
+    const rate = data.profile.rates.filter(item => item.effectiveOn <= day.date).sort((a, b) => a.effectiveOn.localeCompare(b.effectiveOn) || a.sequence - b.sequence).at(-1);
+    const setupReady = policyReady && !!rate;
     const pendingWorkReview = review.reasons.some(reason => ['OUTSIDE_SCHEDULE', 'SCHEDULE_ISSUE'].includes(reason.code));
     const canReview = !day.incomplete && setupReady && !pendingWorkReview;
     const showApproval = canReview && (review.state !== 'approved' || reviewing === day.date);
@@ -128,11 +130,10 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
       <details className="payroll-day-detail" open={review.state !== 'approved'}><summary>{review.state === 'approved' ? 'View approved day' : 'Clock times and pay details'}</summary>
       {work && <dl className="payroll-clock-comparison">
         <div><dt>Approved schedule</dt><dd>{work.plannedStart && work.plannedEnd ? `${clockLabel(work.plannedStart)}–${clockLabel(work.plannedEnd)}` : work.hasCapturedAllowance === false ? 'No approved schedule saved for this workday' : `Daily schedule · ${duration(work.plannedMinutes * 60000)}`}</dd><small>{work.scheduleTimeZone}</small></div>
-        <div><dt>Actual check-in</dt><dd>{work.checkin ? actualClock(work.checkin, work.timeZone || data.ledger.timeZone) : 'Not available'}</dd></div>
-        <div><dt>Actual checkout</dt><dd>{actualClock(work.checkout, work.timeZone || data.ledger.timeZone)}</dd></div>
       </dl>}
+      <ClockSessions date={day.date} timeZone={work?.timeZone || data.ledger.timeZone} sessions={work?.sessions ?? daySessions} earlier={{ checkin: work?.checkin, checkout: work?.checkout, incomplete: day.incomplete }} />
       {roundingCreditMillis > 0 && <div className="payroll-credit-proposal"><strong>{duration(existingPaidMillis)} proposed paid time</strong><p>Actual work stays at {duration(day.paidMillis)}. {existingPaidMillis > suggestedPaidMillis ? `Your earlier paid-time decision is kept. The rounding suggestion is ${duration(suggestedPaidMillis)}.` : `Paid time is rounded up by ${duration(roundingCreditMillis)}.`}</p>{scheduledCreditMillis > 0 && !needsNewRoundingDecision && <small>The rounded time matches the approved daily schedule.</small>}</div>}
-      {day.approval?.mode === 'manual-reviewed' && day.approval.status === 'approved' && <p>Approved paid time: {duration(approvedPaidMillis(day.approval))} · Additional pay: ${((day.approval.premiumCents ?? 0) / 100).toFixed(2)}</p>}
+      {day.approval?.mode === 'manual-reviewed' && day.approval.status === 'approved' && <><p>Approved paid time: {duration(approvedPaidMillis(day.approval))}</p><PayRateSummary approval={day.approval} rate={rate} /></>}
       <div className="payroll-review-actions">
         {actions.has('work-time') && <Link to={targetedWork}>Review outside time for {day.date}</Link>}
         {day.incomplete && !missedSession && <button type="button" disabled={busy} onClick={() => onSection('time', day.date)}>Fix checkout for {day.date}</button>}
@@ -145,27 +146,20 @@ export default function PayCalculation({ data, busy, dirty, onDirty, onPeriodCha
       {checkoutForm && (missedSession ? checkoutForm : <details><summary>Correct checkout time</summary>{checkoutForm}</details>)}
       {showApproval && <form key={day.date + ':' + data.ledger.version + ':' + draftTurn} onChange={() => markDraft('day:' + day.date)} onSubmit={event => { if (!validPaid) { event.preventDefault(); return; } void save(event, 'approvals', fields => ({
         version: data.ledger.version, profileVersion: data.profile.version, date: day.date, status: 'approved', mode: 'manual-reviewed',
-        paidMillis: chosenPaidMillis, hoursOverride, clockErrorConfirmed: belowClock && fields.has('clockErrorConfirmed'), premiumCents: needsOvertimeReview ? Math.round(Number(fields.get('premium')) * 100) : day.approval?.mode === 'manual-reviewed' ? day.approval.premiumCents ?? 0 : 0,
-        adjustmentCents: day.approval?.adjustmentCents ?? 0, rulesReviewed: needsOvertimeReview ? fields.has('overtimeReviewed') : true, overtimeReviewed: needsOvertimeReview ? fields.has('overtimeReviewed') : false,
-        reason: hoursOverride ? String(fields.get('overrideReason')) + (needsOvertimeReview ? '; Overtime review: ' + String(fields.get('reason')) : '') : needsOvertimeReview ? String(fields.get('reason')) : 'Administrator reviewed recorded time and the proposed paid hours; no automatic overtime multiplier.',
+        paidMillis: chosenPaidMillis, hoursOverride, clockErrorConfirmed: belowClock && fields.has('clockErrorConfirmed'), ...rateDecision(fields, day.approval),
+        adjustmentCents: day.approval?.adjustmentCents ?? 0, rulesReviewed: needsOvertimeReview || Number(fields.get('rateMillis')) > 0 || fields.has('replaceLegacyPremium') ? fields.has('payRateReviewed') : true, overtimeReviewed: fields.has('payRateReviewed'),
+        reason: [hoursOverride ? String(fields.get('overrideReason')) : '', String(fields.get('payRateReason') || '')].filter(Boolean).join('; Pay review: ') || 'Administrator reviewed recorded time and the proposed paid hours; no automatic overtime multiplier.',
       })); }}>
         <fieldset disabled={locked('day:' + day.date)}>
           <div className="payroll-grid"><label>Paid hours<input aria-label={'Paid hours for ' + day.date} type="number" min="0" max="48" step="1" inputMode="numeric" value={paidDraft.hours} onChange={event => editPaid('hours', event.target.value)} aria-invalid={!validPaid} required /></label><label>Minutes<input aria-label={'Paid minutes for ' + day.date} type="number" min="0" max="59" step="1" inputMode="numeric" value={paidDraft.minutes} onChange={event => editPaid('minutes', event.target.value)} aria-invalid={!validPaid} required /></label></div>
           {!validPaid && <p role="alert">Enter whole hours and 0–59 minutes, up to 48 hours total.</p>}
           {work?.hasCapturedAllowance !== false && !!work?.plannedMinutes && <button type="button" onClick={() => { setPaidDrafts(previous => ({ ...previous, [day.date]: { hours: String(Math.floor(work.plannedMinutes / 60)), minutes: String(work.plannedMinutes % 60) } })); markDraft('day:' + day.date); }}>Use full scheduled day</button>}
-          {hoursOverride && <div className="payroll-hours-reason"><label htmlFor={'paid-hours-reason-' + day.date}>Reason for this change</label><textarea key={chosenPaidMillis} id={'paid-hours-reason-' + day.date} aria-label={'Reason for changing paid hours for ' + day.date} name="overrideReason" maxLength={needsOvertimeReview ? 450 : 1000} defaultValue={priorPaidMillis === chosenPaidMillis ? day.approval?.reason || '' : ''} placeholder="For example: Sent home early; paying the full scheduled day" required /></div>}
+          {hoursOverride && <div className="payroll-hours-reason"><label htmlFor={'paid-hours-reason-' + day.date}>Reason for this change</label><textarea key={chosenPaidMillis} id={'paid-hours-reason-' + day.date} aria-label={'Reason for changing paid hours for ' + day.date} name="overrideReason" maxLength={450} defaultValue={priorPaidMillis === chosenPaidMillis && (day.approval?.reason.length ?? 0) <= 450 ? day.approval?.reason || '' : ''} placeholder="For example: Sent home early; paying the full scheduled day" required />{priorPaidMillis === chosenPaidMillis && (day.approval?.reason.length ?? 0) > 450 && <p>Previous paid-hours reason: {day.approval?.reason}. Enter a new reason for this review.</p>}</div>}
           {belowClock && <label className="payroll-check"><input name="clockErrorConfirmed" type="checkbox" required />I verified the actual hours; the clock record is incorrect.</label>}
           {validPaid && <p>Approve {duration(chosenPaidMillis)} of paid time for this day.</p>}
-          {!!day.approval?.adjustmentCents && <p>Existing pay adjustment: ${(day.approval.adjustmentCents / 100).toFixed(2)}. This amount is retained unless you change the detailed decision.</p>}
-          {needsOvertimeReview && <div className="payroll-manual-review">
-            <h5>Overtime needs your decision</h5>
-            <p>Review the actual work and enter any required additional pay. Enter 0 only when you have verified that no additional pay is due.</p>
-            <label>Additional pay for {day.date} ($)<input name="premium" type="number" min="0" step="0.01" defaultValue={day.approval?.mode === 'manual-reviewed' ? String((day.approval.premiumCents ?? 0) / 100) : ''} required /></label>
-            <label>Pay review reason for {day.date}<input name="reason" maxLength={hoursOverride ? 450 : 1000} required /></label>
-            <label className="payroll-check"><input name="overtimeReviewed" type="checkbox" required />I reviewed overtime and additional pay for {day.date}.</label>
-          </div>}
+          <RateAllocationFields date={day.date} paidMillis={validPaid ? chosenPaidMillis : 0} approval={day.approval} rate={rate} overtime={needsOvertimeReview} />
           <button disabled={!validPaid} aria-label={(needsOvertimeReview ? 'Approve reviewed pay for ' : 'Approve recorded hours for ') + day.date}>{needsOvertimeReview ? 'Approve reviewed pay' : validPaid ? `Approve ${duration(chosenPaidMillis)}` : 'Approve paid time'}</button>
-          <details><summary>Additional pay adjustments</summary><p>Open the detailed decision to enter another reviewed pay adjustment.</p><button type="button" onClick={() => onSection('time', day.date)}>Open detailed approval for {day.date}</button></details>
+          <details><summary>Detailed approval</summary><p>Open the complete daily decision and its history.</p><button type="button" onClick={() => onSection('time', day.date)}>Open detailed approval for {day.date}</button></details>
         </fieldset></form>}
       </details>
     </article>;

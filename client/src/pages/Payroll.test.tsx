@@ -78,7 +78,7 @@ test('rounding approval is explicit, retains selected dates and preserves exact 
   fireEvent.click(approve);
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
   expect(vi.mocked(axios.post).mock.calls[0][0]).toMatch(/\/a\/approvals$/);
-  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ version: 1, date: '2026-10-19', status: 'approved', mode: 'manual-reviewed', paidMillis: 8 * 3600000, premiumCents: 0, overtimeReviewed: false, adjustmentCents: 0, rulesReviewed: true });
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ version: 1, date: '2026-10-19', status: 'approved', mode: 'manual-reviewed', paidMillis: 8 * 3600000, rateMillis: 0, multiplierHundredths: 100, overtimeReviewed: false, adjustmentCents: 0, rulesReviewed: true });
   await screen.findByText('Saved.');
   expect(screen.getByLabelText('Pay period start')).toHaveValue('2026-10-19');
   expect(screen.getByLabelText('Pay period end')).toHaveValue('2026-10-19');
@@ -104,8 +104,10 @@ test.each(detailedCases.filter(item => item.label !== 'an existing approved prem
   configured(); currentDetail.ledger.days = structuredClone(days);
   await employee(); period(date);
   expect(screen.queryByRole('button', { name: 'Approve recorded hours for ' + date })).not.toBeInTheDocument();
-  expect(screen.getByRole('checkbox', { name: 'I reviewed overtime and additional pay for ' + date + '.' })).toBeVisible();
-  expect(screen.getByLabelText('Additional pay for ' + date + ' ($)')).toHaveValue(null);
+  expect(screen.getByRole('checkbox', { name: 'I reviewed the hours and pay rate for ' + date + '.' })).toBeVisible();
+  expect(screen.getByLabelText('Hours at selected rate for ' + date)).toHaveValue(0);
+  expect(screen.getByLabelText('Pay multiplier for ' + date)).toHaveValue(1);
+  expect(screen.queryByLabelText(/Additional pay/)).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Approve reviewed pay for ' + date })).toBeVisible();
   expect(screen.queryByLabelText(/1\.5|Double-time hours/)).not.toBeInTheDocument();
   expect(axios.post).not.toHaveBeenCalled();
@@ -232,18 +234,18 @@ test('an older saved fractional-hours calculation is displayed unchanged rather 
 test('unsaved guided review blocks calculation until the administrator confirms discarding it', async () => {
   configured(); currentDetail.ledger.days = [recordedDay('2026-10-19', 9 * 3600000)];
   await employee(); period('2026-10-19');
-  fireEvent.change(screen.getByLabelText('Additional pay for 2026-10-19 ($)'), { target: { value: '25' } });
+  fireEvent.change(screen.getByLabelText('Hours at selected rate for 2026-10-19'), { target: { value: '1' } });
   expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeDisabled();
   // There is one calculation action, so no duplicate navigation button can discard the draft.
   expect(screen.getAllByRole('button', { name: 'Calculate pay' })).toHaveLength(1);
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   try {
     fireEvent.click(screen.getByRole('button', { name: 'Discard unsaved changes' }));
-    expect(screen.getByLabelText('Additional pay for 2026-10-19 ($)')).toHaveValue(25);
+    expect(screen.getByLabelText('Hours at selected rate for 2026-10-19')).toHaveValue(1);
     expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeDisabled();
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Discard unsaved changes' }));
-    expect(screen.getByLabelText('Additional pay for 2026-10-19 ($)')).toHaveValue(null);
+    expect(screen.getByLabelText('Hours at selected rate for 2026-10-19')).toHaveValue(0);
     expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeEnabled();
     expect(screen.getByLabelText('Pay period start')).toHaveValue('2026-10-19');
     expect(axios.post).not.toHaveBeenCalled();
@@ -309,7 +311,7 @@ test('outside-time details and a direct employee/date link are visible without o
   expect(day.getByText('Needs attention')).toBeVisible();
   expect(day.getByText('Work continued 30 min after the approved 5:00 PM end. Review this time in Work time.')).toBeVisible();
   expect(day.getByText('8:00 AM–5:00 PM')).toBeVisible();
-  expect(day.getByText('2:30:00 PM')).toBeVisible(); expect(day.getByText('5:30:00 PM')).toBeVisible();
+  expect(day.getByText('Oct 19, 2026, 2:30:00 PM')).toBeVisible(); expect(day.getByText('Oct 19, 2026, 5:30:00 PM')).toBeVisible();
   expect(day.getByRole('link', { name: 'Review outside time for 2026-10-19' })).toHaveAttribute('href', '/staff/work-time?staff=a&date=2026-10-19');
   expect(day.queryByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).not.toBeInTheDocument();
   expect(day.queryByRole('button', { name: 'Review overtime and adjustments for 2026-10-19' })).not.toBeInTheDocument();
@@ -332,14 +334,14 @@ test('a day action opens the matching detailed approval immediately', async () =
   configured(); currentDetail.ledger.days = [recordedDay('2026-10-19'), recordedDay('2026-10-20', 9 * 3600000)];
   await employee(); period('2026-10-19', '2026-10-20');
   const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-20' }));
-  expect(day.getByText('Overtime needs your review. Enter the additional pay amount explicitly; no multiplier is applied automatically.')).toBeVisible();
-  fireEvent.click(day.getByText('Additional pay adjustments'));
+  expect(day.getByText('Overtime needs your review. Choose the hours and pay multiplier; no rate is chosen automatically.')).toBeVisible();
+  fireEvent.click(day.getByText('Detailed approval'));
   fireEvent.click(day.getByRole('button', { name: 'Open detailed approval for 2026-10-20' }));
   await screen.findByRole('heading', { name: 'Work time and daily approvals' });
   const panels = Array.from(document.querySelectorAll<HTMLDetailsElement>('details[data-payroll-date]'));
   expect(panels.find(panel => panel.dataset.payrollDate === '2026-10-20')?.open).toBe(true);
   expect(panels.find(panel => panel.dataset.payrollDate === '2026-10-19')?.open).toBe(false);
-  expect(within(panels.find(panel => panel.dataset.payrollDate === '2026-10-20')!).getByLabelText('Paid hours')).toBeVisible();
+  expect(within(panels.find(panel => panel.dataset.payrollDate === '2026-10-20')!).getByLabelText('Detailed paid hours for 2026-10-20')).toBeVisible();
 });
 
 test('missing rate and unconfirmed policy show their causes and direct setup actions', async () => {
@@ -769,29 +771,30 @@ test('nine-hour paid credit stays separate from the actual eight-and-a-half-hour
   expect(day.getByText('8 hr 30 min actual worked time')).toBeVisible();
   expect(day.getByText('9 hr proposed paid time', { exact: true })).toBeVisible();
   expect(day.getAllByText(/30 min/).length).toBeGreaterThanOrEqual(2);
-  expect(day.getByLabelText('Additional pay for 2026-10-19 ($)')).toHaveValue(null);
-  expect(day.getByRole('checkbox', { name: 'I reviewed overtime and additional pay for 2026-10-19.' })).not.toBeChecked();
+  expect(day.getByLabelText('Hours at selected rate for 2026-10-19')).toHaveValue(0);
+  expect(day.getByRole('checkbox', { name: 'I reviewed the hours and pay rate for 2026-10-19.' })).not.toBeChecked();
   expect(day.getAllByRole('checkbox')).toHaveLength(1);
   expect(day.queryByLabelText(/1\.5|Double-time hours/)).not.toBeInTheDocument();
   expect(currentDetail.ledger.days[0].paidMillis).toBe(8.5 * 3600000);
   expect(axios.post).not.toHaveBeenCalled();
 });
 
-test('overtime cannot be approved without the explicit review, amount and reason', async () => {
+test('overtime cannot be approved without the explicit review, selected rate and reason', async () => {
   configured(); currentDetail.ledger.days = [nineHourCreditDay()];
   await employee(); period('2026-10-19');
   const approve = screen.getByRole('button', { name: 'Approve reviewed pay for 2026-10-19' });
   fireEvent.click(approve); expect(axios.post).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText('Additional pay for 2026-10-19 ($)'), { target: { value: '25' } });
-  fireEvent.change(screen.getByLabelText('Pay review reason for 2026-10-19'), { target: { value: 'Reviewed required additional pay and scheduled credit' } });
+  fireEvent.change(screen.getByLabelText('Hours at selected rate for 2026-10-19'), { target: { value: '1' } });
+  fireEvent.change(screen.getByLabelText('Pay multiplier for 2026-10-19'), { target: { value: '1.5' } });
+  fireEvent.change(screen.getByLabelText('Pay review reason for 2026-10-19'), { target: { value: 'Reviewed one hour at one and a half times the ordinary rate' } });
   fireEvent.click(approve); expect(axios.post).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('checkbox', { name: 'I reviewed overtime and additional pay for 2026-10-19.' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'I reviewed the hours and pay rate for 2026-10-19.' }));
   fireEvent.click(approve);
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
   expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({
     version: 1, profileVersion: 2, date: '2026-10-19', status: 'approved', mode: 'manual-reviewed',
-    paidMillis: 9 * 3600000, premiumCents: 2500, overtimeReviewed: true,
-    rulesReviewed: true, reason: 'Reviewed required additional pay and scheduled credit',
+    paidMillis: 9 * 3600000, rateMillis: 3600000, multiplierHundredths: 150, overtimeReviewed: true,
+    rulesReviewed: true, reason: 'Reviewed one hour at one and a half times the ordinary rate',
   });
   expect(vi.mocked(axios.post).mock.calls[0][1]).not.toHaveProperty('overtimeMillis');
   expect(vi.mocked(axios.post).mock.calls[0][1]).not.toHaveProperty('doubleMillis');
@@ -811,15 +814,58 @@ test('a second completed short workday shows the administrator the count and aff
 test('returning an overtime day for correction does not require confirming review or pricing it', async () => {
   configured(); currentDetail.ledger.days = [nineHourCreditDay()];
   await employee(); period('2026-10-19');
-  fireEvent.click(screen.getByText('Additional pay adjustments'));
+  fireEvent.click(screen.getByText('Detailed approval'));
   fireEvent.click(screen.getByRole('button', { name: 'Open detailed approval for 2026-10-19' }));
   fireEvent.change(screen.getByLabelText('Decision'), { target: { value: 'returned' } });
-  const amount = screen.getByLabelText('Additional pay ($)');
-  expect(amount).not.toBeRequired(); expect(amount).toHaveValue(null);
-  expect(screen.getByRole('checkbox', { name: 'I reviewed overtime and additional pay for this date.' })).toBeDisabled();
+  const amount = screen.getByLabelText('Hours at selected rate for 2026-10-19');
+  expect(amount).toHaveValue(0);
+  expect(screen.queryByLabelText('Additional pay ($)')).not.toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: 'I reviewed the hours and pay rate for 2026-10-19.' })).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Approval / return reason, including any difference from clocked time'), { target: { value: 'Verify the recorded departure before a pay decision' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save daily decision' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
-  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ status: 'returned', paidMillis: 9 * 3600000, premiumCents: 0, overtimeReviewed: false, rulesReviewed: false });
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ status: 'returned', paidMillis: 9 * 3600000, rateMillis: 0, multiplierHundredths: 100, overtimeReviewed: false, rulesReviewed: false });
   expect(currentDetail.ledger.days[0].paidMillis).toBe(8.5 * 3600000);
+});
+
+test('an ordinary day can deliberately use one hour at 1.5x without inventing extra hours or a fixed pay amount', async () => {
+  configured(); currentDetail.ledger.days = [recordedDay('2026-10-19')];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  fireEvent.change(day.getByLabelText('Hours at selected rate for 2026-10-19'), { target: { value: '1' } });
+  fireEvent.change(day.getByLabelText('Pay multiplier for 2026-10-19'), { target: { value: '1.5' } });
+  expect(day.getByLabelText('Rate calculation for 2026-10-19')).toHaveTextContent('1 hr at $30.00 per hour (1.5×) + 7 hr at $20.00 per hour (1×) = $170.00');
+  const approve = day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' });
+  fireEvent.click(approve); expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.change(day.getByLabelText('Pay review reason for 2026-10-19'), { target: { value: 'Administrator explicitly chose a higher rate for one hour' } });
+  fireEvent.click(day.getByRole('checkbox', { name: 'I reviewed the hours and pay rate for 2026-10-19.' }));
+  fireEvent.click(approve);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ paidMillis: 8 * 3600000,
+    rateMillis: 3600000, multiplierHundredths: 150, overtimeReviewed: true, rulesReviewed: true });
+  expect(vi.mocked(axios.post).mock.calls[0][1]).not.toHaveProperty('premiumCents');
+  expect(currentDetail.ledger.days[0].paidMillis).toBe(8 * 3600000);
+});
+
+test('an earlier fixed amount is replaced only after explicitly choosing a reviewed rate decision', async () => {
+  configured();
+  const previous = roundedSevenHourDay({ alreadyApproved: true });
+  previous.approval = { ...previous.approval!, premiumCents: 2500, adjustmentCents: 125 };
+  currentDetail.ledger.days = [previous];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  expect(day.queryByLabelText('Pay multiplier for 2026-10-19')).not.toBeInTheDocument();
+  expect(day.getByLabelText('Replace previous fixed extra pay with a rate decision for 2026-10-19')).not.toBeChecked();
+  fireEvent.click(day.getByLabelText('Replace previous fixed extra pay with a rate decision for 2026-10-19'));
+  fireEvent.change(day.getByLabelText('Hours at selected rate for 2026-10-19'), { target: { value: '1' } });
+  fireEvent.change(day.getByLabelText('Pay multiplier for 2026-10-19'), { target: { value: '1.5' } });
+  fireEvent.change(day.getByLabelText('Pay review reason for 2026-10-19'), { target: { value: 'Replace the earlier fixed amount with one explicitly reviewed hour at 1.5x' } });
+  fireEvent.click(day.getByRole('checkbox', { name: 'I reviewed the hours and pay rate for 2026-10-19.' }));
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ paidMillis: 7 * 3600000,
+    rateMillis: 3600000, multiplierHundredths: 150, replaceLegacyPremium: true,
+    adjustmentCents: 125, overtimeReviewed: true, rulesReviewed: true });
+  expect(vi.mocked(axios.post).mock.calls[0][1]).not.toHaveProperty('premiumCents');
+  expect(previous.approval.premiumCents).toBe(2500);
 });

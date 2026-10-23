@@ -17,8 +17,9 @@ async function configurePay(http: Http, staffId: string) {
 }
 type ScheduledWorkDay = {
   staffId: string; date: string; plannedStart: string | null; plannedEnd: string | null; plannedMinutes: number;
-  checkin: string; checkout: string; paidMillis: number; outsideMillis: number; status: string; reason: string;
+  checkin: string; checkout: string; paidMillis: number; outsideMillis: number; status: string; reason: string; version: number; sessions: ActualSession[];
 };
+type ActualSession = { id: string; start: string; end: string | null; dayStart: string; dayEnd: string | null; originalStart: string; originalEnd: string | null };
 type WorkSchedule = {
   today: string; timeZone: string; items: ScheduledWorkDay[];
   staff: { id: string; scheduleVersion: number; entries: { startTime?: string; endTime?: string; minutes: number; effectiveOn: string; reason: string }[] }[];
@@ -95,9 +96,9 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
     const dayLog = editor.getByRole('article', { name: employee.name + ' time on ' + initial.today, exact: true });
     await expect(dayLog.getByText('Needs manager review', { exact: true })).toBeVisible();
     await expect(dayLog.getByText('Approved schedule', { exact: true }).locator('..').locator('dd')).toHaveText(outsideLabel);
-    const localClock = (instant: string) => new Date(instant).toLocaleTimeString('en-US', { timeZone: initial.timeZone, hour: 'numeric', minute: '2-digit', second: '2-digit' });
-    await expect(dayLog.getByText('Actual check-in', { exact: true }).locator('..').locator('dd')).toHaveText(localClock(day.checkin));
-    await expect(dayLog.getByText('Actual checkout', { exact: true }).locator('..').locator('dd')).toHaveText(localClock(day.checkout));
+    const localClock = (instant: string) => new Date(instant).toLocaleString('en-US', { timeZone: initial.timeZone, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    await expect(dayLog.getByRole('list', { name: 'Recorded sessions for ' + initial.today, exact: true }).locator('time').nth(0)).toHaveText(localClock(day.checkin));
+    await expect(dayLog.getByRole('list', { name: 'Recorded sessions for ' + initial.today, exact: true }).locator('time').nth(1)).toHaveText(localClock(day.checkout));
     await expect(dayLog.getByText('Time outside approved schedule', { exact: true })).toBeVisible();
 
     // The pay screen explains the outside-window issue before opening any review form.
@@ -115,8 +116,8 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
     await expect(payCard.getByText('Needs attention', { exact: true })).toBeVisible();
     await expect(payCard.getByText(outsideReason.message, { exact: true })).toBeVisible();
     await expect(payCard.getByText('Approved schedule', { exact: true }).locator('..').locator('dd')).toHaveText(outsideLabel);
-    await expect(payCard.getByText('Actual check-in', { exact: true }).locator('..').locator('dd')).toHaveText(localClock(day.checkin));
-    await expect(payCard.getByText('Actual checkout', { exact: true }).locator('..').locator('dd')).toHaveText(localClock(day.checkout));
+    await expect(payCard.getByRole('list', { name: 'Recorded sessions for ' + initial.today, exact: true }).locator('time').nth(0)).toHaveText(localClock(day.checkin));
+    await expect(payCard.getByRole('list', { name: 'Recorded sessions for ' + initial.today, exact: true }).locator('time').nth(1)).toHaveText(localClock(day.checkout));
     await expect(payCard.getByRole('button', { name: 'Approve recorded hours for ' + initial.today, exact: true })).toHaveCount(0);
     const outsideAction = payCard.getByRole('link', { name: 'Review outside time for ' + initial.today, exact: true });
     await expect(outsideAction).toHaveAttribute('href', '/staff/work-time?staff=' + employee.id + '&date=' + initial.today);
@@ -151,32 +152,37 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
     await page.getByLabel('Pay period start', { exact: true }).fill(initial.today);
     await page.getByLabel('Pay period end', { exact: true }).fill(initial.today);
     const manualCard = page.getByRole('article', { name: 'Pay review for ' + initial.today, exact: true });
-    const premium = manualCard.getByLabel('Additional pay for ' + initial.today + ' ($)', { exact: true });
+    const rateHours = manualCard.getByLabel('Hours at selected rate for ' + initial.today, { exact: true });
+    const rateMinutes = manualCard.getByLabel('Minutes at selected rate for ' + initial.today, { exact: true });
+    const multiplier = manualCard.getByLabel('Pay multiplier for ' + initial.today, { exact: true });
     const approval = manualCard.getByRole('button', { name: 'Approve reviewed pay for ' + initial.today, exact: true });
-    await expect(premium).toHaveValue('');
-    await expect(manualCard.getByLabel('I reviewed overtime and additional pay for ' + initial.today + '.', { exact: true })).not.toBeChecked();
+    await expect(rateHours).toHaveValue('0'); await expect(rateMinutes).toHaveValue('0'); await expect(multiplier).toHaveValue('1');
+    await expect(manualCard.getByLabel('Additional pay for ' + initial.today + ' ($)', { exact: true })).toHaveCount(0);
+    await expect(manualCard.getByLabel('I reviewed the hours and pay rate for ' + initial.today + '.', { exact: true })).not.toBeChecked();
     await expect(page.getByLabel(/Overtime hours at 1\.5/)).toHaveCount(0);
     await expect(page.getByLabel('Double-time hours', { exact: true })).toHaveCount(0);
     const approvalWrites: unknown[] = [];
     page.on('request', request => { if (request.method() === 'POST' && request.url() === api + '/payroll/staff/' + employee.id + '/approvals') approvalWrites.push(request.postDataJSON()); });
     await approval.click();
     expect(approvalWrites).toHaveLength(0);
-    await premium.fill('12.34');
-    await manualCard.getByLabel('Pay review reason for ' + initial.today, { exact: true }).fill('Administrator explicitly reviewed the outside work and entered this additional amount');
+    await rateHours.fill('0'); await rateMinutes.fill('30'); await multiplier.fill('1.5');
+    await expect(manualCard.getByLabel('Rate calculation for ' + initial.today, { exact: true })).toHaveText('30 min at $30.00 per hour (1.5×) + 30 min at $20.00 per hour (1×) = $25.00 before any saved adjustment.');
+    await manualCard.getByLabel('Pay review reason for ' + initial.today, { exact: true }).fill('Administrator explicitly reviewed thirty minutes at time and a half for outside work');
     await expect(manualCard.getByLabel('I checked the hours and overtime for ' + initial.today + '.', { exact: true })).toHaveCount(0);
     await approval.click();
     expect(approvalWrites).toHaveLength(0);
-    await manualCard.getByLabel('I reviewed overtime and additional pay for ' + initial.today + '.', { exact: true }).check();
+    await manualCard.getByLabel('I reviewed the hours and pay rate for ' + initial.today + '.', { exact: true }).check();
     const savedApproval = page.waitForResponse(response => response.url() === api + '/payroll/staff/' + employee.id + '/approvals' && response.request().method() === 'POST');
     await approval.click();
     expect((await savedApproval).status()).toBe(200);
-    expect(approvalWrites).toEqual([expect.objectContaining({ mode: 'manual-reviewed', paidMillis: roundedWorkMillis, premiumCents: 1234, overtimeReviewed: true })]);
-    const savedPay = await data<{ ledger: { days: { date: string; paidMillis: number; approval: { mode: string; paidMillis: number; premiumCents: number; overtimeReviewed: boolean }; review: { state: string } }[] } }>(await http.get(api + '/payroll/staff/' + employee.id));
+    expect(approvalWrites).toEqual([expect.objectContaining({ mode: 'manual-reviewed', paidMillis: roundedWorkMillis, rateMillis: 1800000, multiplierHundredths: 150, overtimeReviewed: true })]);
+    const savedPay = await data<{ ledger: { days: { date: string; paidMillis: number; approval: { mode: string; paidMillis: number; rateMillis: number; multiplierHundredths: number; overtimeReviewed: boolean }; review: { state: string } }[] } }>(await http.get(api + '/payroll/staff/' + employee.id));
     expect(savedPay.ledger.days.find(item => item.date === initial.today)).toMatchObject({
-      paidMillis: day.paidMillis, approval: { mode: 'manual-reviewed', paidMillis: roundedWorkMillis, premiumCents: 1234, overtimeReviewed: true }, review: { state: 'approved' },
+      paidMillis: day.paidMillis, approval: { mode: 'manual-reviewed', paidMillis: roundedWorkMillis, rateMillis: 1800000, multiplierHundredths: 150, overtimeReviewed: true }, review: { state: 'approved' },
     });
     await page.getByRole('button', { name: 'Calculate pay', exact: true }).click();
-    const expectedCents = Math.round(roundedWorkMillis / 3600000 * 2000) + 1234;
+    expect(approvalWrites[0]).not.toHaveProperty('premiumCents');
+    const expectedCents = 2500;
     const expectedMoney = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(expectedCents / 100);
     await expect(page.getByRole('heading', { name: 'Gross pay before taxes: ' + expectedMoney, exact: true })).toBeVisible();
     expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
@@ -249,7 +255,7 @@ for (const width of [320, 1280]) test(`manager clock and private pay review thro
     await data(await http.post(base + '/approvals', { data: {
       version: roundedDetail.ledger.version, profileVersion: roundedDetail.profile.version,
       date: '2026-09-21', status: 'approved', mode: 'manual-reviewed', paidMillis: 24102000,
-      premiumCents: 0, adjustmentCents: 0, rulesReviewed: true, overtimeReviewed: false,
+      rateMillis: 0, multiplierHundredths: 100, adjustmentCents: 0, rulesReviewed: true, overtimeReviewed: false,
       reason: 'Synthetic attempt to retain the old fractional paid value',
     } }), 400);
     const dayToApprove = page.getByRole('article', { name: 'Pay review for 2026-09-21', exact: true });
@@ -416,13 +422,119 @@ test('editor receives a home reminder and corrects a verified late clockout with
   await page.getByLabel('Pay period start',{exact:true}).fill('2026-09-22');await page.getByLabel('Pay period end',{exact:true}).fill('2026-09-22');
   const correctedPayCard=page.getByRole('article',{name:'Pay review for 2026-09-22',exact:true});
   await expect(correctedPayCard.getByText('Awaiting approval',{exact:true})).toBeVisible();
-  await correctedPayCard.getByText('Additional pay adjustments',{exact:true}).click();
+  await correctedPayCard.getByText('Detailed approval',{exact:true}).click();
   await correctedPayCard.getByRole('button',{name:'Open detailed approval for 2026-09-22',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Work time and daily approvals',exact:true})).toBeVisible();
   await expect(page.locator('details.payroll-workday[open]')).toHaveCount(1);
   await expect(page.locator('details.payroll-workday[open]>summary')).toContainText('2026-09-22');
-  await expect(page.getByLabel('Paid hours',{exact:true})).toBeVisible();
+  await expect(page.getByLabel('Detailed paid hours for 2026-09-22',{exact:true})).toBeVisible();
   await expect(page.getByLabel(/Overtime hours at 1\.5/)).toHaveCount(0);
   await expect(page.getByLabel('Double-time hours',{exact:true})).toHaveCount(0);
  }finally{await context.close();}
+});
+
+// Create source clock events through the manager API, then use the ordinary
+// audited correction API to supply historical actual times. Insertion order is
+// deliberately independent of chronological order.
+async function historicalSession(http: Http, staffId: string, start: string, end: string) {
+  const base = api + '/payroll/staff/' + staffId;
+  type ClockLedger = { ledger: { version: number; sessions: { id: string; start: string; end: string }[] } };
+  let detail = await data<ClockLedger>(await http.get(base));
+  await data(await http.post(api + '/work-time/staff/' + staffId + '/clock', { data: { action: 'checkin', version: detail.ledger.version, requestId: randomUUID() } }));
+  detail = await data<ClockLedger>(await http.get(base));
+  await data(await http.post(api + '/work-time/staff/' + staffId + '/clock', { data: { action: 'checkout', version: detail.ledger.version, requestId: randomUUID() } }));
+  detail = await data<ClockLedger>(await http.get(base));
+  const original = detail.ledger.sessions.at(-1)!;
+  await data(await http.post(base + '/corrections', { data: { version: detail.ledger.version, sessionId: original.id, start, end, voided: false, reason: 'Verified historical actual shift for chronological multi-session review' } }));
+  return { id: original.id, originalStart: original.start, originalEnd: original.end };
+}
+
+for (const width of [320, 1280]) test(`overnight and multiple clock sessions remain chronological while reviewed rate hours calculate explicitly at ${width}px`, async ({ page }) => {
+  test.setTimeout(90_000); await page.setViewportSize({ width, height: 1000 });
+  const http = await authenticatedApi(page), suffix = randomUUID().slice(0, 8), date = '2026-09-22';
+  const employee = await data<{ id: string; name: string }>(await http.post(api + '/staff', { data: { name: 'Chronological shifts ' + suffix, role: 'Other' } }), 201);
+  const base = api + '/payroll/staff/' + employee.id;
+  const late = await historicalSession(http, employee.id, '2026-09-22T15:00:00Z', '2026-09-22T22:00:00Z');
+  const early = await historicalSession(http, employee.id, '2026-09-22T07:30:00Z', '2026-09-22T09:00:00Z');
+  const overnight = await historicalSession(http, employee.id, '2026-09-22T06:00:00Z', '2026-09-22T07:15:00Z');
+  const raw = await data<{ ledger: { version: number; sessions: { id: string; start: string; end: string; original: { start: string; end: string } }[] } }>(await http.get(base));
+  expect(raw.ledger.sessions.map(session => session.id)).toEqual([late.id, early.id, overnight.id]);
+  const work = await data<WorkSchedule>(await http.get(api + '/work-time?start=' + date + '&end=' + date));
+  const row = work.items.find(item => item.staffId === employee.id && item.date === date)!;
+  expect(row).toMatchObject({ paidMillis: 31_500_000, checkin: '2026-09-22T06:00:00.000Z', checkout: '2026-09-22T22:00:00.000Z', status: 'pending' });
+  expect(row.sessions.map(session => session.id)).toEqual([overnight.id, early.id, late.id]);
+  expect(row.sessions[0]).toMatchObject({
+    ...overnight, start: '2026-09-22T06:00:00.000Z', end: '2026-09-22T07:15:00.000Z', dayStart: '2026-09-22T07:00:00.000Z', dayEnd: '2026-09-22T07:15:00.000Z',
+  });
+  const dated = (instant: string) => new Date(instant).toLocaleString('en-US', { timeZone: work.timeZone, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  async function expectSessionList(container: ReturnType<typeof page.getByRole>) {
+    const sessions = container.getByRole('list', { name: 'Recorded sessions for ' + date, exact: true });
+    await expect(sessions).toBeVisible(); await expect(sessions.getByRole('listitem')).toHaveCount(3);
+    const actualStarts = await sessions.getByRole('listitem').evaluateAll(items => items.map(item => item.querySelector('time')?.getAttribute('datetime')));
+    expect(actualStarts).toEqual(row.sessions.map(session => session.start));
+    for (const [index, source] of row.sessions.entries()) {
+      const item = sessions.getByRole('listitem', { name: 'Recorded session ' + (index + 1) + ' for ' + date, exact: true });
+      await expect(item.getByText('Check-in', { exact: true }).locator('..').locator('dd')).toHaveText(dated(source.start));
+      await expect(item.getByText('Checkout', { exact: true }).locator('..').locator('dd')).toHaveText(dated(source.end!));
+    }
+    await expect(sessions.getByRole('listitem').first()).toContainText('Time counted on 2026-09-22: ' + dated('2026-09-22T07:00:00.000Z') + ' to ' + dated('2026-09-22T07:15:00.000Z') + ' (15 min).');
+    await expect(sessions.getByRole('listitem').first()).toContainText('not new clock punches');
+    return sessions;
+  }
+  await page.goto('/staff/work-time?staff=' + employee.id + '&date=' + date);
+  const workCard = page.getByRole('article', { name: employee.name + ' time on ' + date, exact: true });
+  await expectSessionList(workCard); await expect(workCard).toContainText('8 hr 45 min');
+  await expect(workCard.getByText('Actual check-in', { exact: true })).toHaveCount(0);
+  await expect(workCard.getByText('Actual checkout', { exact: true })).toHaveCount(0);
+  if (width === 320) await workCard.screenshot({ path: test.info().outputPath('chronological-work-sessions.png') });
+  // Operational review confirms the work, but never chooses pay hours or a multiplier.
+  await data(await http.post(api + '/work-time/staff/' + employee.id + '/review', { data: { version: row.version, date, decision: 'worked', reason: 'Manager verified each actual shift including the overnight portion' } }));
+  await configurePay(http, employee.id);
+  let detail = await data<PayReviewDetail>(await http.get(base));
+  // The previous date contains the first hour of the overnight session. Its
+  // ordinary approval supplies complete workweek context for the later review.
+  await data(await http.post(base + '/approvals', { data: { version: detail.ledger.version, profileVersion: detail.profile.version, date: '2026-09-21', status: 'approved', mode: 'manual-reviewed', paidMillis: 3_600_000, rateMillis: 0, multiplierHundredths: 100, adjustmentCents: 0, rulesReviewed: true, overtimeReviewed: false, reason: 'Administrator reviewed the earlier overnight hour at the regular rate' } }));
+  detail = await data<PayReviewDetail>(await http.get(base));
+  expect(detail.ledger.days.find(day => day.date === date)?.review.requiresOvertimeReview).toBe(true);
+  await page.goto('/staff/payroll'); await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(employee.id);
+  await page.getByLabel('Pay period start', { exact: true }).fill(date); await page.getByLabel('Pay period end', { exact: true }).fill(date);
+  const payCard = page.getByRole('article', { name: 'Pay review for ' + date, exact: true });
+  await expectSessionList(payCard);
+  await expect(payCard.getByLabel('Paid hours for ' + date, { exact: true })).toHaveValue('9');
+  await expect(payCard.getByLabel('Hours at selected rate for ' + date, { exact: true })).toHaveValue('0');
+  await expect(payCard.getByLabel('Pay multiplier for ' + date, { exact: true })).toHaveValue('1');
+  await expect(payCard.getByLabel('Additional pay for ' + date + ' ($)', { exact: true })).toHaveCount(0);
+  async function approveRate(multiplier: '1' | '1.5', expectedCents: number) {
+    const rateHours = payCard.getByLabel('Hours at selected rate for ' + date, { exact: true });
+    await rateHours.fill('1'); await payCard.getByLabel('Minutes at selected rate for ' + date, { exact: true }).fill('0');
+    await payCard.getByLabel('Pay multiplier for ' + date, { exact: true }).fill(multiplier);
+    const reason = multiplier === '1.5' ? 'Administrator explicitly approved one paid hour at time and a half' : 'Administrator explicitly reviewed all paid hours at the regular rate';
+    await payCard.getByLabel('Pay review reason for ' + date, { exact: true }).fill(reason);
+    await payCard.getByLabel('I reviewed the hours and pay rate for ' + date + '.', { exact: true }).check();
+    const savedResponse = page.waitForResponse(response => response.url() === base + '/approvals' && response.request().method() === 'POST');
+    await payCard.getByRole('button', { name: 'Approve reviewed pay for ' + date, exact: true }).click();
+    const response = await savedResponse; expect(response.status(), await response.text()).toBe(200);
+    expect(response.request().postDataJSON()).toMatchObject({ paidMillis: 32_400_000, rateMillis: 3_600_000, multiplierHundredths: multiplier === '1.5' ? 150 : 100, overtimeReviewed: true, reason });
+    expect(response.request().postDataJSON()).not.toHaveProperty('premiumCents');
+    await expect(payCard.getByText('Approved', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Calculate pay', exact: true }).click();
+    const formatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(expectedCents / 100);
+    await expect(page.getByRole('heading', { name: 'Gross pay before taxes: ' + formatted, exact: true })).toBeVisible();
+    const result = page.getByRole('region', { name: 'Pay calculation result', exact: true });
+    await expect(result).toContainText('8 hr 45 min'); await expect(result).toContainText('9 hr');
+    await expect(result).toContainText(multiplier + '×');
+    const saved = await data<{ ledger: { sessions: unknown[]; days: { date: string; paidMillis: number; approval: { rateMillis: number; multiplierHundredths: number; paidMillis: number } }[] } }>(await http.get(base));
+    expect(saved.ledger.sessions).toEqual(raw.ledger.sessions);
+    expect(saved.ledger.days.find(day => day.date === date)).toMatchObject({ paidMillis: 31_500_000, approval: { paidMillis: 32_400_000, rateMillis: 3_600_000, multiplierHundredths: multiplier === '1.5' ? 150 : 100 } });
+    if (width === 320) await result.screenshot({ path: test.info().outputPath('reviewed-rate-' + multiplier.replace('.', '-') + '.png') });
+  }
+  await approveRate('1.5', 19000);
+  await page.getByRole('button', { name: 'Save calculation', exact: true }).click(); await page.getByText('Saved calculations', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open calculation snapshot', exact: true })).toBeVisible();
+  await payCard.getByText('View approved day', { exact: true }).click(); await payCard.getByRole('button', { name: 'Review hours for ' + date, exact: true }).click();
+  await approveRate('1', 18000);
+  await page.getByRole('button', { name: 'Open calculation snapshot', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Gross pay before taxes: $190.00', exact: true })).toBeVisible();
+  await expect(page.getByText(/Source records or calculation rules changed after this snapshot\./)).toBeVisible();
+  expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
 });

@@ -7,13 +7,15 @@ import { AuthContext, useAuth } from '../auth/context';
 import { authError } from '../auth/transport';
 import { API_BASE_URL } from '../lib/api';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
+import ClockSessions from '../components/payroll/ClockSessions';
+import type { RecordedSession } from '../components/payroll/types';
 import './payroll.css';
 
 type ScheduleEntry = { effectiveOn: string; minutes: number; reason: string; startTime?: string; endTime?: string; timeZone?: string };
 type Employee = { id: string; name: string; active: boolean; scheduleVersion: number; defaultMinutes: number; entries: ScheduleEntry[] };
 type WorkDay = { staffId: string; name: string; date: string; version: number; plannedMinutes: number; paidMillis: number; extraMillis: number;
   incomplete: boolean; status: string; reason: string; checkout: string | null; canCorrect: boolean; checkin?: string | null;
-  timeZone?: string; plannedStart?: string | null; plannedEnd?: string | null; scheduleTimeZone?: string; earlyMillis?: number; lateMillis?: number; outsideMillis?: number; scheduleIssue?: string | null };
+  sessions?: RecordedSession[]; timeZone?: string; plannedStart?: string | null; plannedEnd?: string | null; scheduleTimeZone?: string; earlyMillis?: number; lateMillis?: number; outsideMillis?: number; scheduleIssue?: string | null };
 type ShortDayWarning = { staffId: string; name: string; weekStart: string; weekEnd: string; count: number; dates: string[] };
 export type WorkData = { today: string; timeZone: string; staff: Employee[]; items: WorkDay[]; shortDayWarnings?: ShortDayWarning[]; overtimeReviewCount?: number };
 const url = API_BASE_URL + '/api/work-time';
@@ -29,7 +31,6 @@ const duration = (millis: number) => {
   const parts = [Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)} hr` : '', Math.floor(seconds % 3600 / 60) ? `${Math.floor(seconds % 3600 / 60)} min` : '', seconds % 60 ? `${seconds % 60} sec` : ''].filter(Boolean);
   return parts.join(' ') || '0 min';
 };
-const localClock = (instant: string | null | undefined, zone: string, empty: string) => instant ? new Date(instant).toLocaleTimeString('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', second: '2-digit' }) : empty;
 const approvedWindow = (row: WorkDay) => row.plannedStart && row.plannedEnd ? `${clockLabel(row.plannedStart)}–${clockLabel(row.plannedEnd)}` : `Earlier daily-hours schedule · ${duration(row.plannedMinutes * 60000)}`;
 function statusLabel(row: WorkDay) {
   if (row.incomplete) return 'Checkout missing';
@@ -88,11 +89,10 @@ function ClockComparison({ row, zone }: { row: WorkDay; zone: string }) {
   const scheduledZone = row.scheduleTimeZone || recordedZone;
   return <><dl className="work-time-comparison">
     <div><dt>Approved schedule</dt><dd>{approvedWindow(row)}</dd>{row.plannedStart && <small>{scheduledZone}</small>}</div>
-    <div><dt>Actual check-in</dt><dd>{localClock(row.checkin, recordedZone, 'Not available in earlier records')}</dd></div>
-    <div><dt>Actual checkout</dt><dd>{localClock(row.checkout, recordedZone, row.incomplete ? 'Checkout missing' : 'Not available')}</dd></div>
     <div><dt>Recorded paid time</dt><dd>{duration(row.paidMillis)}</dd></div>
     <div><dt>{row.plannedStart ? 'Time outside approved schedule' : 'Time over earlier daily-hours limit'}</dt><dd>{duration(row.plannedStart ? (row.outsideMillis ?? row.extraMillis) : row.extraMillis)}</dd></div>
   </dl>
+  <ClockSessions sessions={row.sessions} date={row.date} timeZone={recordedZone} earlier={row} />
   {recordedZone !== zone && <p>Recorded time zone: {recordedZone}</p>}
   {(row.earlyMillis || 0) > 0 && <p className="work-time-attention">Before approved start: {duration(row.earlyMillis || 0)}</p>}
   {(row.lateMillis || 0) > 0 && <p className="work-time-attention">After approved end: {duration(row.lateMillis || 0)}</p>}
