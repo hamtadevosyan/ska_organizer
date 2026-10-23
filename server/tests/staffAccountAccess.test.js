@@ -5,6 +5,10 @@ const db = require('../services/dbAdapter');
 const auth = require('../auth/service');
 const staff = require('../services/staffService');
 const fixture = require('./helpers/authenticatedRequest');
+const employeeCheckIn = require('./helpers/employeeCheckIn');
+let payrollKey;
+beforeAll(() => { payrollKey = require('./helpers/payrollKey').install(); });
+afterAll(() => payrollKey.cleanup());
 const request = () => fixture(app);
 const token = () => fixture.credentials().cookie.split('=')[1];
 const room = name => db.createRoom({ name, active: true, ageMinMonths: 0, ageMaxMonths: 120, capacity: 20 });
@@ -25,9 +29,11 @@ test('an explicitly linked Teacher gets the employee class, not job-title-derive
   const readOnlyEmployee = await employee(own.id);
   const viewer = await create(readOnlyEmployee, 'viewer');
   expect(viewer.role).toBe('viewer');
+  await employeeCheckIn(readOnlyEmployee.id);
   const viewerToken = await session(viewer);
   expect((await http(app).get('/api/classroom/attendance').set('Cookie', 'skao_session=' + viewerToken)).status).toBe(403);
   await db.updateAccount(account.id, { mustChangePassword: false });
+  await employeeCheckIn(person.id);
   const teacherToken = await session(account);
   expect((await http(app).get('/api/classroom/attendance').set('Cookie', 'skao_session=' + teacherToken)).status).toBe(200);
   expect((await http(app).get('/api/admin/staff-options').set('Cookie', 'skao_session=' + teacherToken)).status).toBe(403);
@@ -43,6 +49,7 @@ test('forged classes, missing employees and duplicate employee links are rejecte
 });
 test('moving staff changes the linked class and revokes ordinary and remembered sessions', async () => {
   const own = await room('Own'); const next = await room('Next'); const person = await employee(own.id); const account = await create(person);
+  await employeeCheckIn(person.id);
   const tokens = await Promise.all([session(account), session(account, true)]);
   await staff.update(person.id, { roomId: next.id, version: person.version });
   expect(await db.getAccount(account.id)).toMatchObject({ roomId: next.id, staffMemberId: person.id });
@@ -60,6 +67,7 @@ test('deactivation disables linked login; reactivation requires an explicit acco
   await staff.update(person.id, { active: true, version: inactive.version });
   expect((await db.getAccount(account.id)).disabled).toBe(true);
   await auth.updateAccount(token(), account.id, { ...account, disabled: false });
+  await employeeCheckIn(person.id);
   expect((await auth.login({ username: account.username, password: fixture.password }, '127.1.1.1')).account.staffMemberId).toBe(person.id);
 });
 test('live authorization fails closed for an inactive employee even with a stale enabled account and session', async () => {
@@ -105,6 +113,7 @@ test('unlinked employee and account names do not silently grant access or change
 
 test('a staff audit failure rolls back the employee change, linked account and session revocation together', async () => {
   const own = await room('Own'); const next = await room('Next'); const person = await employee(own.id); const account = await create(person); const value = await session(account);
+  await employeeCheckIn(person.id);
   const audit = jest.spyOn(db, 'appendAudit').mockRejectedValueOnce(new Error('Synthetic audit failure'));
   const log = jest.spyOn(console, 'error').mockImplementation(() => {});
   try {

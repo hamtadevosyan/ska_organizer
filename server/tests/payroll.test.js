@@ -1,6 +1,7 @@
 const { randomUUID, randomBytes } = require('node:crypto');
 const http = require('supertest'); const fs = require('node:fs'); const path = require('node:path');
 const db = require('../services/dbAdapter'); const auth = require('../auth/service'); const service = require('../services/payrollService'); const vault = require('../services/payrollVault'); const app = require('../index'); const fixture = require('./helpers/authenticatedRequest');
+const employeeCheckIn = require('./helpers/employeeCheckIn');
 let key; beforeAll(() => { key = require('./helpers/payrollKey').install(); }); afterAll(() => key.cleanup()); afterEach(() => jest.useRealTimers());
 const staff = () => db.createStaff({ id: randomUUID(), name: 'Synthetic employee', role: 'Teacher', active: true, roomId: null, version: 1 });
 async function token(account) { const t = randomBytes(32).toString('hex'); const now = new Date(); await db.createSession({ id: auth.digest(t), accountId: account.id, remembered: true, createdAt: now, lastSeenAt: now, expiresAt: new Date(Date.now() + 30 * 86400000) }); return t; }
@@ -28,6 +29,7 @@ async function configure(t, id) {
 async function approve(t,id, paidMillis=8*3600000) { const detail = await service.get(t,id), day = detail.ledger.days.find(row => row.date === '2026-10-19'); return service.approve(t,id,{ version: detail.ledger.version, profileVersion: detail.profile.version, date: '2026-10-19', status: 'approved', mode: 'manual-reviewed', paidMillis: Math.max(paidMillis, day.review.suggestedPaidMillis), premiumCents: 0, overtimeReviewed: true, adjustmentCents: 0, rulesReviewed: true, reason: 'Synthetic administrator reviewed actual hours, proposed paid rounding and any additional pay' }); }
 test('personal clock is disabled and the manager projection never returns private payroll fields', async () => {
   const person = await staff(); const t = await admin(); await configure(t,person.id); const teacher = await actor('teacher',person); const foreign = await staff();
+  await employeeCheckIn(person.id);
   const manager = await service.clockStatus(t); expect(manager.staff.map(row => row.id)).toEqual(expect.arrayContaining([person.id, foreign.id]));
   expect(JSON.stringify(manager)).not.toMatch(/TAX|BANK|rates|legalName|5678|1234|approval/);
   await expect(service.own(teacher.token)).rejects.toMatchObject({ status: 403 });
@@ -38,6 +40,7 @@ test('personal clock is disabled and the manager projection never returns privat
 });
 test.each(['viewer','editor','teacher'])('%s is denied every private payroll operation', async role => {
   const person = await staff(); const a = await actor(role,person); const prefix='/payroll/staff/'+person.id;
+  await employeeCheckIn(person.id);
   for (const route of [prefix,prefix+'/documents/unknown/1',prefix+'/snapshots/unknown']) expect((await api(a.token,'get',route)).status).toBe(403);
   for (const route of ['profile','rates','corrections','approvals','preview','snapshots','documents']) expect((await api(a.token,'post',prefix+'/'+route,{})).status).toBe(403);
 });

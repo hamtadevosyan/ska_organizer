@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { APIResponse, Page } from '@playwright/test';
-import { api, authenticatedApi, origin } from './auth-helpers';
+import { api, authenticatedApi, origin, recordStaffClock } from './auth-helpers';
 const temporary = 'Synthetic linked temporary 20!';
 const password = 'Synthetic linked changed 20!';
 test.setTimeout(60_000);
@@ -43,6 +43,7 @@ for (const width of [320, 390]) test(`staff-linked Teacher and Class viewer have
     await admin.goto('/staff');
     await admin.getByRole('button', { name: 'View details for ' + teacherStaff.name, exact: true }).click();
     await expect(admin.getByText('linked-teacher-' + suffix + ' · Teacher · Enabled', { exact: true })).toBeVisible();
+    await recordStaffClock(http, teacherStaff.id, 'checkin'); await recordStaffClock(http, viewerStaff.id, 'checkin');
     await page.setViewportSize({ width, height: 900 }); await login(page, 'linked-teacher-' + suffix);
     await page.goto('/classroom/children');
     await expect(page.getByRole('heading', { name: 'Children in my class', exact: true })).toBeVisible();

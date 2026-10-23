@@ -3,6 +3,7 @@ const db = require('../services/dbAdapter');
 const { hashPassword, verifyPassword, verifyUnknown, validatePassword } = require('./passwords');
 const config = require('./config');
 const staffAccess = require('../services/staffAccountAccess');
+const workAccess = require('../services/staffWorkAccess');
 const problem = (message, status = 400, code) => Object.assign(new Error(message), { status, code });
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const csrfToken = (token) => createHmac('sha256', token).update('skao-csrf-v1').digest('hex');
@@ -11,7 +12,9 @@ const csrfToken = (token) => createHmac('sha256', token).update('skao-csrf-v1').
 const documentAccess = (account) => account.role === 'admin' ? 'edit' : 'none';
 const publicAccount = (account) => {
   const { id, username, displayName, role, disabled, mustChangePassword, createdAt, updatedAt } = account;
-  return { id, username, displayName, role, roomId: ['viewer', 'teacher'].includes(role) ? account.roomId ?? null : null,
+  if (account.workAccess?.required && !account.workAccess.checkedIn) return { id, username, displayName, role, disabled, mustChangePassword,
+    roomId: null, staffMemberId: null, linkedStaff: null, documentAccess: 'none', workAccess: account.workAccess };
+  return { ...(account.workAccess ? { workAccess: account.workAccess } : {}), id, username, displayName, role, roomId: ['viewer', 'teacher'].includes(role) ? account.roomId ?? null : null,
     staffMemberId: account.staffMemberId ?? null, linkedStaff: account.linkedStaff ?? null,
     disabled, mustChangePassword, documentAccess: documentAccess(account), createdAt, updatedAt };
 };
@@ -47,6 +50,7 @@ async function classroomAssignment(input, role, previous = null) {
 async function issueSession(account, remembered = false) {
   account = await staffAccess.resolve(account);
   if (!account || account.disabled) throw problem('Username or password is incorrect.', 401, 'INVALID_CREDENTIALS');
+  account.workAccess = await workAccess.resolve(account);
   const absoluteMs = remembered ? config.rememberAbsoluteMs : config.absoluteMs;
   const token = randomBytes(32).toString('hex');
   const now = new Date();
@@ -54,7 +58,7 @@ async function issueSession(account, remembered = false) {
     expiresAt: new Date(now.getTime() + absoluteMs), remembered });
   return { token, csrfToken: csrfToken(token), account: publicAccount(account), maxAge: absoluteMs };
 }
-async function sessionAccount(token, { touch = false } = {}) {
+async function sessionAccount(token, { touch = false, allowOffClock = false } = {}) {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) throw problem('Sign in to continue.', 401, 'AUTH_REQUIRED');
   const session = await db.getSession(digest(token));
   const now = Date.now();
@@ -67,6 +71,8 @@ async function sessionAccount(token, { touch = false } = {}) {
   }
   const account = await staffAccess.resolve(await db.getAccount(session.accountId));
   if (!account || account.disabled) throw problem('Your session has expired. Sign in again.', 401, 'SESSION_EXPIRED');
+  account.workAccess = await workAccess.resolve(account);
+  if (!allowOffClock) workAccess.requireCheckedIn(account.workAccess);
   if (touch && now - new Date(session.lastSeenAt).getTime() > 60000) await db.updateSession(session.id, { lastSeenAt: new Date(now) });
   return account;
 }
@@ -207,14 +213,14 @@ async function resetPassword(token, id, password) {
   });
 }
 async function changePassword(token, currentPassword, password, ip) {
-  const candidate = await sessionAccount(token);
+  const candidate = await sessionAccount(token, { allowOffClock: true });
   validatePassword(password);
   await reserveAttempt(candidate.username, ip, 'password-change');
   if (!await verifyPassword(currentPassword, candidate.passwordHash)) throw problem('Current password is incorrect.', 400);
   if (currentPassword === password) throw problem('Choose a different password.');
   const passwordHash = await hashPassword(password);
   return db.withAuthLock(async () => {
-    const account = await sessionAccount(token);
+    const account = await sessionAccount(token, { allowOffClock: true });
     if (account.passwordHash !== candidate.passwordHash) throw problem('Your session has expired. Sign in again.', 401, 'SESSION_EXPIRED');
     const previousSession = await db.getSession(digest(token));
     const saved = await db.updateAccount(account.id, { passwordHash, mustChangePassword: false });
@@ -225,7 +231,7 @@ async function changePassword(token, currentPassword, password, ip) {
 }
 async function logout(token) {
   return db.withAuthLock(async () => {
-    const account = await sessionAccount(token);
+    const account = await sessionAccount(token, { allowOffClock: true });
     await db.deleteSession(digest(token));
     await audit(account, 'session.sign_out', account.id);
   });

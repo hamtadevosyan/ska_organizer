@@ -200,11 +200,11 @@ for (const width of [320, 1280]) test(`manager clock and private pay review thro
     const teacher = await context.newPage(); const response = await teacher.request.post(api + '/auth/login', { headers: { Origin: origin }, data: { username, password: temporary, rememberMe: true } }); expect(response.status()).toBe(200); const login = await response.json() as { csrfToken: string };
     expect((await teacher.request.post(api + '/auth/password', { headers: { Origin: origin, 'X-CSRF-Token': login.csrfToken }, data: { currentPassword: temporary, password } })).status()).toBe(200);
     const cookies = (await context.cookies(api)).filter(cookie => cookie.name === 'skao_session'); await context.addCookies(cookies.map(cookie => ({ ...cookie, expires: -1 })));
+    await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
     await teacher.goto('/my-time'); await expect(teacher.getByRole('heading', { name: 'Staff check-in has moved', exact: true })).toBeVisible();
     await expect(teacher.getByRole('button', { name: /check in|check out|break/i })).toHaveCount(0);
     expect((await teacher.request.get(api + '/time-clock')).status()).toBe(403);
     expect((await teacher.request.get(api + '/payroll/staff/' + employee.id)).status()).toBe(403);
-    await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
     await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkout', version: 1, requestId: randomUUID() } }));
     const own = { version: 2 };
     const base = api + '/payroll/staff/' + employee.id;

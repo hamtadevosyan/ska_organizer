@@ -11,7 +11,7 @@ const isolatedFiles = new Set([
   'staff-account-links.spec.ts', 'teacher-care.spec.ts', 'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts',
   'remembered-login.spec.ts', 'child-documents.spec.ts', 'staff-compliance.spec.ts',
   'batch-receiving.spec.ts', 'purchasing-list.spec.ts', 'inventory-group-removal.spec.ts',
-  'payroll.spec.ts', 'clock-station.spec.ts',
+  'payroll.spec.ts', 'clock-station.spec.ts', 'employee-work-access.spec.ts',
 ]);
 const passthrough = new Set(['--list', '--help', '-h', '--version', '-V', '--shard', '--last-failed', '--ui', '--ui-host', '--ui-port', '--debug']);
 

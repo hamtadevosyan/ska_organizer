@@ -16,11 +16,11 @@ function originGuard(req, res, next) {
   if (!safeMethods.has(req.method) && (req.get('Content-Type') || req.path === '/auth/login') && !/^application\/json(?:\s*;|$)/i.test(req.get('Content-Type') || '')) return next(auth.problem('Send a JSON request.', 415));
   next();
 }
-async function requireSession(req, res, next) {
+const sessionMiddleware = allowOffClock => async (req, res, next) => {
   try {
     if (await require('../services/clockStationService').hasActiveStation(require('../routes/clockStations').readCredential(req))) throw auth.problem('This device is a clock station. Sign out of station mode before using a personal account.', 403, 'STATION_MODE');
     req.sessionToken = readToken(req);
-    req.account = await auth.sessionAccount(req.sessionToken);
+    req.account = await auth.sessionAccount(req.sessionToken, { allowOffClock });
     if (!safeMethods.has(req.method)) {
       const supplied = req.get('X-CSRF-Token') || '';
       const expected = auth.csrfToken(req.sessionToken);
@@ -30,7 +30,10 @@ async function requireSession(req, res, next) {
     }
     next();
   } catch (error) { if (error.status === 401) clearCookie(res); next(error); }
-}
+};
+const requireSession = sessionMiddleware(false);
+// Used only on the three safe account-session routes, never resource routes.
+const requireAuthSession = sessionMiddleware(true);
 function isOperationalWrite(req) {
   if (safeMethods.has(req.method)) return false;
   // These endpoints calculate drafts only; none persist changes.
@@ -90,4 +93,4 @@ function audited(action, controller, { adminOnly = false, skipReplayed = false }
     res.status(response.statusCode)[response.kind](response.body);
   };
 }
-module.exports = { originGuard, requireSession, requireOperationalAccess, requireDocumentAccess, requireAdmin, audited, readToken, clearCookie };
+module.exports = { originGuard, requireSession, requireAuthSession, requireOperationalAccess, requireDocumentAccess, requireAdmin, audited, readToken, clearCookie };

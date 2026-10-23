@@ -84,6 +84,9 @@ app.use((err, req, res, next) => {
   if (err.status === 401 && err.code !== 'INVALID_CREDENTIALS') clearCookie(res);
   if (err.retryAfter) res.set('Retry-After', String(err.retryAfter));
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: { message: 'Invalid JSON request.' } });
+  if (err.status === 503 && err.code === 'WORK_ACCESS_UNAVAILABLE') return res.status(503).json({ error: {
+    message: 'Your work status could not be verified. Ask an administrator to check the staff clock, then try again.', code: 'WORK_ACCESS_UNAVAILABLE',
+  } });
   if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields, code: err.code,
     // Only this known, catalog-only setup error exposes its structured guidance.
     ...(err.code === 'MENU_SETUP_REQUIRED' && err.details ? { details: err.details } : {}) } });

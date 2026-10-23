@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../services/dbAdapter');
 const auth = require('./service');
 const config = require('./config');
-const { requireSession, requireAdmin, clearCookie, readToken } = require('./middleware');
+const { requireSession, requireAuthSession, requireAdmin, clearCookie, readToken } = require('./middleware');
 const router = express.Router();
 function sendSession(res, session) {
   res.cookie(config.cookieName, session.token, { ...config.cookieOptions, maxAge: session.maxAge });
@@ -12,14 +12,13 @@ router.post('/login', (req, res, next) => require('../routes/clockStations').den
   const session = await auth.login(req.body || {}, req.ip, readToken(req));
   sendSession(res, session);
 });
-router.use(requireSession);
-router.get('/session', (req, res) => res.json({ account: auth.publicAccount(req.account), csrfToken: auth.csrfToken(req.sessionToken) }));
-router.post('/logout', async (req, res) => {
+router.get('/session', requireAuthSession, (req, res) => res.json({ account: auth.publicAccount(req.account), csrfToken: auth.csrfToken(req.sessionToken) }));
+router.post('/logout', requireAuthSession, async (req, res) => {
   await auth.logout(req.sessionToken);
   clearCookie(res);
   res.status(204).send();
 });
-router.post('/password', async (req, res) => {
+router.post('/password', requireAuthSession, async (req, res) => {
   sendSession(res, await auth.changePassword(req.sessionToken, req.body?.currentPassword, req.body?.password, req.ip));
 });
 const admin = express.Router();

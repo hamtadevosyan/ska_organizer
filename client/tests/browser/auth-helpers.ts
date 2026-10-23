@@ -57,3 +57,15 @@ export function createAuthenticatedApi() {
   };
 }
 export const authenticatedApi = createAuthenticatedApi();
+
+// Linked employee fixtures enter through the same manager clock API used in
+// production. Tests never disable or bypass the employee check-in requirement.
+export async function recordStaffClock(http: Awaited<ReturnType<typeof authenticatedApi>>, staffId: string, action: 'checkin' | 'checkout') {
+  const status = await http.get(api + '/work-time/clock');
+  expect(status.status(), 'The administrator must be able to read the real staff clock').toBe(200);
+  const person = (await status.json()).data.staff.find((item: { id: string }) => item.id === staffId) as { id: string; active: boolean; checkedIn: boolean; version: number } | undefined;
+  expect(person, 'The linked staff fixture must exist in the real clock projection').toBeDefined();
+  expect(person!.active).toBe(true); expect(person!.checkedIn).toBe(action === 'checkout');
+  const response = await http.post(api + '/work-time/staff/' + staffId + '/clock', { data: { action, version: person!.version, requestId: globalThis.crypto.randomUUID() } });
+  expect(response.status(), 'The fixture clock event must be authorized and persisted').toBe(200);
+}

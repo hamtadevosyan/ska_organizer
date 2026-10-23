@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { useAuth } from './context';
+import { requiresWorkCheck, useAuth, verifiedWorkAccess } from './context';
 import { authError } from './transport';
 import AcademyBrand from '../components/AcademyBrand';
 import ServerConnection from '../components/ServerConnection';
@@ -34,8 +34,30 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
       <button type="button" disabled={busy} onClick={() => { setBusy(true); void signOut().catch((failure) => setError(authError(failure, 'Could not sign out.'))).finally(() => setBusy(false)); }} className="ml-3 underline">Sign out</button>}
   </form>;
 }
+function WorkAccessScreen() {
+  const { account, signOut, retry, serverUnavailable } = useAuth();
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  async function run(action: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await action(); }
+    catch (failure) { setError(authError(failure, 'Could not refresh access. Try again.')); }
+    finally { setBusy(false); }
+  }
+  return <main className="auth-screen"><section className="auth-card"><AcademyBrand />
+    {changingPassword ? <PasswordForm onDone={() => setChangingPassword(false)} /> : <>
+      <h1 className="text-2xl font-bold">Please check in to continue</h1>
+      <p>Please check in to continue. Use the check-in station or ask an administrator to check you in.</p>
+      {(serverUnavailable || account?.workAccess?.available !== true) && <p role="status">We could not verify your check-in. Refresh, or ask an administrator for help.</p>}
+      {error && <p role="alert">{error}</p>}
+      <button disabled={busy} aria-busy={busy} className="ska-button is-primary w-full" onClick={() => void run(retry)}>I've checked in—refresh</button>
+      <div className="mt-4 flex flex-wrap gap-4"><button disabled={busy} className="underline" onClick={() => setChangingPassword(true)}>Change password</button><button disabled={busy} className="underline" onClick={() => void run(signOut)}>Sign out</button></div>
+    </>}
+  </section></main>;
+}
 export default function AuthGate({ children }: { children: ReactNode }) {
-  const { account, ready, notice, signIn, serverUnavailable, retry } = useAuth();
+  const { account, ready, notice, signIn, serverUnavailable, workVerifying, retry } = useAuth();
   const [username, setUsername] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [password, setPassword] = useState('');
@@ -51,8 +73,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (!account && serverUnavailable) return <ServerConnection standalone retry={retry} />;
   const connectionNotice = serverUnavailable ? <ServerConnection retry={retry} /> :
     account && notice ? <p role="status" className="server-reconnected print:hidden">{notice}</p> : null;
-  if (account && !account.mustChangePassword) return <Fragment key={JSON.stringify([account.id, account.role, account.roomId ?? null, account.staffMemberId ?? null])}>
-    {connectionNotice}{children}
+  if (account && !account.mustChangePassword && requiresWorkCheck(account) && (serverUnavailable || !verifiedWorkAccess(account))) return <WorkAccessScreen key={account.id} />;
+  if (account && !account.mustChangePassword) return <Fragment key={JSON.stringify([account.id, account.role, account.roomId ?? null, account.staffMemberId ?? null, account.workAccess ?? null])}>
+    {connectionNotice}
+    {workVerifying && <main className="auth-screen" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: '#f7f7ff' }}><section className="auth-card"><AcademyBrand /><p role="status" className="text-xl font-bold">Checking your check-in…</p><p>Please wait while we verify your access.</p></section></main>}
+    <div key="protected-content" hidden={workVerifying} inert={workVerifying || undefined} aria-hidden={workVerifying || undefined} style={workVerifying ? { display: 'none' } : undefined}>{children}</div>
   </Fragment>;
   return <>{connectionNotice}<main className="auth-screen">
     <section className="auth-card">

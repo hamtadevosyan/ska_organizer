@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { api, authenticatedApi, origin, adminPassword } from './auth-helpers';
+import { api, authenticatedApi, origin, adminPassword, recordStaffClock } from './auth-helpers';
 
 for (const width of [320, 1280]) test(`a paired public PIN station records arrivals and departures without exposing the signed-in app at ${width}px`, async ({ page, browser }) => {
   test.setTimeout(90_000); await page.setViewportSize({ width, height: 1000 });
@@ -76,6 +76,7 @@ test('editors can record staff arrivals while teachers cannot use either manager
     await card.getByRole('button', { name: 'Check in ' + person.name, exact: true }).click(); await expect(card.getByRole('button', { name: 'Check out ' + person.name, exact: true })).toBeVisible();
     await card.getByRole('button', { name: 'Check out ' + person.name, exact: true }).click(); await expect(card.getByRole('button', { name: 'Check in ' + person.name, exact: true })).toBeVisible();
     expect((await other.request.get(api + '/clock-stations')).status()).toBe(403); expect((await other.request.get(api + '/payroll/staff/' + person.id)).status()).toBe(403);
+    await recordStaffClock(http, person.id, 'checkin');
     const headers = await login('teacher'); expect((await other.request.get(api + '/work-time/clock')).status()).toBe(403); expect((await other.request.get(api + '/time-clock')).status()).toBe(403);
     expect((await other.request.post(api + '/time-clock', { headers, data: { action: 'checkin', version: 2, requestId: randomUUID() } })).status()).toBe(403);
     expect((await other.request.post(api + '/work-time/staff/' + person.id + '/clock', { headers, data: { action: 'checkin', version: 2, requestId: randomUUID() } })).status()).toBe(403);
