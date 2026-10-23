@@ -99,7 +99,6 @@ for (const width of [320, 1280]) test(`Class viewer sees only assigned children 
     const nav = page.getByRole('navigation', { name: width === 320 ? 'Mobile navigation' : 'Desktop navigation' });
     expect(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual([
       '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals',
-      ...(width === 1280 ? ['/my-time'] : []),
     ]);
     await nav.getByRole('link', { name: 'Children', exact: true }).click();
     const main = page.locator('main');

@@ -160,43 +160,58 @@ function maskedProfile(data) {
   for (const key of ['taxId', 'bankAccount', 'routingNumber']) result[key] = data[key] ? '••••' + data[key].slice(-4) : '';
   return result;
 }
-exports.own = token => authorized(token, false, async actor => {
-  if (!actor.staffMemberId) throw auth.problem('Ask an administrator to link your account to your active staff record.', 403, 'STAFF_LINK_REQUIRED');
-  const staff = await employee(actor.staffMemberId); if (!staff.active) throw auth.problem('Your staff record is inactive.', 403);
-  const ledger = await read('ledger', staff.id);
-  const open = ledger.data.sessions.find(session => !session.voided && !session.end);
-  return { staff: { id: staff.id, name: staff.name }, version: ledger.version, timeZone: ledger.data.timeZone,
-    checkedIn: !!open, needsReview: false };
+const personalClockDenied = async () => { throw auth.problem('Use the staff clock managed by an administrator, editor or paired clock station.', 403, 'PERSONAL_CLOCK_DISABLED'); };
+exports.own = personalClockDenied;
+exports.clock = personalClockDenied;
+async function clockState(staffId) {
+  const staff = await employee(staffId), ledger = await read('ledger', staff.id);
+  return { id: staff.id, name: staff.name, active: staff.active, checkedIn: ledger.data.sessions.some(session => !session.voided && !session.end), version: ledger.version };
+}
+exports.clockStatus = token => authorized(token, 'manager', async actor => {
+  const staff = [];
+  for (let page = 1;; page++) {
+    const batch = await db.listStaff({ page, pageSize: 100 });
+    for (const person of batch) staff.push(await clockState(person.id));
+    if (batch.length < 100) break;
+  }
+  await auth.audit(actor, 'employee_clock.status');
+  return { staff, timeZone: time.timeZone() };
 });
-exports.clock = (token, payload) => authorized(token, false, async actor => {
+async function clockEmployee(actor, staffId, payload, source = {}) {
   v.object(payload, ['action', 'requestId', 'version']);
   if (!['checkin', 'checkout'].includes(payload.action)) throw auth.problem('Use check in or check out. A manager handles time corrections.');
   const requestId = v.requestId(payload.requestId);
-  if (!actor.staffMemberId) throw auth.problem('An active linked staff identity is required.', 403);
-  const staff = await employee(actor.staffMemberId); if (!staff.active) throw auth.problem('Staff record is inactive.', 403);
+  const staff = await employee(staffId); if (!staff.active) throw auth.problem('Staff record is inactive.', 403);
   const ledger = await read('ledger', staff.id); const data = ledger.data;
   const previouslyClocked = new Set(math.daily(data).map(day => day.date));
+  const actorKey = source.stationId ? 'station:' + source.stationId + ':' + source.grantId : 'manager:' + actor.id;
+  const attribution = { ...stamp(actor), actorUsername: actor.username, staffId: staff.id, ...(source.stationId ? { stationId: source.stationId, actorType: 'clock-station' } : { actorType: 'manager' }) };
   const replay = data.requests.find(r => r.id === requestId);
-  if (replay) { if (replay.action !== payload.action) throw auth.problem('Request identifier was already used for another action.', 409); return { replayed: true }; }
+  if (replay) { if (replay.action !== payload.action || replay.actorKey !== actorKey) throw auth.problem('Request identifier was already used for another action or actor.', 409); return { replayed: true }; }
   expectVersion(payload, ledger.version);
   const open = data.sessions.find(s => !s.voided && !s.end); const now = new Date().toISOString();
   if (payload.action === 'checkin') {
     if (open) throw auth.problem('You are already checked in.', 409);
     if (data.sessions.length >= 20000) throw auth.problem('Time ledger requires archival before adding more entries.', 409);
-    const next = { id: randomUUID(), start: now, end: null, original: { start: now, end: null }, breaks: [], ...stamp(actor), version: 1 };
+    const next = { id: randomUUID(), start: now, end: null, original: { start: now, end: null }, breaks: [], ...attribution, version: 1 };
     validateSession(next, data.sessions); data.sessions.push(next);
   } else {
     if (!open) throw auth.problem('Check in before recording a departure.', 409);
     open.end = now; if (!open.original.end) open.original.end = now;
     open.version++; validateSession(open, data.sessions);
   }
-  invalidate(data, [payload.action === 'checkin' ? data.sessions.at(-1) : open]); data.requests.push({ id: requestId, action: payload.action });
+  invalidate(data, [payload.action === 'checkin' ? data.sessions.at(-1) : open]); data.requests.push({ id: requestId, action: payload.action, actorKey });
   if (data.requests.length > 20000) throw auth.problem('Time ledger requires archival.', 409);
-  data.history.push({ type: payload.action, sessionId: (payload.action === 'checkin' ? data.sessions.at(-1) : open).id, requestId, ...stamp(actor) });
+  data.history.push({ type: payload.action, sessionId: (payload.action === 'checkin' ? data.sessions.at(-1) : open).id, requestId, ...attribution });
   await captureWorkLimits(data, staff.id, previouslyClocked);
   await write('ledger', staff.id, data, ledger.version); await auth.audit(actor, 'employee_clock.' + payload.action.replace('-', '_'), staff.id);
   return { replayed: false };
-});
+}
+exports.managerClock = (token, staffId, payload) => authorized(token, 'manager', actor => clockEmployee(actor, staffId, payload));
+// Trusted server composition only. The station service validates its own
+// credential and employee grant inside this same auth lock before invoking it.
+exports.stationClock = (credential, payload, options) => require('./clockStationService').clock(credential, payload, options, clockEmployee);
+exports.stationIdentify = (credential, payload, options) => require('./clockStationService').identify(credential, payload, options, clockState);
 exports.get = (token, staffId) => authorized(token, true, async actor => {
   const staff = await employee(staffId);
   // authorized() holds one transaction/client. Finish each query before

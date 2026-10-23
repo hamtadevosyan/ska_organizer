@@ -41,7 +41,8 @@ test.each(['teacher', 'viewer'] as const)('%s overview links only to its permitt
   const links = screen.getByRole('navigation', { name: 'Class quick actions' }).querySelectorAll('a');
   expect(Array.from(links, link => link.getAttribute('href'))).toEqual(role === 'teacher' ?
     ['/classroom/attendance', '/classroom/children', '/classroom/activities', '/classroom/meals'] :
-    ['/classroom/children', '/my-time', '/classroom/activities', '/classroom/meals']);
+    ['/classroom/children', '/classroom/activities', '/classroom/meals']);
+  expect(screen.queryByRole('link', { name: /My time/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /payroll|staff|inventory|generate/i })).not.toBeInTheDocument();
   expect(api.getClassroomChildren).not.toHaveBeenCalled();
 });

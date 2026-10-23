@@ -27,6 +27,7 @@ const migrations = [
   { name: '025-teacher-care-access', ...require('./migrations/025-teacher-care-access') },
   { name: '026-staff-account-links', ...require('./migrations/026-staff-account-links') },
   { name: '027-employee-payroll', ...require('./migrations/027-employee-payroll') },
+  { name: '028-clock-stations', ...require('./migrations/028-clock-stations') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

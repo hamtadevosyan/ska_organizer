@@ -8,7 +8,7 @@ function sendSession(res, session) {
   res.cookie(config.cookieName, session.token, { ...config.cookieOptions, maxAge: session.maxAge });
   res.json({ account: session.account, csrfToken: session.csrfToken });
 }
-router.post('/login', async (req, res) => {
+router.post('/login', (req, res, next) => require('../routes/clockStations').denyPersonalAtStation(req, res, next), async (req, res) => {
   const session = await auth.login(req.body || {}, req.ip, readToken(req));
   sendSession(res, session);
 });

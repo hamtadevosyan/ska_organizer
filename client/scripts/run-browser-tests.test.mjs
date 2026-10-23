@@ -33,11 +33,11 @@ function harness(value = report(), settings = {}) {
 }
 
 test('isolates each authentication-heavy file and groups remaining tests once', async () => {
-  const files = ['staff-account-links.spec.ts', 'teacher-care.spec.ts', 'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts', 'remembered-login.spec.ts', 'child-documents.spec.ts', 'staff-compliance.spec.ts', 'batch-receiving.spec.ts', 'purchasing-list.spec.ts', 'inventory-group-removal.spec.ts', 'rooms.spec.ts', 'activities.spec.ts'];
+  const files = ['staff-account-links.spec.ts', 'teacher-care.spec.ts', 'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts', 'remembered-login.spec.ts', 'child-documents.spec.ts', 'staff-compliance.spec.ts', 'batch-receiving.spec.ts', 'purchasing-list.spec.ts', 'inventory-group-removal.spec.ts', 'payroll.spec.ts', 'clock-station.spec.ts', 'rooms.spec.ts', 'activities.spec.ts'];
   const h = harness(report(files));
   assert.equal(await runBrowserTests([], h.options), 0);
-  assert.equal(h.lists.length, 12);
-  assert.deepEqual(h.lists.map(lines => lines.length), [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2]);
+  assert.equal(h.lists.length, 14);
+  assert.deepEqual(h.lists.map(lines => lines.length), [...Array(13).fill(1), 2]);
   assert.equal(new Set(h.lists.flat()).size, files.length);
 });
 

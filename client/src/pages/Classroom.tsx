@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, Clock3, GraduationCap, Palette, RefreshCw, Sparkles, Sun, Users, Utensils } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, GraduationCap, Palette, RefreshCw, Sparkles, Sun, Users, Utensils } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../auth/context';
@@ -79,7 +79,6 @@ export default function Classroom({ section = 'overview' }: { section?: Section 
     { to: '/classroom/meals', label: 'Meals', note: 'See what’s on the menu', icon: Utensils, color: 'meals' },
   ] : [
     { to: '/classroom/children', label: 'Class children', note: 'Your classroom’s children', icon: Users, color: 'attendance' },
-    { to: '/my-time', label: 'My time', note: 'Check in or out of work', icon: Clock3, color: 'child' },
     { to: '/classroom/activities', label: 'Activities', note: 'See your saved class plan', icon: Palette, color: 'activities' },
     { to: '/classroom/meals', label: 'Meals', note: 'See what’s on the menu', icon: Utensils, color: 'meals' },
   ];

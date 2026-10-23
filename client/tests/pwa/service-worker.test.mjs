@@ -183,18 +183,21 @@ test('API, credentials, writes, other origins and unknown/query asset URLs never
     '/api/staff/synthetic-employee/documents/synthetic-document/revisions/synthetic-revision/content',
     '/api/staff/synthetic-employee/documents/synthetic-document/revisions/synthetic-revision/content?download=1',
     '/api/staff-compliance', '/api/staff-compliance?staffId=synthetic-employee', '/api/staff-compliance/settings',
-    '/api/reports/export.csv', '/api/inventory', '/api/health',
+    '/api/reports/export.csv', '/api/inventory', '/api/health', '/api/work-time/clock',
+    '/api/clock-stations', '/api/station-clock/session', '/api/station-clock/identify', '/api/station-clock/clock',
     '/api/ready', '/assets/private.json', 'https://elsewhere.test/assets/private.js', manifest[0].url + '?private=value'];
   for (const path of paths) {
     assert.equal(sw.dispatch(path).response, undefined, path);
     assert.equal(sw.dispatch(path, {}, true).response, undefined, path);
   }
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']) {
-    const { request, response } = sw.dispatch('/api/attendance/checkin', {
+    for (const endpoint of ['/api/attendance/checkin', '/api/station-clock/identify', '/api/station-clock/clock', '/api/work-time/staff/employee/clock']) {
+    const { request, response } = sw.dispatch(endpoint, {
       method, headers: { 'X-CSRF-Token': 'synthetic-security-token', Cookie: 'synthetic-session' },
     });
     assert.equal(response, undefined);
     assert.equal(request.headers.get('X-CSRF-Token'), 'synthetic-security-token');
+    }
   }
   assert.equal(sw.dispatch('/index.html', { method: 'POST' }, true).response, undefined);
   assert.equal(sw.reads(), before);
@@ -206,7 +209,7 @@ test('offline route reload returns only the public shell and never stores route/
   await sw.lifecycle('install');
   const before = sw.keys();
   sw.network(async () => { throw new TypeError('Synthetic offline'); });
-  for (const path of ['/attendance?room=sensitive-room-id', '/staff/work-time', '/staff/payroll?employee=private-id']) {
+  for (const path of ['/attendance?room=sensitive-room-id', '/staff/work-time', '/staff/payroll?employee=private-id', '/staff/clock', '/staff/clock-station', '/time-clock']) {
     const response = await sw.dispatch(path, {}, true).response;
     assert.equal(await response.text(), bodies.get('/index.html').toString());
   }

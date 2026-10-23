@@ -7,7 +7,8 @@ async function token(account) { const t = randomBytes(32).toString('hex'); const
 const admin = () => token(fixture.credentials().account);
 async function actor(role = 'teacher', person) { const account = await db.createAccount({ id: randomUUID(), username: 'synthetic-' + randomUUID(), displayName: 'Synthetic', role, staffMemberId: person?.id || null, disabled: false, mustChangePassword: false, passwordHash: 'not used', roomId: null }); return { account, token: await token(account) }; }
 const api = (t, method, route, body) => http(app)[method]('/api' + route).set('Cookie','skao_session=' + t).set('Origin',fixture.origin).set('X-CSRF-Token',auth.csrfToken(t)).send(body);
-async function clock(t, action, requestId = randomUUID()) { const own = await service.own(t); await service.clock(t,{ action, requestId, version: own.version }); return service.own(t); }
+async function status(t, staffId) { return (await service.clockStatus(t)).staff.find(row => row.id === staffId); }
+async function clock(t, staffId, action, requestId = randomUUID()) { const version = (await db.getPayrollRecord('ledger:' + staffId))?.version || 0; await service.managerClock(t, staffId,{ action, requestId, version }); return status(t, staffId); }
 function advance(ms) { jest.setSystemTime(new Date(Date.now() + ms)); }
 function freeze(value) {
   jest.useFakeTimers({ doNotFake: ['setTimeout','clearTimeout','setInterval','clearInterval','setImmediate','clearImmediate','nextTick','queueMicrotask','performance','hrtime'] });
@@ -16,7 +17,7 @@ function freeze(value) {
 async function day() {
   freeze('2026-10-19T15:00:00Z');
   const person = await staff(), t = await admin(), teacher = await actor('teacher', person);
-  await clock(teacher.token,'checkin'); advance(8 * 3600000); await clock(teacher.token,'checkout');
+  await clock(t,person.id,'checkin'); advance(8 * 3600000); await clock(t,person.id,'checkout');
   return { person, t, teacher };
 }
 const profileRules = { mode: 'ca-standard', workweekStart: 1, confirmed: true, reference: 'Synthetic payroll reviewer: standard California daily/weekly overtime, paid rest; actual unpaid meals only; no rounding.', dailyScheduledMinutes: 480 };
@@ -25,35 +26,39 @@ async function configure(t, id) {
   await service.rate(t,id,{ version: 1, effectiveOn: '2026-01-01', cents: 2000, currency: 'USD', reason: 'Synthetic rate' });
 }
 async function approve(t,id, paidMillis=8*3600000) { const detail = await service.get(t,id), day = detail.ledger.days.find(row => row.date === '2026-10-19'); return service.approve(t,id,{ version: detail.ledger.version, profileVersion: detail.profile.version, date: '2026-10-19', status: 'approved', mode: 'manual-reviewed', paidMillis: Math.max(paidMillis, day.review.suggestedPaidMillis), premiumCents: 0, overtimeReviewed: true, adjustmentCents: 0, rulesReviewed: true, reason: 'Synthetic administrator reviewed actual hours, proposed paid rounding and any additional pay' }); }
-test('own clock derives staff identity and never returns payroll fields or another employee', async () => {
+test('personal clock is disabled and the manager projection never returns private payroll fields', async () => {
   const person = await staff(); const t = await admin(); await configure(t,person.id); const teacher = await actor('teacher',person); const foreign = await staff();
-  const own = await service.own(teacher.token); expect(own.staff.id).toBe(person.id);
-  expect(JSON.stringify(own)).not.toMatch(/TAX|BANK|rates|legalName|5678|1234|approval/);
+  const manager = await service.clockStatus(t); expect(manager.staff.map(row => row.id)).toEqual(expect.arrayContaining([person.id, foreign.id]));
+  expect(JSON.stringify(manager)).not.toMatch(/TAX|BANK|rates|legalName|5678|1234|approval/);
+  await expect(service.own(teacher.token)).rejects.toMatchObject({ status: 403 });
+  await expect(service.clock(teacher.token,{ action:'checkin', requestId:randomUUID(), version:0 })).rejects.toMatchObject({ status: 403 });
   expect((await api(teacher.token,'get','/payroll/staff/' + person.id)).status).toBe(403);
-  expect((await api(teacher.token,'post','/time-clock',{ action:'checkin', requestId:randomUUID(), version:0, staffId:foreign.id })).status).toBe(400);
+  expect((await api(teacher.token,'get','/time-clock')).status).toBe(403);
+  expect((await api(teacher.token,'post','/time-clock',{ action:'checkin', requestId:randomUUID(), version:0, staffId:foreign.id })).status).toBe(403);
 });
 test.each(['viewer','editor','teacher'])('%s is denied every private payroll operation', async role => {
   const person = await staff(); const a = await actor(role,person); const prefix='/payroll/staff/'+person.id;
   for (const route of [prefix,prefix+'/documents/unknown/1',prefix+'/snapshots/unknown']) expect((await api(a.token,'get',route)).status).toBe(403);
   for (const route of ['profile','rates','corrections','approvals','preview','snapshots','documents']) expect((await api(a.token,'post',prefix+'/'+route,{})).status).toBe(403);
 });
-test('unlinked and deactivated identities cannot clock; a linked employee does not need a class', async () => {
+test('personal identities cannot clock and managers can clock active employees without sign-in accounts or classes', async () => {
   const no = await actor(); await expect(service.own(no.token)).rejects.toMatchObject({status:403});
-  const person = await staff(); const teacher = await actor('teacher',person); expect((await service.own(teacher.token)).staff.id).toBe(person.id);
-  await db.updateStaff(person.id,{active:false}); await expect(service.clock(teacher.token,{action:'checkin',version:0,requestId:randomUUID()})).rejects.toMatchObject({status:401});
+  const person = await staff(), t = await admin();
+  expect((await clock(t,person.id,'checkin')).checkedIn).toBe(true);
+  await db.updateStaff(person.id,{active:false}); await expect(service.managerClock(t,person.id,{action:'checkout',version:1,requestId:randomUUID()})).rejects.toMatchObject({status:403});
 });
 test('clock writes need CSRF and one current version; retries cannot create duplicate open sessions', async () => {
-  const person=await staff(), teacher=await actor('teacher',person); const body={action:'checkin',version:0,requestId:randomUUID()};
-  expect((await http(app).post('/api/time-clock').set('Origin',fixture.origin).set('Cookie','skao_session='+teacher.token).send(body)).status).toBe(403);
-  const results=await Promise.all([service.clock(teacher.token,body),service.clock(teacher.token,body)]); expect(results.filter(r=>r.replayed)).toHaveLength(1);
-  expect((await service.own(teacher.token)).checkedIn).toBe(true);
+  const person=await staff(), t=await admin(); const body={action:'checkin',version:0,requestId:randomUUID()};
+  expect((await http(app).post('/api/work-time/staff/'+person.id+'/clock').set('Origin',fixture.origin).set('Cookie','skao_session='+t).send(body)).status).toBe(403);
+  const results=await Promise.all([service.managerClock(t,person.id,body),service.managerClock(t,person.id,body)]); expect(results.filter(r=>r.replayed)).toHaveLength(1);
+  expect((await status(t,person.id)).checkedIn).toBe(true);
   expect(vault.open(await db.getPayrollRecord('ledger:'+person.id)).sessions).toHaveLength(1);
-  await expect(service.clock(teacher.token,{...body,requestId:randomUUID()})).rejects.toMatchObject({status:409});
-  await expect(service.clock(teacher.token,{...body,action:'checkout'})).rejects.toMatchObject({status:409});
+  await expect(service.managerClock(t,person.id,{...body,requestId:randomUUID()})).rejects.toMatchObject({status:409});
+  await expect(service.managerClock(t,person.id,{...body,action:'checkout'})).rejects.toMatchObject({status:409});
 });
 test('legacy unfinished entries never require a break action, block checkout or create a guessed deduction', async () => {
-  const {person,t,teacher}=await day(); await clock(teacher.token,'checkin'); advance(3600000);
-  await expect(clock(teacher.token,'paid-break')).rejects.toMatchObject({status:400});
+  const {person,t,teacher}=await day(); await clock(t,person.id,'checkin'); advance(3600000);
+  await expect(clock(t,person.id,'paid-break')).rejects.toMatchObject({status:400});
   let detail=await service.get(t,person.id); const session=detail.ledger.sessions.at(-1); const now=new Date().toISOString();
   await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:null,breaks:[{start:now,end:null,paid:false}],voided:false,reason:'Synthetic historical entry'});
   const raw=await db.getPayrollRecord('ledger:'+person.id), stored=vault.open(raw);
@@ -61,13 +66,13 @@ test('legacy unfinished entries never require a break action, block checkout or 
   stored.sessions.at(-1).breaks[0].actorId='historical-actor';
   await db.savePayrollRecord({...raw,ciphertext:vault.seal(raw,stored)});
   const original=structuredClone(stored.sessions.at(-1).breaks);
-  expect((await service.own(teacher.token)).needsReview).toBe(false); advance(1800000);
-  await clock(teacher.token,'checkout'); detail=await service.get(t,person.id);
+  expect((await status(t,person.id)).checkedIn).toBe(true); advance(1800000);
+  await clock(t,person.id,'checkout'); detail=await service.get(t,person.id);
   expect(detail.ledger.days[0]).toMatchObject({unpaidMillis:0,paidMillis:9.5*3600000,incomplete:false});
   expect(detail.ledger.sessions.at(-1).breaks).toEqual(original);
   await service.correct(t,person.id,{version:detail.ledger.version,sessionId:session.id,start:session.start,end:detail.ledger.sessions.at(-1).end,voided:false,reason:'Verify checkout while retaining history'});
   detail=await service.get(t,person.id); expect(detail.ledger.sessions.at(-1).breaks).toEqual(original);
-  const own=await service.own(teacher.token);expect(Object.keys(own).sort()).toEqual(['checkedIn','needsReview','staff','timeZone','version']);
+  await expect(service.own(teacher.token)).rejects.toMatchObject({status:403});
 });
 test('private fields are encrypted in storage, masked in responses and preserved on unrelated edits', async () => {
   const person=await staff(), t=await admin(); await configure(t,person.id);
@@ -98,9 +103,9 @@ test('a correction preserves original times and prior approval, blocks overlaps 
   expect(detail.ledger.history.some(h=>h.type==='correction' && h.before.end===session.end)).toBe(true);
 });
 test('an audit failure rolls back encrypted time, history, version and idempotency together', async () => {
-  const person=await staff(), teacher=await actor('teacher',person); const audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic audit failure'));
-  try { await expect(clock(teacher.token,'checkin')).rejects.toThrow('Synthetic audit failure'); } finally { audit.mockRestore(); }
-  expect(await db.getPayrollRecord('ledger:'+person.id)).toBeNull(); expect((await service.own(teacher.token)).checkedIn).toBe(false);
+  const person=await staff(), t=await admin(); const audit=jest.spyOn(db,'appendAudit').mockRejectedValueOnce(new Error('Synthetic audit failure'));
+  try { await expect(clock(t,person.id,'checkin')).rejects.toThrow('Synthetic audit failure'); } finally { audit.mockRestore(); }
+  expect(await db.getPayrollRecord('ledger:'+person.id)).toBeNull(); expect((await status(t,person.id)).checkedIn).toBe(false);
 });
 test('required payroll documents preserve every revision byte and private downloads reject foreign staff and viewers', async () => {
   const person=await staff(), t=await admin(); await configure(t,person.id); const bytes=fs.readFileSync(path.join(__dirname,'fixtures/child-documents/synthetic.png'));
@@ -119,7 +124,7 @@ test('missing/insecure/wrong keys fail closed without substituting empty private
 });
 
 test('extra hours notify admin/editor without exposing pay or tax data and confirmed work remains payable', async () => {
-  const {person,t,teacher}=await day(); await configure(t,person.id); await clock(teacher.token,'checkin'); advance(3600000); await clock(teacher.token,'checkout');
+  const {person,t,teacher}=await day(); await configure(t,person.id); await clock(t,person.id,'checkin'); advance(3600000); await clock(t,person.id,'checkout');
   const editor=await actor('editor'); const list=await service.workTime(editor.token);const row=list.items.find(i=>i.staffId===person.id);
   expect(row).toMatchObject({status:'pending',extraMillis:3600000,plannedMinutes:480});expect(JSON.stringify(list)).not.toMatch(/taxId|SYNTHETIC-TAX|bankAccount|rates|legalName/);
   await expect(service.preview(t,person.id,{start:row.date,end:row.date})).resolves.toMatchObject({canFinalize:false});
@@ -131,7 +136,7 @@ test('extra hours notify admin/editor without exposing pay or tax data and confi
 });
 test('a verified clock error preserves original checkout, renews approval and is attributed to the editor', async () => {
   const {person,t,teacher}=await day(); let d=await service.get(t,person.id);const session=d.ledger.sessions[0];
-  await clock(teacher.token,'checkin');advance(3600000);await clock(teacher.token,'checkout');
+  await clock(t,person.id,'checkin');advance(3600000);await clock(t,person.id,'checkout');
   // Correct the synthetic day to a single nine-hour clock session.
   d=await service.get(t,person.id);await service.correct(t,person.id,{version:d.ledger.version,sessionId:d.ledger.sessions[1].id,start:d.ledger.sessions[1].start,end:d.ledger.sessions[1].end,breaks:[],voided:true,reason:'Synthetic duplicate'});
   d=await service.get(t,person.id);await service.correct(t,person.id,{version:d.ledger.version,sessionId:session.id,start:session.start,end:new Date().toISOString(),breaks:[],voided:false,reason:'Synthetic late clockout'});
@@ -148,7 +153,7 @@ test('daily hours are effective dated, entered in hours, and cannot alter the li
   await expect(service.schedule(t,person.id,{version:1,effectiveOn:'2026-10-18',approvedHours:8,reason:'Retroactive'})).rejects.toMatchObject({status:400});
 });
 test('work-time HTTP writes require CSRF and viewers cannot query or change the manager projection', async()=>{
-  const {person,t,teacher}=await day();await clock(teacher.token,'checkin');advance(3600000);await clock(teacher.token,'checkout');const editor=await actor('editor');
+  const {person,t,teacher}=await day();await clock(t,person.id,'checkin');advance(3600000);await clock(t,person.id,'checkout');const editor=await actor('editor');
   const list=await service.workTime(editor.token),row=list.items[0];const body={version:row.version,date:row.date,decision:'worked',reason:'Synthetic review'};
   const path='/work-time/staff/'+person.id+'/review';
   expect((await http(app).post('/api'+path).set('Origin',fixture.origin).set('Cookie','skao_session='+editor.token).send(body)).status).toBe(403);
@@ -156,7 +161,7 @@ test('work-time HTTP writes require CSRF and viewers cannot query or change the 
   // A staff record has one sign-in account. day() already links person to the
   // teacher; use a separate employee so this fixture also satisfies PostgreSQL.
   const viewerPerson=await staff(),viewer=await actor('viewer',viewerPerson);
-  expect((await service.own(viewer.token)).staff.id).toBe(viewerPerson.id);
+  await expect(service.own(viewer.token)).rejects.toMatchObject({status:403});
   expect((await api(viewer.token,'get','/work-time')).status).toBe(403);
   expect((await api(viewer.token,'post',path,body)).status).toBe(403);
   expect((await api(viewer.token,'post','/work-time/staff/'+person.id+'/schedule',{version:0,effectiveOn:row.date,approvedHours:8,reason:'Viewer must not change a schedule'})).status).toBe(403);
@@ -169,7 +174,7 @@ test('work-time HTTP writes require CSRF and viewers cannot query or change the 
 async function scheduledDay({startTime='08:00',endTime='17:00',arrival='2026-10-19T15:00:00Z',departure='2026-10-20T00:00:00Z',date='2026-10-19'}={}) {
   freeze(arrival); const person=await staff(),t=await admin(),teacher=await actor('teacher',person);
   await service.schedule(t,person.id,{version:0,effectiveOn:date,startTime,endTime,reason:'Synthetic approved clock times'});
-  await clock(teacher.token,'checkin');jest.setSystemTime(new Date(departure));await clock(teacher.token,'checkout');
+  await clock(t,person.id,'checkin');jest.setSystemTime(new Date(departure));await clock(t,person.id,'checkout');
   const list=await service.workTime(t,{start:date,end:date});return {person,t,teacher,row:list.items.find(row=>row.staffId===person.id)};
 }
 test('approved start and end times are strict, same-day, effective dated and cannot mix with legacy daily hours',async()=>{
@@ -209,12 +214,12 @@ test.each([
 test('changing a schedule freezes the started day and applies the new clock times only to later days',async()=>{
   freeze('2026-10-19T15:00:00Z');const person=await staff(),t=await admin(),teacher=await actor('teacher',person);
   await service.schedule(t,person.id,{version:0,effectiveOn:'2026-10-19',startTime:'08:00',endTime:'17:00',reason:'Original approved clock times'});
-  await clock(teacher.token,'checkin');
+  await clock(t,person.id,'checkin');
   await service.schedule(t,person.id,{version:1,effectiveOn:'2026-10-19',startTime:'09:00',endTime:'18:00',reason:'Change for the next unstarted day'});
-  advance(9*3600000);await clock(teacher.token,'checkout');
+  advance(9*3600000);await clock(t,person.id,'checkout');
   let rows=(await service.workTime(t)).items.filter(row=>row.staffId===person.id);
   expect(rows[0]).toMatchObject({plannedStart:'08:00',plannedEnd:'17:00',status:'within-schedule'});
-  jest.setSystemTime(new Date('2026-10-20T16:00:00Z'));await clock(teacher.token,'checkin');advance(9*3600000);await clock(teacher.token,'checkout');
+  jest.setSystemTime(new Date('2026-10-20T16:00:00Z'));await clock(t,person.id,'checkin');advance(9*3600000);await clock(t,person.id,'checkout');
   rows=(await service.workTime(t)).items.filter(row=>row.staffId===person.id);
   expect(rows.map(row=>({date:row.date,start:row.plannedStart,end:row.plannedEnd,status:row.status}))).toEqual([
     {date:'2026-10-20',start:'09:00',end:'18:00',status:'within-schedule'},
@@ -222,7 +227,7 @@ test('changing a schedule freezes the started day and applies the new clock time
   ]);
 });
 test('existing duration-only days and confirmed decisions never gain clock windows retrospectively',async()=>{
-  const {person,t,teacher}=await day();await clock(teacher.token,'checkin');advance(3600000);await clock(teacher.token,'checkout');
+  const {person,t,teacher}=await day();await clock(t,person.id,'checkin');advance(3600000);await clock(t,person.id,'checkout');
   let row=(await service.workTime(t)).items.find(row=>row.staffId===person.id);
   await service.reviewWork(t,person.id,{version:row.version,date:row.date,decision:'worked',reason:'Legacy duration-only extra work verified'});
   const original=vault.open(await db.getPayrollRecord('ledger:'+person.id)).workReviews[row.date];

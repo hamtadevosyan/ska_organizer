@@ -23,7 +23,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const labels: Record<string, string> = { dashboard: 'Home', attendance: 'Attendance', activities: 'Activities', meals: 'Meals',
       children: 'Children', rooms: 'Rooms & Classes', inventory: 'Inventory', purchasing: 'Purchasing', receiving: 'Receive purchases', staff: 'Staff', reports: 'Reports', accounts: 'Accounts' };
-    const sectionLabels: Record<string, string> = { '/staff/work-time': 'Staff · Work time', '/staff/payroll': 'Staff · Pay & time', '/classroom': 'My class', '/classroom/children': 'Class children',
+    const sectionLabels: Record<string, string> = { '/staff/clock': 'Staff · Clock in/out', '/staff/clock-station': 'Staff · Clock station', '/staff/work-time': 'Staff · Work time', '/staff/payroll': 'Staff · Pay & time', '/classroom': 'My class', '/classroom/children': 'Class children',
       '/classroom/activities': 'Class activities', '/classroom/meals': 'Class meals', '/classroom/attendance': 'Class attendance' };
     document.title = `Smart Kids Academy · ${sectionLabels[location.pathname] || labels[location.pathname.split('/')[1]] || 'Home'}`;
   }, [location.pathname]);

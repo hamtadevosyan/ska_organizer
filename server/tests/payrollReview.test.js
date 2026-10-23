@@ -23,9 +23,9 @@ async function token(account) {
 async function actor(role, person) {
   return token(await db.createAccount({ id: randomUUID(), username: 'review-' + randomUUID(), displayName: 'Synthetic review actor', role, staffMemberId: person?.id || null, disabled: false, mustChangePassword: false, passwordHash: 'not used', roomId: null }));
 }
-async function clock(value, action) {
-  const own = await service.own(value);
-  await service.clock(value, { action, version: own.version, requestId: randomUUID() });
+async function clock(value, staffId, action) {
+  const own = (await service.clockStatus(value)).staff.find(row => row.id === staffId);
+  await service.managerClock(value, staffId, { action, version: own.version, requestId: randomUUID() });
 }
 async function setup({ hours = 3, rate = true, policy = true, schedule, arrival = '2026-10-19T15:00:00Z' } = {}) {
   freeze(arrival);
@@ -34,8 +34,8 @@ async function setup({ hours = 3, rate = true, policy = true, schedule, arrival 
   if (policy) await service.profile(admin, person.id, { version: 0, reason: 'Synthetic setup', rules });
   if (rate) await service.rate(admin, person.id, { version: policy ? 1 : 0, effectiveOn: '2026-01-01', cents: 2000, currency: 'USD', reason: 'Synthetic hourly rate' });
   if (schedule) await service.schedule(admin, person.id, { version: 0, effectiveOn: '2026-10-19', reason: 'Synthetic approved window', ...schedule });
-  await clock(teacher, 'checkin');
-  if (hours !== null) { jest.setSystemTime(new Date(Date.now() + hours * HOUR)); await clock(teacher, 'checkout'); }
+  await clock(admin, person.id, 'checkin');
+  if (hours !== null) { jest.setSystemTime(new Date(Date.now() + hours * HOUR)); await clock(admin, person.id, 'checkout'); }
   return { person, admin, teacher };
 }
 async function approve(admin, id, values = {}) {
@@ -107,9 +107,9 @@ test('daily overtime is visible before allocation and a valid approved allocatio
 });
 test('later unapproved or unfinished workdays do not reopen an earlier ordinary approval', async () => {
   const context = await setup(); await approve(context.admin, context.person.id);
-  jest.setSystemTime(new Date('2026-10-20T15:00:00Z')); await clock(context.teacher, 'checkin');
-  jest.setSystemTime(new Date('2026-10-20T17:00:00Z')); await clock(context.teacher, 'checkout');
-  jest.setSystemTime(new Date('2026-10-21T15:00:00Z')); await clock(context.teacher, 'checkin');
+  jest.setSystemTime(new Date('2026-10-20T15:00:00Z')); await clock(context.admin, context.person.id, 'checkin');
+  jest.setSystemTime(new Date('2026-10-20T17:00:00Z')); await clock(context.admin, context.person.id, 'checkout');
+  jest.setSystemTime(new Date('2026-10-21T15:00:00Z')); await clock(context.admin, context.person.id, 'checkin');
   const days = (await service.get(context.admin, context.person.id)).ledger.days;
   expect(days[0].date).toBe('2026-10-19');
   expect(days[0].review).toMatchObject({ state: 'approved', reasons: [] });
@@ -120,9 +120,9 @@ test('weekly and seventh-day review apply to the affected later workday without 
   const context = await setup({ hours: 1 });
   for (let date = 20; date <= 25; date++) {
     jest.setSystemTime(new Date(`2026-10-${date}T15:00:00Z`));
-    await clock(context.teacher, 'checkin');
+    await clock(context.admin, context.person.id, 'checkin');
     jest.setSystemTime(new Date(Date.now() + 8 * HOUR));
-    await clock(context.teacher, 'checkout');
+    await clock(context.admin, context.person.id, 'checkout');
   }
   const days = (await service.get(context.admin, context.person.id)).ledger.days;
   expect(days[0].review).toMatchObject({state:'awaiting-approval', requiresOvertimeReview:false});

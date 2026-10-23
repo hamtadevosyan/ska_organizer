@@ -2,7 +2,7 @@
 
 Staff records and sign-in accounts remain separate. Link an existing account to an active employee in Accounts; creating an employee does not create an account or grant payroll privileges. Job titles do not grant privileges.
 
-- Every linked active account can open **More → My time**. A classroom assignment is unnecessary for its own work clock. Only check-in/check-out status and the applicable clock action are shown; employee pages and their status API omit worked hours, timestamps, session history and pay totals. Clock actions use server timestamps. Missing checkouts remain unresolved. No break logging or break-fix action is required; no automatic meal deduction is performed.
+- Employees use the restricted shared PIN station at `/time-clock`. Administrators/editors can clock any active employee under **Staff → Clock in/out**. Personal-account clock actions are disabled. Staff without a sign-in account or classroom can use the station once an administrator assigns a PIN. Clocks use server timestamps; no hours or pay are shown to employees. See [Clock station](time-clock-station.md) for setup, permissions and privacy. No break logging or automatic deduction is added.
 - Only administrators can open **More → Staff → Pay & time**, read or change pay profiles, rates, approvals, corrections, snapshots or payroll files. Editors, teachers and viewers cannot access even their own private pay profile through these routes. They retain their separate operational/class permissions.
 - Private profiles contain legal name, payment method/frequency, optional employee ID in a payroll service, payday notes, masked employee SSN/bank/routing identifiers and required document names. Payroll policy review controls are under Advanced payroll settings. Blank replacement fields keep stored identifiers; clearing requires an explicit checkbox.
 - Rates are appended with an effective facility date, reason and actor. Later corrections on the same effective date supersede the earlier rate for new calculations; prior values remain stored. Time corrections retain original clock values and attributed before/after history. Affected daily approvals require review again.
@@ -79,7 +79,7 @@ Run `bash SKAO.sh payroll-check` for a read-only check of the installed release,
 
 ## Staff subsections
 
-Staff information, Work time, and the administrator-only Pay & time page share one Staff entry on desktop and in the phone More menu. Their addresses are `/staff`, `/staff/work-time`, and `/staff/payroll`. Existing `/work-time` and `/payroll` bookmarks redirect while preserving the query and fragment. Employee My time stays separate. Grouping these screens does not expand account permissions or combine their data requests; private payroll requests remain administrator-only.
+Staff information, Clock in/out, Work time, and the administrator-only Pay & time and Clock station pages share one Staff entry on desktop and in the phone More menu. Their addresses are `/staff`, `/staff/clock`, `/staff/work-time`, `/staff/payroll`, and `/staff/clock-station`. Existing `/work-time` and `/payroll` bookmarks redirect while preserving the query and fragment. Personal My time actions are disabled; a former `/my-time` bookmark explains using the shared station or a manager. Grouping these screens does not expand account permissions or combine their data requests; private payroll requests remain administrator-only.
 
 
 ## Guided pay calculation

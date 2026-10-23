@@ -35,8 +35,8 @@ async function setup({ schedule = true } = {}) {
   return { person, admin, teacher, editor };
 }
 async function clock(context, action) {
-  const own = await service.own(context.teacher.token);
-  await service.clock(context.teacher.token, { action, version: own.version, requestId: randomUUID() });
+  const own = (await service.clockStatus(context.admin)).staff.find(row => row.id === context.person.id);
+  await service.managerClock(context.admin, context.person.id, { action, version: own.version, requestId: randomUUID() });
 }
 async function work(context, date, hours, arrival = '15:00:00Z') {
   jest.setSystemTime(new Date(date + 'T' + arrival));

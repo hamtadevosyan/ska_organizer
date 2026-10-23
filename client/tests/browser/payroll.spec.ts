@@ -29,14 +29,13 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
   const suffix = randomUUID().slice(0, 8);
   const employee = await data<{ id: string; name: string }>(await http.post(api + '/staff', { data: { name: 'Approved window ' + suffix, role: 'Other' } }), 201);
   const temporary = 'Synthetic window temporary 20!', password = 'Synthetic window changed 20!';
-  for (const role of ['editor', 'teacher']) await data(await http.post(api + '/admin/accounts', { data: {
+  for (const role of ['editor']) await data(await http.post(api + '/admin/accounts', { data: {
     username: 'window-' + role + '-' + suffix, displayName: role + ' Window example', role, password: temporary,
     ...(role === 'teacher' ? { staffMemberId: employee.id } : {}),
   } }), 201);
   const editorContext = await browser.newContext({ viewport: { width, height: 1000 } });
-  const teacherContext = await browser.newContext({ viewport: { width, height: 1000 } });
   try {
-    const editor = await editorContext.newPage(), teacher = await teacherContext.newPage();
+    const editor = await editorContext.newPage();
     editor.setDefaultTimeout(10_000);
     async function login(accountPage: typeof editor, role: string) {
       const response = await accountPage.request.post(api + '/auth/login', { headers: { Origin: origin }, data: { username: 'window-' + role + '-' + suffix, password: temporary, rememberMe: true } });
@@ -48,7 +47,6 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
       return { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken };
     }
     await login(editor, 'editor');
-    const headers = await login(teacher, 'teacher');
     const initialResponse = await editor.request.get(api + '/work-time');
     const initial = await data<WorkSchedule>(initialResponse);
     // Use the fixture server's current facility clock, so this works at any time of day.
@@ -84,9 +82,8 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
     await editor.getByLabel('Reason for schedule change', { exact: true }).fill('Approved window for outside-time review');
     await editor.getByRole('button', { name: 'Save approved schedule', exact: true }).click();
     await expect(editor.getByLabel('Reason for schedule change', { exact: true })).toHaveValue('');
-    await data(await teacher.request.post(api + '/time-clock', { headers, data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
-    const own = await data<{ version: number; checkedIn: boolean }>(await teacher.request.get(api + '/time-clock'));
-    await data(await teacher.request.post(api + '/time-clock', { headers, data: { action: 'checkout', version: own.version, requestId: randomUUID() } }));
+    await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
+    await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkout', version: 1, requestId: randomUUID() } }));
     const recorded = await data<WorkSchedule>(await editor.request.get(api + '/work-time'));
     const day = recorded.items.find(item => item.staffId === employee.id && item.date === initial.today)!;
     expect(day).toMatchObject({ plannedStart: outsideStart, plannedEnd: outsideEnd, plannedMinutes: 60, status: 'pending' });
@@ -184,9 +181,9 @@ for (const width of [320, 390]) test(`approved start and end times persist and f
     await expect(page.getByRole('heading', { name: 'Gross pay before taxes: ' + expectedMoney, exact: true })).toBeVisible();
     expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
     expect(await editor.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
-  } finally { await editorContext.close(); await teacherContext.close(); }
+  } finally { await editorContext.close(); }
 });
-for (const width of [320, 1280]) test(`own clock and private pay review through HTTP at ${width}px`, async ({ page, browser }) => {
+for (const width of [320, 1280]) test(`manager clock and private pay review through HTTP at ${width}px`, async ({ page, browser }) => {
   test.setTimeout(90_000); page.setDefaultTimeout(10_000); await page.setViewportSize({ width, height: 1000 }); const http = await authenticatedApi(page); const suffix = randomUUID().slice(0, 8);
   const room = await data<{ id: string }>(await http.post(api + '/rooms', { data: { name: 'Clock class ' + suffix, ageMinMonths: 0, ageMaxMonths: 60, capacity: 10 } }), 201);
   const employee = await data<{ id: string; name: string }>(await http.post(api + '/staff', { data: { name: 'Clock employee ' + suffix, role: 'Teacher', roomId: room.id } }), 201);
@@ -197,11 +194,13 @@ for (const width of [320, 1280]) test(`own clock and private pay review through 
     const teacher = await context.newPage(); const response = await teacher.request.post(api + '/auth/login', { headers: { Origin: origin }, data: { username, password: temporary, rememberMe: true } }); expect(response.status()).toBe(200); const login = await response.json() as { csrfToken: string };
     expect((await teacher.request.post(api + '/auth/password', { headers: { Origin: origin, 'X-CSRF-Token': login.csrfToken }, data: { currentPassword: temporary, password } })).status()).toBe(200);
     const cookies = (await context.cookies(api)).filter(cookie => cookie.name === 'skao_session'); await context.addCookies(cookies.map(cookie => ({ ...cookie, expires: -1 })));
-    await teacher.goto('/my-time'); await teacher.getByRole('button', { name: 'Check in to work', exact: true }).click();
-    await expect(teacher.getByRole('button', { name: 'Check out of work', exact: true })).toBeEnabled(); await expect(teacher.getByRole('button', { name: 'Check in to work', exact: true })).toHaveCount(0);
-    await expect(teacher.getByRole('button', { name: /break/i })).toHaveCount(0); await teacher.getByRole('button', { name: 'Check out of work', exact: true }).click();
-    await expect(teacher.getByRole('button', { name: 'Check in to work', exact: true })).toBeEnabled(); expect((await teacher.request.get(api + '/payroll/staff/' + employee.id)).status()).toBe(403);
-    const own = await data<{ checkedIn: boolean; version: number }>(await teacher.request.get(api + '/time-clock')); expect(JSON.stringify(own)).not.toMatch(/rates|taxId|bankAccount|approvals|sessions|days|Millis/);
+    await teacher.goto('/my-time'); await expect(teacher.getByRole('heading', { name: 'Staff check-in has moved', exact: true })).toBeVisible();
+    await expect(teacher.getByRole('button', { name: /check in|check out|break/i })).toHaveCount(0);
+    expect((await teacher.request.get(api + '/time-clock')).status()).toBe(403);
+    expect((await teacher.request.get(api + '/payroll/staff/' + employee.id)).status()).toBe(403);
+    await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
+    await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkout', version: 1, requestId: randomUUID() } }));
+    const own = { version: 2 };
     const base = api + '/payroll/staff/' + employee.id;
     const detail=await data<{ledger:{sessions:{id:string}[]}}>(await http.get(base));
     await data(await http.post(base + '/corrections', { data: { version: own.version, sessionId: detail.ledger.sessions[0].id, start: '2026-09-21T15:00:00Z', end: '2026-09-21T21:41:42Z', breaks: [], reason: 'Synthetic historical fixture correction', voided: false } }));
@@ -337,21 +336,11 @@ for (const width of [320, 1280]) test(`own clock and private pay review through 
     await page.screenshot({ path: test.info().outputPath('payroll.png'), fullPage: true });
   } finally { await context.close(); }
 });
-test('an administrator records a missed checkout locally on the pay card through real HTTP at 390px', async ({ page, browser }) => {
+test('an administrator records a missed checkout locally on the pay card through real HTTP at 390px', async ({ page }) => {
   test.setTimeout(90_000); await page.setViewportSize({ width: 390, height: 1000 });
   const http = await authenticatedApi(page), suffix = randomUUID().slice(0, 8);
   const employee = await data<{ id: string }>(await http.post(api + '/staff', { data: { name: 'Missed checkout ' + suffix, role: 'Other' } }), 201);
-  const temporary = 'Synthetic checkout temporary 20!', password = 'Synthetic checkout changed 20!';
-  const username = 'missed-checkout-' + suffix;
-  await data(await http.post(api + '/admin/accounts', { data: { username, displayName: 'Missed checkout example', role: 'teacher', staffMemberId: employee.id, password: temporary } }), 201);
-  const context = await browser.newContext();
-  try {
-    const teacher = await context.newPage();
-    const login = await teacher.request.post(api + '/auth/login', { headers: { Origin: origin }, data: { username, password: temporary } });
-    expect(login.status()).toBe(200);
-    const changed = await teacher.request.post(api + '/auth/password', { headers: { Origin: origin, 'X-CSRF-Token': (await login.json()).csrfToken }, data: { currentPassword: temporary, password } });
-    expect(changed.status()).toBe(200);
-    await data(await teacher.request.post(api + '/time-clock', { headers: { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken }, data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
+    await data(await http.post(api + '/work-time/staff/' + employee.id + '/clock', { data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
     const base = api + '/payroll/staff/' + employee.id;
     const open = await data<{ ledger: { version: number; sessions: { id: string }[] } }>(await http.get(base));
     // An ordinary authorized administrator correction supplies a historical
@@ -383,19 +372,18 @@ test('an administrator records a missed checkout locally on the pay card through
     expect(closed.ledger.days).toEqual([expect.objectContaining({ date: '2026-09-23', paidMillis: 6 * 3600000, incomplete: false })]);
     expect(closed.ledger.history.some(entry => entry.type === 'correction' && !!entry.actorId && entry.before?.end === null && entry.after?.end === '2026-09-23T21:00:00.000Z')).toBe(true);
     expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(391);
-  } finally { await context.close(); }
 });
 test('editor receives a home reminder and corrects a verified late clockout without private payroll access at 390px', async({page,browser})=>{
  test.setTimeout(90_000);await page.setViewportSize({width:390,height:1000});const http=await authenticatedApi(page);const suffix=randomUUID().slice(0,8);
  const employee=await data<{id:string;name:string}>(await http.post(api+'/staff',{data:{name:'Late clock '+suffix,role:'Other'}}),201);
  const temporary='Synthetic review temporary 20!',password='Synthetic review changed 20!';
- for(const role of ['editor','teacher'])await data(await http.post(api+'/admin/accounts',{data:{username:role+'-'+suffix,displayName:role+' Example',role,...(role==='teacher'?{staffMemberId:employee.id}:{}),password:temporary}}),201);
+ for(const role of ['editor'])await data(await http.post(api+'/admin/accounts',{data:{username:role+'-'+suffix,displayName:role+' Example',role,...(role==='teacher'?{staffMemberId:employee.id}:{}),password:temporary}}),201);
  const context=await browser.newContext({viewport:{width:390,height:1000}});
  try{
   const other=await context.newPage();
   async function login(role:string){await context.clearCookies();const response=await other.request.post(api+'/auth/login',{headers:{Origin:origin},data:{username:role+'-'+suffix,password:temporary}});expect(response.status()).toBe(200);const csrf=(await response.json()).csrfToken;
    const changed=await other.request.post(api+'/auth/password',{headers:{Origin:origin,'X-CSRF-Token':csrf},data:{currentPassword:temporary,password}});expect(changed.status()).toBe(200);const token=(await changed.json()).csrfToken;const cookies=(await context.cookies(api)).filter(c=>c.name==='skao_session');await context.addCookies(cookies.map(c=>({...c,expires:-1})));return {Origin:origin,'X-CSRF-Token':token};}
-  const headers=await login('teacher');expect((await other.request.post(api+'/time-clock',{headers,data:{action:'checkin',version:0,requestId:randomUUID()}})).status()).toBe(200);expect((await other.request.post(api+'/time-clock',{headers,data:{action:'checkout',version:1,requestId:randomUUID()}})).status()).toBe(200);
+  expect((await http.post(api+'/work-time/staff/'+employee.id+'/clock',{data:{action:'checkin',version:0,requestId:randomUUID()}})).status()).toBe(200);expect((await http.post(api+'/work-time/staff/'+employee.id+'/clock',{data:{action:'checkout',version:1,requestId:randomUUID()}})).status()).toBe(200);
   const base=api+'/payroll/staff/'+employee.id;const initial=await data<{ledger:{version:number;sessions:{id:string}[]}}>(await http.get(base));
   await data(await http.post(base+'/corrections',{data:{version:initial.ledger.version,sessionId:initial.ledger.sessions[0].id,start:'2026-09-22T15:00:00Z',end:'2026-09-23T00:00:00Z',breaks:[],voided:false,reason:'Synthetic nine-hour late clockout'}}));
   await configurePay(http,employee.id);
@@ -415,7 +403,7 @@ test('editor receives a home reminder and corrects a verified late clockout with
   await login('editor');await other.goto('/dashboard');await expect(other.getByRole('region',{name:'Extra employee time reminders'})).toContainText('needs extra-time review');await other.getByRole('link',{name:'Review work time',exact:true}).click();
   await expect(other).toHaveURL(/\/staff\/work-time$/);
   const sections=other.getByRole('navigation',{name:'Staff sections'});
-  await expect(sections.getByRole('link')).toHaveCount(2);
+  await expect(sections.getByRole('link')).toHaveCount(3);
   await expect(sections.getByRole('link',{name:'Staff information',exact:true})).toBeVisible();
   await expect(sections.getByRole('link',{name:'Work time',exact:true})).toHaveAttribute('aria-current','page');
   await expect(sections.getByRole('link',{name:'Pay & time',exact:true})).toHaveCount(0);

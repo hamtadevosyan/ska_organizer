@@ -18,6 +18,7 @@ function originGuard(req, res, next) {
 }
 async function requireSession(req, res, next) {
   try {
+    if (await require('../services/clockStationService').hasActiveStation(require('../routes/clockStations').readCredential(req))) throw auth.problem('This device is a clock station. Sign out of station mode before using a personal account.', 403, 'STATION_MODE');
     req.sessionToken = readToken(req);
     req.account = await auth.sessionAccount(req.sessionToken);
     if (!safeMethods.has(req.method)) {

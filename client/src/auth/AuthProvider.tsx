@@ -45,6 +45,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       if (axios.isCancel(error) || signal?.aborted) return;
+      if (axios.isAxiosError(error) && error.response?.data?.error?.code === 'STATION_MODE') {
+        replaceSession(); setAccount(null);
+        window.location.replace('/time-clock');
+        return;
+      }
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         connection(false);
         setAccount(null);
@@ -68,15 +73,22 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     const focus = () => { if (hadSession.current || unavailableRef.current) void check(); };
     // Browser internet heuristics are only hints: an isolated LAN may still work.
     const networkHint = () => { void check(); };
-    const storage = (event: StorageEvent) => {
-      if (event.key !== 'skao-account-changed') return;
+    const clearPeerSession = () => {
       replaceSession(); setAccount(null); setReady(false);
       void check(undefined, true);
     };
+    const storage = (event: StorageEvent) => {
+      if (event.key === 'skao-account-changed') clearPeerSession();
+    };
+    let peers: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') { peers = new BroadcastChannel('skao-account-changed'); peers.onmessage = clearPeerSession; }
+    } catch { /* Focus and periodic checks still verify the server session. */ }
     window.addEventListener('focus', focus); window.addEventListener('storage', storage);
     window.addEventListener('online', networkHint); window.addEventListener('offline', networkHint);
     return () => {
       controller.abort(); unsubscribe(); stopAvailability(); clearInterval(timer);
+      try { peers?.close(); } catch { /* Optional peer notification. */ }
       window.removeEventListener('focus', focus); window.removeEventListener('storage', storage);
       window.removeEventListener('online', networkHint); window.removeEventListener('offline', networkHint);
     };

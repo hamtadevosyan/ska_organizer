@@ -16,6 +16,8 @@ admin.get('/staff/:staffId/documents/:id/:revision', async (req, res) => {
 });
 const work = express.Router(); work.use(requireSession);
 work.get('/',async(req,res)=>res.json({data:await service.workTime(req.sessionToken,req.query)}));
+work.get('/clock',async(req,res)=>res.json({data:await service.clockStatus(req.sessionToken)}));
+work.post('/staff/:staffId/clock',async(req,res)=>res.json({data:await service.managerClock(req.sessionToken,req.params.staffId,req.body||{})}));
 work.post('/staff/:staffId/schedule',async(req,res)=>res.json({data:await service.schedule(req.sessionToken,req.params.staffId,req.body||{})}));
 work.post('/staff/:staffId/review',async(req,res)=>res.json({data:await service.reviewWork(req.sessionToken,req.params.staffId,req.body||{})}));
 module.exports = { self, admin, work };

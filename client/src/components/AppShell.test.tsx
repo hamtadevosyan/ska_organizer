@@ -65,12 +65,12 @@ test.each(['admin', 'editor'] as const)('More and desktop preserve %s account vi
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const more = within(screen.getByRole('navigation', { name: 'More navigation' }));
   expect(more.getAllByRole('link').map((link) => link.textContent)).toEqual([
-    'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Receipts', 'Staff', 'My time', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
+    'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Receipts', 'Staff', 'Reports', ...(role === 'admin' ? ['Accounts', 'Registration forms'] : []),
   ]);
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
 });
 
-test.each(['/staff/work-time', '/staff/payroll'])('Staff remains the active management entry on %s', path => {
+test.each(['/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station'])('Staff remains the active management entry on %s', path => {
   setup(path);
   const desktop = within(screen.getByRole('navigation', { name: 'Desktop navigation' }));
   expect(desktop.getByRole('link', { name: 'Staff' })).toHaveAttribute('aria-current', 'page');
@@ -85,13 +85,12 @@ test.each(['/staff/work-time', '/staff/payroll'])('Staff remains the active mana
   expect(more.queryByRole('link', { name: 'Staff pay & time' })).not.toBeInTheDocument();
 });
 
-test('Class viewer navigation contains class pages, personal clock and account actions', () => {
+test('Class viewer navigation contains only class pages and account actions', () => {
   setup('/classroom/children', 'viewer');
   for (const name of ['Desktop navigation', 'Mobile navigation']) {
     const nav = within(screen.getByRole('navigation', { name }));
     expect(nav.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual([
       '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals',
-      ...(name === 'Desktop navigation' ? ['/my-time'] : []),
     ]);
     expect(nav.getByRole('link', { name: 'Children' })).toHaveAttribute('aria-current', 'page');
     expect(nav.getByRole('link', { name: 'My class' })).not.toHaveAttribute('aria-current');
@@ -101,11 +100,18 @@ test('Class viewer navigation contains class pages, personal clock and account a
   expect(document.querySelector('.app-breadcrumb strong')).toHaveTextContent('Children');
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const dialog = within(screen.getByRole('dialog', { name: 'More' }));
-  expect(dialog.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/my-time']);
+  expect(dialog.queryAllByRole('link')).toHaveLength(0);
   expect(dialog.getByRole('button', { name: 'Change password' })).toBeEnabled();
   expect(dialog.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   expect(dialog.getByText('Class viewer')).toBeVisible();
   expect(screen.getByRole('button', { name: 'More' })).not.toHaveAttribute('aria-current');
+});
+
+test.each(['admin', 'editor', 'teacher', 'viewer'] as const)('%s has no personal time-clock navigation', role => {
+  setup(role === 'admin' || role === 'editor' ? '/dashboard' : '/classroom', role);
+  expect(within(screen.getByRole('navigation', { name: 'Desktop navigation' })).queryByRole('link', { name: 'My time' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'More' }));
+  expect(within(screen.getByRole('dialog', { name: 'More' })).queryByRole('link', { name: 'My time' })).not.toBeInTheDocument();
 });
 
 test('More highlights secondary routes including filters and closes after navigation', () => {

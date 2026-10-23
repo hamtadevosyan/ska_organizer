@@ -23,8 +23,8 @@ async function token(account) {
 }
 async function clock(context, action, instant) {
   jest.setSystemTime(new Date(instant));
-  const own = await service.own(context.teacher);
-  await service.clock(context.teacher, { action, version: own.version, requestId: randomUUID() });
+  const own = (await service.clockStatus(context.admin)).staff.find(row => row.id === context.staff.id);
+  await service.managerClock(context.admin, context.staff.id, { action, version: own.version, requestId: randomUUID() });
 }
 async function setup(start = '2026-10-19T15:00:00Z', now = '2026-10-20T01:00:00Z') {
   freeze(start);
@@ -46,12 +46,12 @@ test('a facility-local missed checkout closes the original session and preserves
   ledger.sessions[0].breaks = [{ id: 'historical-paid-entry', start: '2026-10-19T16:00:00.000Z', end: '2026-10-19T16:15:00.000Z', paid: true, actorId: 'historical-actor' }];
   await db.savePayrollRecord({ ...raw, ciphertext: vault.seal(raw, ledger) });
   const before = structuredClone(ledger.sessions[0]), body = await request(context);
-  expect((await service.own(context.teacher)).checkedIn).toBe(true);
+  expect((await service.clockStatus(context.admin)).staff.find(row => row.id === context.staff.id).checkedIn).toBe(true);
   await expect(service.correct(context.admin, context.staff.id, body)).resolves.toEqual({ saved: true });
   const after = vault.open(await stored(context)), session = after.sessions[0];
   expect(session).toMatchObject({ id: before.id, start: before.start, end: '2026-10-20T00:00:00.000Z', version: before.version + 1, original: before.original, breaks: before.breaks });
   expect(after.history.at(-1)).toMatchObject({ type: 'correction', before, after: session, reason: body.reason, actorId: fixture.credentials().account.id });
-  expect((await service.own(context.teacher)).checkedIn).toBe(false);
+  expect((await service.clockStatus(context.admin)).staff.find(row => row.id === context.staff.id).checkedIn).toBe(false);
 });
 
 test('local checkout uses the ledger time zone instead of the current facility setting', async () => {

@@ -1,40 +1,44 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import MyTime from './MyTime';
 import { AuthContext } from '../auth/context';
+import type { Role } from '../auth/context';
 import { testAccount } from '../tests/authAccount';
+
 vi.mock('axios', async original => { const real = await original<typeof import('axios')>(); return { ...real, default: { ...real.default, get: vi.fn(), post: vi.fn() } }; });
-const clock = { staff: { id: 'staff-a', name: 'Ari Example' }, version: 2, timeZone: 'America/Los_Angeles', checkedIn: false, needsReview: false };
-function view(linked = true, unavailable = false) { return <AuthContext.Provider value={{ account: { ...testAccount, role: 'viewer', staffMemberId: linked ? 'staff-a' : null }, ready: true, notice: '', serverUnavailable: unavailable, signIn: vi.fn(), signOut: vi.fn(), changePassword: vi.fn(), retry: vi.fn() }}><MyTime /></AuthContext.Provider>; }
-beforeEach(() => { vi.resetAllMocks(); vi.mocked(axios.get).mockResolvedValue({ data: { data: clock } }); vi.mocked(axios.post).mockResolvedValue({ data: {} }); });
-test('a linked viewer can record only their own server-timed arrival and uncertain retries keep one ID', async () => {
-  vi.mocked(axios.post).mockRejectedValueOnce(new Error('Synthetic network error'));
-  render(view()); fireEvent.click(await screen.findByRole('button', { name: 'Check in to work' }));
-  expect(await screen.findByRole('alert')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Check in to work' }));
-  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
-  expect(vi.mocked(axios.post).mock.calls[0]).toEqual(vi.mocked(axios.post).mock.calls[1]);
-  expect(vi.mocked(axios.post).mock.calls[0][1]).toEqual({ action: 'checkin', version: 2, requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) });
-  expect(screen.queryByText(/hourly rate|tax identifier/i)).not.toBeInTheDocument();
-});
-test('a checked-in employee sees only checkout and no worked hours or break controls', async () => {
-  vi.mocked(axios.get).mockResolvedValue({ data: { data: { ...clock, checkedIn: true } } });
-  render(view()); expect(await screen.findByRole('button', { name: 'Check out of work' })).toBeEnabled();
-  expect(screen.queryByRole('button', { name: 'Check in to work' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /break/i })).not.toBeInTheDocument();
-  expect(screen.queryByText(/Recent workdays|clocked hours|recorded hours|Arrived:/)).not.toBeInTheDocument();
-});
-test('a legacy review flag never asks an employee to enter a break or blocks checkout', async () => {
-  vi.mocked(axios.get).mockResolvedValue({ data: { data: { ...clock, checkedIn: true, needsReview: true } } });
-  render(view()); const checkout = await screen.findByRole('button', { name: 'Check out of work' });
-  expect(checkout).toBeEnabled(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-  expect(screen.queryByText(/break/i)).not.toBeInTheDocument();
-  fireEvent.click(checkout);
-  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
-  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ action: 'checkout', version: clock.version });
-});
-test('unlinked accounts and an unavailable server cannot record time', async () => {
-  const { rerender } = render(view(false)); expect(screen.getByRole('alert')).toHaveTextContent('link your account'); expect(axios.get).not.toHaveBeenCalled();
-  rerender(view(true, true)); expect(screen.getByRole('alert')).toHaveTextContent('connection is interrupted'); expect(screen.queryByRole('button', { name: /Check in/ })).not.toBeInTheDocument();
+function view(role: Role, linked: boolean, unavailable = false) {
+  return <AuthContext.Provider value={{ account: { ...testAccount, role, staffMemberId: linked ? 'staff-a' : null }, ready: true, notice: '', serverUnavailable: unavailable,
+    signIn: vi.fn(), signOut: vi.fn(), changePassword: vi.fn(), retry: vi.fn() }}><MemoryRouter><MyTime /></MemoryRouter></AuthContext.Provider>;
+}
+beforeEach(() => { vi.resetAllMocks(); });
+
+test.each((['admin', 'editor', 'teacher', 'viewer'] as const).flatMap(role => [true, false].map(linked => ({ role, linked }))))(
+  'the disabled personal clock makes no time requests for $role (linked: $linked)', ({ role, linked }) => {
+    render(view(role, linked));
+    expect(screen.getByRole('heading', { name: 'Staff check-in has moved' })).toBeVisible();
+    expect(screen.getByText('Use the academy clock station, or ask an administrator or editor to record your arrival or departure.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /check in|check out|refresh my time/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/clocked hours|hourly rate|tax identifier|recent workdays/i)).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name: role === 'admin' || role === 'editor' ? 'Open staff clock' : 'Back to my class' });
+    expect(link).toHaveAttribute('href', role === 'admin' || role === 'editor' ? '/staff/clock' : '/classroom');
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+  },
+);
+
+test('focus, elapsed time and connection state cannot revive the disabled personal clock', () => {
+  vi.useFakeTimers();
+  try {
+    const { rerender } = render(view('teacher', true));
+    fireEvent(window, new Event('focus'));
+    act(() => vi.advanceTimersByTime(60_000));
+    rerender(view('teacher', true, true));
+    fireEvent(window, new Event('focus'));
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.queryByRole('button', { name: /check in|check out/i })).not.toBeInTheDocument();
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
 });

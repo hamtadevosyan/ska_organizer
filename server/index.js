@@ -33,6 +33,8 @@ app.use('/api/payroll', requireSession, require('./auth/middleware').requireAdmi
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);
+app.use('/api/station-clock', require('./routes/clockStations').station);
+app.use('/api/clock-stations', require('./routes/clockStations').management);
 app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api/children/:childId/safety', requireSession, require('./routes/childSafety'));

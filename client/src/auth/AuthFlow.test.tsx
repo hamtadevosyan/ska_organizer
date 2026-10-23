@@ -193,3 +193,12 @@ test.each([false, true])('login submits the explicit remembered choice %s withou
   fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
   expect(await screen.findByRole('checkbox', { name: 'Keep me signed in' })).not.toBeChecked();
 });
+
+test('an unavailable peer notification channel cannot interrupt session verification or mount private pages early', async () => {
+  vi.stubGlobal('BroadcastChannel', class { constructor() { throw new DOMException('Blocked', 'SecurityError'); } });
+  try {
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: session }); app();
+    expect(screen.queryByText('Private operations')).not.toBeInTheDocument();
+    await screen.findByText('Private operations');
+  } finally { vi.unstubAllGlobals(); }
+});

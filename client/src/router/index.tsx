@@ -23,6 +23,8 @@ import WorkTime from "../pages/WorkTime";
 import Payroll from "../pages/Payroll";
 import MyTime from "../pages/MyTime";
 import StaffLayout from "../components/staff/StaffLayout";
+import StaffClock from "../components/staff/StaffClock";
+import ClockStationSetup from "../components/staff/ClockStationSetup";
 
 function StaffRedirect({ to }: { to: string }) {
   const { search, hash } = useLocation();
@@ -63,6 +65,8 @@ export default function AppRoutes() {
       <Route path="/meals" element={<Meals />} />
       <Route path="/staff" element={<StaffLayout />}>
         <Route index element={<Staff />} />
+        <Route path="clock" element={<StaffClock />} />
+        <Route path="clock-station" element={account?.role === 'admin' ? <ClockStationSetup /> : <Navigate to="/staff/clock" replace />} />
         <Route path="work-time" element={<WorkTime />} />
         <Route path="payroll" element={<Payroll />} />
       </Route>
