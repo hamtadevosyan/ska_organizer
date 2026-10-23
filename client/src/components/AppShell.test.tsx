@@ -70,7 +70,22 @@ test.each(['admin', 'editor'] as const)('More and desktop preserve %s account vi
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
 });
 
-test('Class viewer navigation contains only its four class pages and account actions', () => {
+test.each(['/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station'])('Staff remains the active management entry on %s', path => {
+  setup(path);
+  const desktop = within(screen.getByRole('navigation', { name: 'Desktop navigation' }));
+  expect(desktop.getByRole('link', { name: 'Staff' })).toHaveAttribute('aria-current', 'page');
+  expect(desktop.queryByRole('link', { name: 'Work time' })).not.toBeInTheDocument();
+  expect(desktop.queryByRole('link', { name: 'Staff pay & time' })).not.toBeInTheDocument();
+  const moreButton = screen.getByRole('button', { name: 'More' });
+  expect(moreButton).toHaveAttribute('aria-current', 'true');
+  fireEvent.click(moreButton);
+  const more = within(screen.getByRole('navigation', { name: 'More navigation' }));
+  expect(more.getByRole('link', { name: 'Staff' })).toHaveAttribute('aria-current', 'page');
+  expect(more.queryByRole('link', { name: 'Work time' })).not.toBeInTheDocument();
+  expect(more.queryByRole('link', { name: 'Staff pay & time' })).not.toBeInTheDocument();
+});
+
+test('Class viewer navigation contains only class pages and account actions', () => {
   setup('/classroom/children', 'viewer');
   for (const name of ['Desktop navigation', 'Mobile navigation']) {
     const nav = within(screen.getByRole('navigation', { name }));
@@ -90,6 +105,13 @@ test('Class viewer navigation contains only its four class pages and account act
   expect(dialog.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   expect(dialog.getByText('Class viewer')).toBeVisible();
   expect(screen.getByRole('button', { name: 'More' })).not.toHaveAttribute('aria-current');
+});
+
+test.each(['admin', 'editor', 'teacher', 'viewer'] as const)('%s has no personal time-clock navigation', role => {
+  setup(role === 'admin' || role === 'editor' ? '/dashboard' : '/classroom', role);
+  expect(within(screen.getByRole('navigation', { name: 'Desktop navigation' })).queryByRole('link', { name: 'My time' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'More' }));
+  expect(within(screen.getByRole('dialog', { name: 'More' })).queryByRole('link', { name: 'My time' })).not.toBeInTheDocument();
 });
 
 test('More highlights secondary routes including filters and closes after navigation', () => {

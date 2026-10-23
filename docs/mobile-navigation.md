@@ -16,6 +16,12 @@ installation settings are changed by this layout.
 - More also contains the signed-in user's name, role, Change password, and
   Sign out. Password changes and sign-out use the existing authentication flow.
 
+Staff has its own subsections: Staff information, Clock in/out, Work time, and the
+administrator-only Pay & time and Clock station setup. They share the single Staff entry in More
+and the desktop sidebar. Teachers/viewers use the registered PIN station for their own work attendance
+and cannot open these management sections. Personal My time links are removed. Old work-time and payroll bookmarks
+redirect to the corresponding Staff subsection.
+
 The selected page is highlighted. More stays highlighted on secondary pages,
 including filtered URLs such as `/inventory?status=low`. Existing bookmarks,
 the `/` dashboard redirect, and the `/schedule` activity-planner redirect remain

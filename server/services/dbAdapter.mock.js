@@ -5,8 +5,9 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
+  payrollRecords: [], rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
+  clockStations: [], clockStationPairings: [], staffClockPins: [], clockStationAttempts: [],
   childSafetyProfiles: {}, children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
   staffDocuments: [], staffDocumentRevisions: [], staffDocumentSettings: null,
   attendance: [], attendanceCorrections: [],
@@ -250,9 +251,11 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.payrollRecords = [];
     mock.scheduleWeeks = [];
     mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryGroupOperations = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = []; mock.purchaseBatches = [];
     mock.accounts = []; mock.sessions = []; mock.loginAttempts = []; mock.auditEvents = [];
+    mock.clockStations = []; mock.clockStationPairings = []; mock.staffClockPins = []; mock.clockStationAttempts = [];
     mock.childSafetyProfiles = {}; mock.children = []; mock.childDocuments = []; mock.childDocumentRevisions = [];
     mock.registrationForms = []; mock.registrationFormRevisions = [];
     mock.staffDocuments = []; mock.staffDocumentRevisions = []; mock.staffDocumentSettings = null;
@@ -603,6 +606,36 @@ const edit = (collection, id, values) => {
 };
 const remove = (collection, id) => { mock[collection] = mock[collection].filter((item) => item.id !== id); };
 Object.assign(module.exports, {
+  listClockStations: async () => copy(mock.clockStations).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.id.localeCompare(b.id)),
+  getClockStationById: async id => find('clockStations', id),
+  getClockStationByCredentialHash: async credentialHash => copy(mock.clockStations.find(row => row.credentialHash === credentialHash) || null),
+  createClockStation: async values => {
+    if (mock.clockStations.some(row => row.id === values.id || row.credentialHash === values.credentialHash)) throw Object.assign(new Error('Clock station already exists.'), { name: 'SequelizeUniqueConstraintError' });
+    return insert('clockStations', values);
+  },
+  updateClockStation: async (id, changes) => {
+    if (changes.credentialHash !== undefined && mock.clockStations.some(row => row.id !== id && row.credentialHash === changes.credentialHash)) throw Object.assign(new Error('Clock station credential already exists.'), { name: 'SequelizeUniqueConstraintError' });
+    return edit('clockStations', id, changes);
+  },
+  getClockPairing: async id => find('clockStationPairings', id),
+  createClockPairing: async values => {
+    if (mock.clockStationPairings.some(row => row.id === values.id)) throw Object.assign(new Error('Clock pairing already exists.'), { name: 'SequelizeUniqueConstraintError' });
+    return insert('clockStationPairings', values);
+  },
+  updateClockPairing: async (id, changes) => edit('clockStationPairings', id, changes),
+  listStaffClockPins: async () => copy(mock.staffClockPins).sort((a, b) => a.staffId.localeCompare(b.staffId)),
+  getStaffClockPin: async staffId => copy(mock.staffClockPins.find(row => row.staffId === staffId) || null),
+  getStaffClockPinByLookup: async pinLookup => copy(mock.staffClockPins.find(row => row.pinLookup === pinLookup) || null),
+  saveStaffClockPin: async values => {
+    if (mock.staffClockPins.some(row => row.staffId !== values.staffId && row.pinLookup === values.pinLookup)) throw Object.assign(new Error('Clock PIN is already assigned.'), { name: 'SequelizeUniqueConstraintError' });
+    const index = mock.staffClockPins.findIndex(row => row.staffId === values.staffId);
+    if (index < 0) mock.staffClockPins.push(copy(values)); else mock.staffClockPins[index] = { ...mock.staffClockPins[index], ...copy(values) };
+    return copy(mock.staffClockPins[index < 0 ? mock.staffClockPins.length - 1 : index]);
+  },
+  deleteStaffClockPin: async staffId => { mock.staffClockPins = mock.staffClockPins.filter(row => row.staffId !== staffId); },
+  getClockStationAttempt: async id => find('clockStationAttempts', id),
+  saveClockStationAttempt: async values => edit('clockStationAttempts', values.id, values) || insert('clockStationAttempts', values),
+  pruneClockStationAttempts: async beforeDate => { mock.clockStationAttempts = mock.clockStationAttempts.filter(row => new Date(row.startedAt).getTime() >= new Date(beforeDate).getTime()); },
   listAccounts: async () => copy(mock.accounts).sort((a, b) => a.username.localeCompare(b.username)),
   getAccount: async (id) => find('accounts', id),
   findAccount: async (username) => copy(mock.accounts.find((item) => item.username === username) || null),
@@ -714,3 +747,11 @@ Object.assign(module.exports, {
     return copy(mock.staffDocumentSettings);
   },
 });
+
+module.exports.getPayrollRecord = async id => structuredClone(mock.payrollRecords.find(row => row.id === id) || null);
+module.exports.listPayrollRecords = async (staffId, kind) => structuredClone(mock.payrollRecords.filter(row => row.staffId === staffId && (!kind || row.kind === kind)).sort((a, b) => a.id.localeCompare(b.id)));
+module.exports.savePayrollRecord = async row => { const i = mock.payrollRecords.findIndex(value => value.id === row.id); if (i < 0) mock.payrollRecords.push(structuredClone(row)); else mock.payrollRecords[i] = structuredClone(row); return structuredClone(row); };
+
+module.exports.countPayrollRecords = async () => mock.payrollRecords.length;
+
+module.exports.firstPayrollRecord = async () => structuredClone(mock.payrollRecords[0] || null);

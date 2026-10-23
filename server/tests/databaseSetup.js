@@ -37,7 +37,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   if (!connection) db.reset();
   else {
-    const tables = ['ChildSafetyProfiles', 'PurchasingLists', 'StaffDocumentRevisions', 'StaffDocuments', 'StaffDocumentSettings', 'ChildDocumentRevisions', 'ChildDocuments', 'RegistrationFormRevisions', 'RegistrationForms', 'PurchaseReceipts', 'InventoryMovements', 'InventoryGroupOperations', 'PurchaseBatches', 'InventoryItems', 'InventoryGroups', 'MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'AttendanceCorrections', 'Attendances', 'Activities', 'ScheduleEntries', 'ScheduleWeeks', 'StaffMembers', 'Rooms', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
+    const tables = ['ClockStationAttempts', 'ClockStationPairings', 'ClockStations', 'StaffClockPins', 'PayrollRecords', 'ChildSafetyProfiles', 'PurchasingLists', 'StaffDocumentRevisions', 'StaffDocuments', 'StaffDocumentSettings', 'ChildDocumentRevisions', 'ChildDocuments', 'RegistrationFormRevisions', 'RegistrationForms', 'PurchaseReceipts', 'InventoryMovements', 'InventoryGroupOperations', 'PurchaseBatches', 'InventoryItems', 'InventoryGroups', 'MealIngredients', 'Meals', 'Ingredients', 'ConfirmedMenus', 'ShelfChecks', 'WeeklyPlans', 'Children', 'AttendanceCorrections', 'Attendances', 'Activities', 'ScheduleEntries', 'ScheduleWeeks', 'StaffMembers', 'Rooms', 'AuditEvents', 'Sessions', 'LoginAttempts', 'Accounts'];
     await setupStep('clearing the PostgreSQL test tables', () =>
       connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`));
   }

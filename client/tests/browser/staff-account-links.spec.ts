@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { APIResponse, Page } from '@playwright/test';
-import { api, authenticatedApi, origin } from './auth-helpers';
+import { api, authenticatedApi, origin, recordStaffClock } from './auth-helpers';
 const temporary = 'Synthetic linked temporary 20!';
 const password = 'Synthetic linked changed 20!';
 test.setTimeout(60_000);
@@ -43,9 +43,11 @@ for (const width of [320, 390]) test(`staff-linked Teacher and Class viewer have
     await admin.goto('/staff');
     await admin.getByRole('button', { name: 'View details for ' + teacherStaff.name, exact: true }).click();
     await expect(admin.getByText('linked-teacher-' + suffix + ' · Teacher · Enabled', { exact: true })).toBeVisible();
+    await recordStaffClock(http, teacherStaff.id, 'checkin'); await recordStaffClock(http, viewerStaff.id, 'checkin');
     await page.setViewportSize({ width, height: 900 }); await login(page, 'linked-teacher-' + suffix);
     await page.goto('/classroom/children');
-    await expect(page.getByText('Teacher · attendance & child safety', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Children in my class', exact: true })).toBeVisible();
+    await expect(page.getByText(own.name, { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Check in ' + pupil.firstName, exact: true }).click();
     await expect(page.getByRole('button', { name: 'Check out ' + pupil.firstName, exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Health & emergency', exact: true }).click();
@@ -54,7 +56,8 @@ for (const width of [320, 390]) test(`staff-linked Teacher and Class viewer have
     expect((await page.getByRole('heading', { name: 'Children in my class', exact: true }).boundingBox())!.width).toBeGreaterThan(120);
     const readOnly = await viewerContext.newPage(); await readOnly.setViewportSize({ width, height: 900 }); await login(readOnly, viewer.username);
     await readOnly.goto('/classroom/children');
-    await expect(readOnly.getByText('Class viewer · view only', { exact: true })).toBeVisible();
+    await expect(readOnly.getByRole('heading', { name: 'Children in my class', exact: true })).toBeVisible();
+    await expect(readOnly.getByText(own.name, { exact: true })).toBeVisible();
     await expect(readOnly.locator('main')).toContainText(pupil.firstName);
     await expect(readOnly.getByRole('button', { name: /Health & emergency|Check in|Check out/ })).toHaveCount(0);
     expect((await readOnly.request.get(api + '/classroom/attendance')).status()).toBe(403);

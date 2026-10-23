@@ -12,6 +12,9 @@ const request = require('./helpers/authenticatedRequest');
 const app = require('../index');
 const { saveStaffDocuments, staffDocumentSnapshot } = require('./helpers/staffDocumentStorage');
 
+const { savePayrollStorage, payrollStorageSnapshot } = require('./helpers/payrollStorage');
+let payrollKey; beforeAll(() => { payrollKey = require('./helpers/payrollKey').install(); }); afterAll(() => payrollKey.cleanup());
+
 const hash = (content) => createHash('sha256').update(content).digest('hex');
 function image(red) {
   const png = new PNG({ width: 2, height: 2 });
@@ -57,6 +60,7 @@ async function seed() {
   expect(reviewed.status).toBe(200);
   expect((await request(app).put('/api/children/' + child.id + '/enrollment').send({ active: false })).status).toBe(200);
   await saveStaffDocuments(request.credentials().account);
+  await savePayrollStorage(request.credentials().account);
   return { child, document: data(reviewed).document, original, revised, form, blankOriginal, blankRevised };
 }
 
@@ -95,7 +99,7 @@ async function snapshot(childId, documentId) {
   const child = await db.getChildById(childId);
   return { detail, content, childId: child.id, enrollmentActive: child.active,
     registrationForm: { detail: formDetail, metadata: formMetadata, revisions: formRevisions, content: formContent },
-    checklist: data(checklistResponse), staffDocuments: await staffDocumentSnapshot() };
+    checklist: data(checklistResponse), staffDocuments: await staffDocumentSnapshot(), payroll: await payrollStorageSnapshot() };
 }
 
 test('document and blank form bytes, revision histories, mappings, reviews and ended enrollment survive reconnecting', async () => {

@@ -73,23 +73,23 @@ export default function TeacherCare({ section }: { section: 'children' | 'attend
   }
   if (account?.role !== 'teacher') return <p role="alert">Teacher access is required.</p>;
   return <div className="ska-classroom ska-core-page">
-    <header className="ska-classroom-hero"><div className="ska-classroom-icon">{section === 'attendance' ? <ClipboardCheck aria-hidden="true" /> : <Users aria-hidden="true" />}</div><div><p className="ska-classroom-eyebrow">Teacher · attendance & child safety</p><h1>{section === 'attendance' ? 'Class attendance' : 'Children in my class'}</h1><p>{current?.room?.name || 'Your assigned class'}</p></div><button disabled={!!busy} onClick={() => setRevision(value => value + 1)}><RefreshCw size={18} aria-hidden="true" />Refresh class</button></header>
+    <header className={'ska-classroom-hero section-' + section}><div className="ska-classroom-icon">{section === 'attendance' ? <ClipboardCheck aria-hidden="true" /> : <Users aria-hidden="true" />}</div><div><p className="ska-classroom-eyebrow">Every child. Every little moment.</p><h1>{section === 'attendance' ? 'Class attendance' : 'Children in my class'}</h1><p>{current?.room?.name || 'Your assigned class'}</p></div><button disabled={!!busy} onClick={() => setRevision(value => value + 1)}><RefreshCw size={18} aria-hidden="true" />Refresh class</button></header>
     {serverUnavailable ? <p role="alert" className="ska-classroom-card">The connection is interrupted. Current attendance and safety information are unavailable. Use the facility emergency backup.</p>
       : error ? <p role="alert" className="ska-classroom-card">{error}</p> : !current ? <p role="status">Loading your class…</p>
         : current.state !== 'assigned' ? <section className="ska-classroom-card"><h2>{current.state === 'unassigned' ? 'No class assigned yet' : 'Class currently unavailable'}</h2><p>Ask an administrator to assign an active class.</p></section> : <>
-          <section className="ska-classroom-card"><p><strong>{current.today}</strong> · {current.timeZone}</p><p>Record the child’s actual arrival or departure. The authorized adult’s required sign-in or sign-out signature is handled separately.</p><p>Attendance corrections and earlier open visits need an administrator or editor.</p></section>
+          <section className="ska-classroom-card ska-classroom-day-note"><p className="ska-classroom-eyebrow">Today in your classroom</p><p><strong>{current.today}</strong> · {current.timeZone}</p><p>Record the child’s actual arrival or departure. The authorized adult’s required sign-in or sign-out signature is handled separately.</p><details><summary>Need to correct attendance?</summary><p>Attendance corrections and earlier open visits need an administrator or editor.</p></details></section>
           {actionError && <p role="alert">{actionError}</p>}{message && <p role="status">{message}</p>}
           {chosen && <section className="ska-classroom-card"><button onClick={() => setSelected('')}>Close safety card</button><ChildSafetyCard key={scope + ':' + chosen.id} childId={chosen.id} name={chosen.firstName + ' ' + chosen.lastName} /></section>}
           {!current.rows.length && <p className="ska-classroom-card">No active children are assigned to your class.</p>}
-          <div className="ska-classroom-menu">{current.rows.map(row => {
+          <div className="ska-classroom-roster">{current.rows.map(row => {
             const open = row.records.find(visit => !visit.checkOut && !visit.voided);
-            return <article key={row.child.id} className="ska-classroom-card" aria-label={row.child.firstName + ' ' + row.child.lastName}>
-              <h2>{row.child.firstName} {row.child.lastName}</h2>{row.child.preferredName && <p>Goes by {row.child.preferredName}</p>}
-              <button onClick={() => setSelected(row.child.id)}><HeartPulse size={18} aria-hidden="true" />Health & emergency</button>
-              <><p>{row.needsAdminReview ? 'Attendance needs administrator review.' : open ? 'Currently checked in' : 'Not currently checked in'}</p>
+            return <article key={row.child.id} className={'ska-classroom-card ska-classroom-child-card' + (open ? ' is-present' : '')} aria-label={row.child.firstName + ' ' + row.child.lastName}>
+              <div className="ska-classroom-child-title"><span className="ska-classroom-avatar" aria-hidden="true">{row.child.firstName.slice(0,1)}{row.child.lastName.slice(0,1)}</span><div><h2>{row.child.firstName} {row.child.lastName}</h2>{row.child.preferredName && <p>Goes by {row.child.preferredName}</p>}</div></div>
+              <button className="ska-classroom-safety-action" onClick={() => setSelected(row.child.id)}><HeartPulse size={18} aria-hidden="true" />Health & emergency</button>
+              <><p className={'ska-classroom-visit-status' + (row.needsAdminReview ? ' needs-review' : open ? ' is-present' : '')}>{row.needsAdminReview ? 'Attendance needs administrator review.' : open ? 'Currently checked in' : 'Not currently checked in'}</p>
                 {row.records.map(visit => <p key={visit.id}>Arrived: {attendanceTime(visit.checkIn, current.timeZone)}{visit.checkOut && <><br />Departed: {attendanceTime(visit.checkOut, current.timeZone)}</>}</p>)}
-                {!row.needsAdminReview && !open && row.canCheckIn && <button disabled={!!busy} onClick={() => void record(row)}>Check in {row.child.firstName}</button>}
-                {!row.needsAdminReview && open && row.canCheckOut && <button disabled={!!busy} onClick={() => void record(row, open)}>Check out {row.child.firstName}</button>}
+                {!row.needsAdminReview && !open && row.canCheckIn && <button className="ska-classroom-attendance-action" disabled={!!busy} onClick={() => void record(row)}>Check in {row.child.firstName}</button>}
+                {!row.needsAdminReview && open && row.canCheckOut && <button className="ska-classroom-attendance-action is-checkout" disabled={!!busy} onClick={() => void record(row, open)}>Check out {row.child.firstName}</button>}
               </>
             </article>;
           })}</div>

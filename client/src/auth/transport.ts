@@ -9,6 +9,7 @@ let epoch = 0;
 let pending = new AbortController();
 const expired = new Set<() => void>();
 const unavailable = new Set<() => void>();
+const workAccessRequired = new Set<() => void>();
 const isApi = (url?: string) => !!url && (url === `${API_BASE_URL}/api` || url.startsWith(`${API_BASE_URL}/api/`));
 export function replaceSession(token = '') {
   pending.abort();
@@ -28,6 +29,10 @@ export function onServerUnavailable(callback: () => void) {
   unavailable.add(callback);
   return () => { unavailable.delete(callback); };
 }
+export function onWorkAccessRequired(callback: () => void) {
+  workAccessRequired.add(callback);
+  return () => { workAccessRequired.delete(callback); };
+}
 axios.interceptors.request.use((config) => {
   if (isApi(config.url)) {
     config.withCredentials = true;
@@ -41,6 +46,11 @@ axios.interceptors.response.use((response) => {
   if (response.config.skaoEpoch !== undefined && response.config.skaoEpoch !== epoch) throw new axios.CanceledError('Session changed.');
   return response;
 }, (error: unknown) => {
+  if (axios.isAxiosError(error) && error.config?.skaoEpoch === epoch && isApi(error.config.url) &&
+      error.response?.status === 403 && error.response.data?.error?.code === 'WORK_CHECK_IN_REQUIRED') {
+    replaceSession(csrf);
+    workAccessRequired.forEach(callback => callback());
+  }
   if (axios.isAxiosError(error) && error.config?.skaoEpoch === epoch && isServerUnavailable(error)) {
     unavailable.forEach(callback => callback());
   }

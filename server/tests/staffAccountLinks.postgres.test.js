@@ -30,7 +30,7 @@ test('026 preserves populated accounts and sessions and enforces a unique option
     });
     const read = name => connection.query(`SELECT * FROM ${quoted(name)} ORDER BY id`, { type: QueryTypes.SELECT });
     const accounts = await read('Accounts'); const sessions = await read('Sessions'); const staff = await read('StaffMembers');
-    expect(await migrate(connection, schema)).toEqual(['026-staff-account-links']);
+    expect(await migrate(connection, schema)).toEqual(['026-staff-account-links', '027-employee-payroll', '028-clock-stations']);
     expect(await read('Accounts')).toEqual(accounts.map(account => ({ ...account, staffMemberId: null })));
     expect(await read('Sessions')).toEqual(sessions); expect(await read('StaffMembers')).toEqual(staff);
     await connection.query(`UPDATE ${quoted('Accounts')} SET "staffMemberId" = 'staff' WHERE id = 'first'`);

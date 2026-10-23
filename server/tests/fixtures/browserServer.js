@@ -2,6 +2,10 @@
 process.env.NODE_ENV = 'test';
 process.env.DB_ADAPTER = 'mock';
 process.env.APP_ORIGINS = 'http://127.0.0.1:5179';
+const payrollKey = require('../helpers/payrollKey').install();
+process.on('exit', () => payrollKey.cleanup());
+process.once('SIGTERM', () => process.exit(0));
+process.once('SIGINT', () => process.exit(0));
 const db = require('../../services/dbAdapter');
 const { hashPassword } = require('../../auth/passwords');
 (async () => {

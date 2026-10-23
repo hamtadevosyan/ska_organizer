@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -22,6 +23,45 @@ CFG = {'node': '/usr/bin/node', 'ip': '192.168.50.20', 'cidr': '192.168.50.0/24'
                        'DB_SCHEMA': 'public', 'FACILITY_TIME_ZONE': 'America/Los_Angeles'}}
 
 
+class PayrollProbeTests(unittest.TestCase):
+    def test_real_node_probe_classifies_failures_without_printing_exception_details(self):
+        node = shutil.which('node')
+        self.assertIsNotNone(node, 'Node is required for the payroll runtime probe check.')
+        modes = ['EMPTY', 'VERIFIED', 'RELEASE_OUTDATED', 'RELEASE_INCOMPLETE', 'MIGRATIONS_PENDING',
+                 'DB_AUTH', 'DB_PERMISSIONS', 'DB_NAME', 'DB_SCHEMA', 'DB_WAIT', 'DB_CONNECTION',
+                 'KEY_MISSING', 'KEY_UNREADABLE', 'KEY_INVALID', 'KEY_MISMATCH']
+        for mode in modes:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); (root / 'services').mkdir()
+                if mode != 'RELEASE_INCOMPLETE':
+                    (root / 'services/dbAdapter.js').write_text("""
+const mode=process.env.PROBE_CASE;
+exports.setup=async()=>{
+ const error=new Error('SYNTHETIC-PRIVATE-URL-DO-NOT-PRINT');
+ if(mode==='MIGRATIONS_PENDING'){error.message='Database migrations are pending. Run npm run db:migrate from server.';throw error;}
+ const codes={DB_AUTH:'28P01',DB_PERMISSIONS:'42501',DB_NAME:'3D000',DB_SCHEMA:'42P01',DB_WAIT:'55P03',DB_CONNECTION:'ECONNREFUSED'};
+ if(codes[mode]){error.original={code:codes[mode]};throw error;}
+};
+exports.close=async()=>{};
+if(mode!=='RELEASE_OUTDATED'){
+ exports.countPayrollRecords=async()=>mode==='KEY_MISSING'?1:0;
+ exports.firstPayrollRecord=async()=>({id:'synthetic'});
+}
+""")
+                (root / 'services/payrollVault.js').write_text("""
+exports.check=()=>{if(process.env.PROBE_CASE==='KEY_INVALID')throw Error('SYNTHETIC-PRIVATE-URL-DO-NOT-PRINT');};
+exports.open=()=>{if(process.env.PROBE_CASE==='KEY_MISMATCH')throw Error('SYNTHETIC-PRIVATE-URL-DO-NOT-PRINT');};
+""")
+                key = root / 'key'
+                if mode in ('VERIFIED', 'KEY_INVALID', 'KEY_MISMATCH'): key.write_text('synthetic')
+                result = subprocess.run([node, '-e', u.PAYROLL_PROBE_JS], cwd=root, env={**os.environ,
+                    'PROBE_CASE': mode, 'PAYROLL_KEY_FILE': str(key), 'SKAO_PAYROLL_EXPECT_KEY': '1' if mode == 'KEY_UNREADABLE' or key.exists() else '0'},
+                    text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.stdout, 'SKAO_PAYROLL:' + mode + '\n')
+                self.assertEqual(result.returncode, 0 if mode in ('EMPTY','VERIFIED') else 1)
+                self.assertNotIn('SYNTHETIC-PRIVATE', result.stdout + result.stderr)
+
+
 class NativeTests(unittest.TestCase):
     def setUp(self):
         self.contexts = ExitStack()
@@ -35,6 +75,65 @@ class NativeTests(unittest.TestCase):
             path.mkdir()
         (u.CONF / 'owner').write_text(u.MARKER)
         self.cfg = copy.deepcopy(CFG)
+
+    def test_payroll_environment_uses_fixed_service_key_outside_release(self):
+        self.assertEqual(u.server_environment(self.cfg)['PAYROLL_KEY_FILE'], str(u.CONF / 'payroll.key'))
+
+    def test_payroll_initialization_does_not_replace_a_key_when_database_verification_fails(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        target = u.CONF / 'payroll.key'
+        target.write_text('a' * 64 + '\n')
+        target.chmod(0o400)
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=1)), patch.object(u, 'systemctl') as service:
+            with self.assertRaises(u.Failure):
+                u.payroll_init(self.cfg)
+        self.assertEqual(target.read_text(), 'a' * 64 + '\n')
+        service.assert_not_called()
+
+    def test_payroll_initialization_creates_a_private_key_only_after_empty_vault_verification(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='SKAO_PAYROLL:EMPTY\n')), patch.object(u, 'systemctl') as service:
+            u.payroll_init(self.cfg)
+            target = u.CONF / 'payroll.key'
+            original = target.read_text()
+            self.assertRegex(original, r'^[a-f0-9]{64}\n$')
+            self.assertEqual(target.stat().st_mode & 0o777, 0o400)
+            u.payroll_init(self.cfg)
+            self.assertEqual(target.read_text(), original)
+        self.assertIn('PAYROLL_KEY_FILE=', (u.CONF / 'server.env').read_text())
+        self.assertEqual(service.call_count, 2)
+
+    def test_payroll_check_is_read_only_and_only_displays_allowlisted_diagnostics(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        for output, status in [('SKAO_PAYROLL:EMPTY\n', 0), ('SKAO_PAYROLL:VERIFIED\n', 0),
+                               ('SKAO_PAYROLL:DB_AUTH\n', 1), ('secret exception detail', 1)]:
+            with self.subTest(output=output), patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=status, stdout=output)), patch.object(u, 'systemctl') as service, patch.object(u, 'secure_write') as write:
+                if status:
+                    with self.assertRaises(u.Failure) as raised: u.payroll_init(self.cfg, check_only=True)
+                    self.assertNotIn('secret exception detail', str(raised.exception))
+                else: u.payroll_init(self.cfg, check_only=True)
+                self.assertFalse((u.CONF / 'payroll.key').exists())
+                service.assert_not_called(); write.assert_not_called()
+
+    def test_an_unrecognized_success_result_cannot_create_a_payroll_key(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='unrecognized private output')), patch.object(u, 'systemctl') as service:
+            with self.assertRaises(u.Failure): u.payroll_init(self.cfg)
+            self.assertFalse((u.CONF / 'payroll.key').exists()); service.assert_not_called()
+
+    def test_payroll_initialization_refuses_symlinks_or_shared_permissions(self):
+        from types import SimpleNamespace
+        target = u.CONF / 'payroll.key'; target.write_text('synthetic'); target.chmod(0o644)
+        user = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+        with patch.object(u.pwd, 'getpwnam', return_value=user), patch.object(u.subprocess, 'run') as runner:
+            with self.assertRaises(u.Failure): u.payroll_init(self.cfg)
+            target.unlink(); target.symlink_to(u.CONF / 'missing-key')
+            with self.assertRaises(u.Failure): u.payroll_init(self.cfg)
+            runner.assert_not_called()
 
     def test_rfc1918_addresses_only_and_subnet_cannot_include_public_addresses(self):
         self.assertEqual(u.validate_network('192.168.50.20', 24, 'eth0')['cidr'], '192.168.50.0/24')
@@ -154,6 +253,21 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(env['BIND_HOST'], '127.0.0.1')
         self.assertEqual(env['DB_ADAPTER'], 'sequelize')
         self.assertEqual(env['NODE_ENV'], 'production')
+
+    def test_backup_timer_uses_the_configured_facility_time_zone(self):
+        template = '[Timer]\nOnCalendar=*-*-* 02:00:00 @TIME_ZONE@\n'
+        self.assertEqual(u.render(template, self.cfg), '[Timer]\nOnCalendar=*-*-* 02:00:00 America/Los_Angeles\n')
+        self.cfg['environment']['FACILITY_TIME_ZONE'] = 'America/New_York'
+        self.assertIn('02:00:00 America/New_York', u.render(template, self.cfg))
+        self.cfg['environment']['FACILITY_TIME_ZONE'] = 'Invalid/Synthetic_Zone'
+        with self.assertRaises(u.Failure): u.render(template, self.cfg)
+
+    def test_every_supplied_native_template_renders_and_unknown_tokens_still_fail(self):
+        for template in TEMPLATES.iterdir():
+            if template.is_file():
+                with self.subTest(template=template.name):
+                    self.assertNotRegex(u.render(template.read_text(), self.cfg), r'@[A-Z_]+@')
+        with self.assertRaises(u.Failure): u.render('@UNKNOWN_SETTING@', self.cfg)
 
     def test_secret_files_are_private_even_with_permissive_umask(self):
         before = os.umask(0)

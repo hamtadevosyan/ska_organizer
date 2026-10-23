@@ -6,13 +6,14 @@ umask 077
 
 usage() {
   cat <<'HELP'
-Usage: bash scripts/check-update.sh [--inventory | --access] [--dry-run] [--backup-dir DIR]
+Usage: bash scripts/check-update.sh [--inventory | --access | --payroll] [--dry-run] [--backup-dir DIR]
 
 Back up the configured database, verify the archive, apply pending migrations,
 then run server tests, PostgreSQL tests, client tests, build, lint and browser tests.
 
   --inventory        Run inventory, purchasing and related planner suites.
   --access           Run class access, teacher safety and attendance suites.
+  --payroll          Run employee clock, private payroll and related access suites.
   --dry-run          Print the steps without reading credentials or running them.
   --backup-dir DIR   Backup directory (default: ~/ska_backups).
   --help             Show this help.
@@ -26,12 +27,14 @@ HELP
 
 inventory_only=false
 access_only=false
+payroll_only=false
 dry_run=false
 backup_dir="${HOME}/ska_backups"
 while (($#)); do
   case "$1" in
     --inventory) inventory_only=true; shift ;;
     --access) access_only=true; shift ;;
+    --payroll) payroll_only=true; shift ;;
     --dry-run) dry_run=true; shift ;;
     --backup-dir)
       if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
@@ -43,8 +46,8 @@ while (($#)); do
   esac
 done
 
-if "$inventory_only" && "$access_only"; then
-  printf 'Choose either --inventory or --access.\n' >&2
+if { "$inventory_only" && "$access_only"; } || { "$payroll_only" && { "$inventory_only" || "$access_only"; }; }; then
+  printf 'Choose only one of --inventory, --access or --payroll.\n' >&2
   exit 2
 fi
 
@@ -64,6 +67,13 @@ if "$access_only"; then
   postgres_tests+=(-- --runTestsByPath tests/authentication.test.js tests/rememberedSessions.test.js tests/accountClassAccess.test.js tests/classroomAccess.test.js tests/classAccountScope.postgres.test.js tests/teacherCare.test.js tests/teacherCare.postgres.test.js tests/authenticationPersistence.postgres.test.js tests/staffAccountAccess.test.js tests/staffAccountLinks.postgres.test.js tests/staff.test.js)
   client_tests+=(-- src/auth/AuthFlow.test.tsx src/auth/transport.test.ts src/components/AppShell.test.tsx src/pages/Accounts.test.tsx src/pages/Staff.test.tsx src/components/staff/StaffAccountAccess.test.tsx src/pages/Classroom.test.tsx src/pages/TeacherCare.test.tsx src/components/children/ChildSafetyCard.test.tsx src/router/index.test.tsx)
   browser_tests+=(-- tests/browser/classroom-access.spec.ts tests/browser/teacher-care.spec.ts tests/browser/staff-account-links.spec.ts tests/browser/authentication.spec.ts tests/browser/remembered-login.spec.ts)
+fi
+
+if "$payroll_only"; then
+  server_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollRates.test.js tests/workAccess.test.js tests/payrollReview.test.js tests/payrollPolicy.test.js tests/payrollMath.test.js tests/payrollLocalCheckout.test.js tests/clockStations.test.js tests/staffAccountAccess.test.js tests/authentication.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/payroll.test.js tests/payrollRates.test.js tests/workAccess.test.js tests/payrollReview.test.js tests/payrollPolicy.test.js tests/payrollMath.test.js tests/payrollLocalCheckout.test.js tests/clockStations.test.js tests/clockStations.postgres.test.js tests/payroll.postgres.test.js tests/childDocuments.postgres.test.js tests/staffAccountLinks.postgres.test.js tests/staffAccountAccess.test.js)
+  client_tests+=(-- src/App.test.tsx src/auth/AuthFlow.test.tsx src/auth/WorkAccessGate.test.tsx src/auth/transport.test.ts src/pages/MyTime.test.tsx src/pages/TimeClockStation.test.tsx src/components/staff/StaffClock.test.tsx src/components/staff/ClockStationSetup.test.tsx src/pages/Payroll.test.tsx src/components/payroll/ClockSessions.test.tsx src/components/payroll/RateAllocationFields.test.tsx src/pages/WorkTime.test.tsx src/pages/Classroom.test.tsx src/pages/TeacherCare.test.tsx src/pages/Dashboard.test.tsx src/components/AppShell.test.tsx src/router/index.test.tsx)
+  browser_tests+=(-- tests/browser/payroll.spec.ts tests/browser/clock-station.spec.ts tests/browser/employee-work-access.spec.ts tests/browser/staff-account-links.spec.ts tests/browser/classroom-access.spec.ts tests/browser/teacher-care.spec.ts)
 fi
 
 current_step='Preflight'
@@ -164,7 +174,7 @@ else
       exit 1
     fi
   done
-  if ! "$inventory_only" && ! "$access_only"; then
+  if ! "$inventory_only" && ! "$access_only" && ! "$payroll_only"; then
     if ! command -v tesseract >/dev/null 2>&1 || ! tesseract --list-langs 2>/dev/null | grep -qx 'eng'; then
       printf '%s\n' 'Local recipe OCR is required by the photo-import checks. Run: bash scripts/setup-recipe-ocr.sh' >&2
       exit 1
@@ -198,6 +208,7 @@ run_in 'Browser tests (isolated test servers)' client env NODE_ENV=test "${brows
 if ! "$inventory_only"; then
   pwa_browser_tests=(npm run test:browser:pwa)
   if "$access_only"; then pwa_browser_tests+=(-- tests/pwa-browser/teacher-safety-caching.spec.ts); fi
+  if "$payroll_only"; then pwa_browser_tests+=(-- tests/pwa-browser/payroll-caching.spec.ts tests/pwa-browser/clock-station-caching.spec.ts tests/pwa-browser/employee-work-access-caching.spec.ts tests/pwa-browser/teacher-safety-caching.spec.ts); fi
   run_in 'PWA browser privacy checks (production build)' client env NODE_ENV=test "${pwa_browser_tests[@]}"
 fi
 

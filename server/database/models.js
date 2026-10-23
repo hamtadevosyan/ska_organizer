@@ -292,7 +292,30 @@ module.exports = (sequelize) => {
     id: id(), actorId: DataTypes.STRING, actorUsername: DataTypes.STRING(64),
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
-  return { Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
+  const PayrollRecord = sequelize.define('PayrollRecord', { id: id(), staffId: { type: DataTypes.STRING, allowNull: false }, kind: { type: DataTypes.STRING(16), allowNull: false }, ciphertext: { type: DataTypes.TEXT, allowNull: false }, version: { type: DataTypes.INTEGER, allowNull: false } });
+  const ClockStation = sequelize.define('ClockStation', {
+    id: id(), name: { type: DataTypes.STRING(160), allowNull: false },
+    credentialHash: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    createdAt: { type: DataTypes.DATE, allowNull: false }, lastUsedAt: { type: DataTypes.DATE, allowNull: true },
+    expiresAt: { type: DataTypes.DATE, allowNull: false }, revokedAt: { type: DataTypes.DATE, allowNull: true },
+  }, { timestamps: false });
+  const ClockStationPairing = sequelize.define('ClockStationPairing', {
+    id: { type: DataTypes.STRING(64), primaryKey: true, allowNull: false },
+    name: { type: DataTypes.STRING(160), allowNull: false }, createdBy: { type: DataTypes.STRING, allowNull: false },
+    createdAt: { type: DataTypes.DATE, allowNull: false }, expiresAt: { type: DataTypes.DATE, allowNull: false },
+    consumedAt: { type: DataTypes.DATE, allowNull: true },
+  }, { timestamps: false });
+  const StaffClockPin = sequelize.define('StaffClockPin', {
+    staffId: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
+    pinLookup: { type: DataTypes.STRING(64), allowNull: false, unique: true }, pinHash: { type: DataTypes.TEXT, allowNull: false },
+    version: { type: DataTypes.INTEGER, allowNull: false }, createdAt: { type: DataTypes.DATE, allowNull: false }, updatedAt: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: 'StaffClockPins', timestamps: false });
+  const ClockStationAttempt = sequelize.define('ClockStationAttempt', {
+    id: { type: DataTypes.STRING(64), primaryKey: true, allowNull: false },
+    startedAt: { type: DataTypes.DATE, allowNull: false }, count: { type: DataTypes.INTEGER, allowNull: false },
+  }, { timestamps: false });
+  return { PayrollRecord, Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
-    ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision };
+    ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision,
+    ClockStation, ClockStationPairing, StaffClockPin, ClockStationAttempt };
 };

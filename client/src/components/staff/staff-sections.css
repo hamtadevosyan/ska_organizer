@@ -1,0 +1,8 @@
+.staff-workspace{min-width:0}
+.staff-sections{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px;padding:8px;border:1px solid #e1d9f2;border-radius:20px;background:linear-gradient(110deg,#f5eeff,#edf7ff);box-shadow:0 6px 20px #50408a08}
+.staff-sections a{display:flex;flex:1 1 140px;align-items:center;justify-content:center;gap:8px;min-width:0;min-height:48px;padding:11px 14px;border:1px solid transparent;border-radius:14px;color:#3c4662;font-weight:700;line-height:1.35;text-align:center;text-decoration:none}
+.staff-sections a svg{flex:none}
+.staff-sections a:hover{background:#ffffffa6}
+.staff-sections a[aria-current=page]{color:#4c278f;background:#fff;border-color:#d4bdf2;box-shadow:0 3px 10px #6d3fc014}
+.staff-sections a:focus-visible{outline:3px solid #7655c9;outline-offset:2px}
+@media(max-width:400px){.staff-sections{gap:6px;padding:6px}.staff-sections a{flex-basis:110px;padding:10px;font-size:.9rem}}

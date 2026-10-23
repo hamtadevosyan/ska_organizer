@@ -13,6 +13,8 @@ import grp
 import ipaddress
 import json
 import os
+import secrets
+import stat
 from pathlib import Path
 import pwd
 import re
@@ -192,7 +194,8 @@ def read_source_environment(repo, node):
 
 def server_environment(cfg):
     return {**cfg['environment'], 'NODE_ENV': 'production', 'DB_ADAPTER': 'sequelize',
-            'BIND_HOST': '127.0.0.1', 'PORT': '3001', 'APP_ORIGINS': 'https://' + cfg['domain']}
+            'BIND_HOST': '127.0.0.1', 'PORT': '3001', 'APP_ORIGINS': 'https://' + cfg['domain'],
+            'PAYROLL_KEY_FILE': str(CONF / 'payroll.key')}
 
 
 def environment_file(values):
@@ -485,8 +488,9 @@ def create_accounts():
 
 
 def render(template, cfg):
+    db = database_settings(cfg['environment'])
     values = {'DOMAIN': cfg['domain'], 'LAN_IP': cfg['ip'], 'LAN_CIDR': cfg['cidr'],
-              'DB_PORT': str(database_settings(cfg['environment'])['port']), 'NODE': cfg['node']}
+              'DB_PORT': str(db['port']), 'NODE': cfg['node'], 'TIME_ZONE': db['zone']}
     for key, value in values.items():
         template = template.replace('@' + key + '@', value)
     if re.search(r'@[A-Z_]+@', template):
@@ -677,8 +681,8 @@ def install(stage):
     if request['operation'] == 'setup':
         # Persist resumable setup settings before talking to the certificate authority.
         secure_write(CONF / 'config.json', json.dumps(cfg, indent=2) + '\n')
-        secure_write(CONF / 'server.env', environment_file(server_environment(cfg)))
         issue_certificate(cfg)
+    secure_write(CONF / 'server.env', environment_file(server_environment(cfg)))
     for template in (stage / 'templates').iterdir():
         destination = UNITS / template.name if template.suffix in ('.service', '.timer', '.target') else CONF / template.name
         secure_write(destination, render(template.read_text(), cfg), 0o644)
@@ -719,6 +723,112 @@ def doctor(cfg, wait=False):
     run(['openssl', 'x509', '-in', CONF / 'tls/fullchain.pem', '-noout', '-enddate'])
 
 
+PAYROLL_PROBE_JS = r"""
+(async () => {
+  let db, stage = 'BOOTSTRAP', result = 'EMPTY', failure;
+  try {
+    db = require('./services/dbAdapter');
+    if (['setup', 'countPayrollRecords', 'firstPayrollRecord', 'close'].some(name => typeof db[name] !== 'function')) {
+      const error = new Error(); error.payrollCode = 'RELEASE_OUTDATED'; throw error;
+    }
+    stage = 'DATABASE';
+    await db.setup(process.env.DATABASE_URL, { schema: process.env.DB_SCHEMA || 'public' });
+    stage = 'KEY_ACCESS';
+    const fs = require('node:fs'); let exists;
+    try { fs.lstatSync(process.env.PAYROLL_KEY_FILE); exists = true; }
+    catch (error) {
+      if (error.code !== 'ENOENT' || process.env.SKAO_PAYROLL_EXPECT_KEY === '1') throw error;
+      exists = false;
+    }
+    if (exists) {
+      stage = 'KEY_FORMAT'; const vault = require('./services/payrollVault'); vault.check();
+      stage = 'DATABASE'; const first = await db.firstPayrollRecord();
+      stage = 'DECRYPT'; if (first) vault.open(first);
+      result = 'VERIFIED';
+    } else {
+      stage = 'DATABASE';
+      if (await db.countPayrollRecords()) { const error = new Error(); error.payrollCode = 'KEY_MISSING'; throw error; }
+    }
+  } catch (error) {
+    const sql = error.original?.code || error.parent?.code || error.code;
+    failure = error.payrollCode;
+    if (!failure && stage === 'DATABASE') {
+      if (['28P01', '28000'].includes(sql)) failure = 'DB_AUTH';
+      else if (sql === '42501') failure = 'DB_PERMISSIONS';
+      else if (sql === '3D000') failure = 'DB_NAME';
+      else if (sql === '42P01') failure = 'DB_SCHEMA';
+      else if (['55P03', '57014'].includes(sql)) failure = 'DB_WAIT';
+      else if (['Database migrations are pending.', 'Database migrations are missing.'].some(prefix => error.message?.startsWith(prefix))) failure = 'MIGRATIONS_PENDING';
+      else failure = 'DB_CONNECTION';
+    }
+    failure ||= ({ BOOTSTRAP: 'RELEASE_INCOMPLETE', KEY_ACCESS: 'KEY_UNREADABLE', KEY_FORMAT: 'KEY_INVALID', DECRYPT: 'KEY_MISMATCH' })[stage] || 'PROBE_FAILED';
+  } finally {
+    try { if (typeof db?.close === 'function') await db.close(); }
+    catch { failure ||= 'DB_CONNECTION'; }
+  }
+  // Emit only allowlisted diagnostic codes, never SQL, URLs, file contents or exception messages.
+  process.stdout.write('SKAO_PAYROLL:' + (failure || result) + '\n');
+  process.exitCode = failure ? 1 : 0;
+})();
+"""
+
+PAYROLL_FAILURES = {
+    'RELEASE_OUTDATED': 'The installed release predates payroll support. Add new source files to Git, then run bash SKAO.sh update --local before retrying.',
+    'RELEASE_INCOMPLETE': 'The installed payroll modules or dependencies could not be loaded. Add new source files to Git and rerun bash SKAO.sh update --local.',
+    'MIGRATIONS_PENDING': 'The installed database schema has pending/missing migrations, including payroll migration 027. Run bash SKAO.sh update --local and confirm migration completion.',
+    'DB_AUTH': 'PostgreSQL rejected the installed service credentials. Review the managed installation database configuration locally.',
+    'DB_PERMISSIONS': 'The installed database role cannot read the payroll schema/table. Review its PostgreSQL grants locally.',
+    'DB_NAME': 'The database named in the installed service configuration does not exist.',
+    'DB_SCHEMA': 'The configured schema is missing a payroll table. Review migration 027 and the installed DB_SCHEMA setting.',
+    'DB_WAIT': 'A PostgreSQL lock or query exceeded the check limit. Let the blocking database operation finish before retrying.',
+    'DB_CONNECTION': 'The installed service could not complete its PostgreSQL connection/check. Verify PostgreSQL is running and review the installed host, port and credentials locally.',
+    'KEY_MISSING': 'Encrypted payroll records exist but the original payroll key is missing. Restore the matching original key; do not generate a replacement.',
+    'KEY_UNREADABLE': 'The skao-api service cannot access the existing payroll key. Review its parent-directory access and file ownership locally.',
+    'KEY_INVALID': 'The existing payroll key is unreadable, has shared permissions or is not a valid 32-byte hex key. Preserve it and restore the original protected key.',
+    'KEY_MISMATCH': 'The existing key cannot decrypt the stored payroll data. Restore the matching original key; do not replace it with a new random key.',
+    'PROBE_FAILED': 'The service check returned no recognized result. Verify the installed Node runtime and application release locally.',
+}
+
+
+def payroll_init(cfg, check_only=False):
+    """Initialize only an empty payroll vault; never replace a key after a restore."""
+    user = pwd.getpwnam('skao-api')
+    target = CONF / 'payroll.key'
+    exists = target.exists() or target.is_symlink()
+    if exists:
+        info = target.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != user.pw_uid or info.st_mode & 0o077:
+            raise Failure('The existing payroll key must be a regular private file owned by skao-api. It was not changed.')
+    try:
+        result = subprocess.run([cfg['node'], '-e', PAYROLL_PROBE_JS], cwd=ROOT / 'current/server',
+                                env={'PATH': SAFE_PATH, 'HOME': '/nonexistent', **server_environment(cfg),
+                                     'SKAO_PAYROLL_EXPECT_KEY': '1' if exists else '0',
+                                     'PGOPTIONS': '-c lock_timeout=5000 -c statement_timeout=10000'},
+                                user=user.pw_uid, group=user.pw_gid, extra_groups=[], timeout=35,
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.TimeoutExpired:
+        raise Failure('Payroll check [DB_WAIT] timed out. Review PostgreSQL locks/availability. No key was changed.') from None
+    lines = getattr(result, 'stdout', '').splitlines()
+    codes = [line.removeprefix('SKAO_PAYROLL:') for line in lines if line.startswith('SKAO_PAYROLL:')]
+    code = codes[-1] if codes else 'PROBE_FAILED'
+    if result.returncode or code not in ('EMPTY', 'VERIFIED'):
+        safe_code = code if code in PAYROLL_FAILURES else 'PROBE_FAILED'
+        raise Failure('Payroll check [' + safe_code + ']: ' + PAYROLL_FAILURES[safe_code] + ' No key was changed.')
+    if check_only:
+        print('Payroll check [' + code + ']: ' + ('Existing key and payroll access verified.' if code == 'VERIFIED' else 'Database checked; payroll is empty and its key has not been initialized. Run bash SKAO.sh payroll-init.') + ' No files or services were changed.')
+        return
+    if not exists:
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400)
+        with os.fdopen(descriptor, 'w') as stream:
+            os.fchown(stream.fileno(), user.pw_uid, user.pw_gid)
+            stream.write(secrets.token_hex(32) + '\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+    secure_write(CONF / 'server.env', environment_file(server_environment(cfg)))
+    systemctl('restart', 'skao-api.service')
+    print('Payroll key verified and API restarted. Keep an offline protected backup of /etc/skao/native/payroll.key separately from database archives. Never commit or share it.')
+
+
 def management(command):
     cfg = configuration()
     if command in ('start', 'restart'):
@@ -734,6 +844,10 @@ def management(command):
         doctor(cfg)
     elif command == 'logs':
         run(['journalctl', '--no-pager', '-n', '100', *[arg for unit in SERVICES + ['skao-renew.service'] for arg in ('-u', unit)]])
+    elif command == 'payroll-check':
+        payroll_init(cfg, check_only=True)
+    elif command == 'payroll-init':
+        payroll_init(cfg)
     elif command == 'backup':
         backup(cfg)
     elif command in ('_renew', 'renew-test'):
@@ -760,6 +874,8 @@ def main():
     public = {'start': 'start local services and check HTTPS', 'stop': 'stop local services and release the sleep inhibitor',
               'restart': 'restart local services', 'status': 'check services, local DNS and trusted HTTPS',
               'logs': 'show recent service errors', 'backup': 'save a PostgreSQL archive',
+              'payroll-check': 'check installed payroll code, database and key without changing files or services',
+              'payroll-init': 'initialize or verify the private payroll key; never overwrite an existing key',
               'repair-ros-key': 'refresh an expired legacy ROS 2 Noble key after checking its fingerprint',
               'renew-test': 'test certificate renewal without installing a test certificate'}
     for name, help_text in public.items():

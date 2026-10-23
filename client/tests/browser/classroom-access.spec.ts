@@ -92,6 +92,9 @@ for (const width of [320, 1280]) test(`Class viewer sees only assigned children 
     await page.goto('/staff');
     await expect(page).toHaveURL(/\/classroom$/);
     await expect(page.getByRole('heading', { name: saved.own.name, exact: true })).toBeVisible();
+    const actions = page.getByRole('navigation', { name: 'Class quick actions' });
+    await expect(actions.getByRole('link', { name: /Take attendance/ })).toHaveCount(0);
+    await expect(actions.getByRole('link', { name: /Activities/ })).toHaveAttribute('href', '/classroom/activities');
     await fits(page);
     const nav = page.getByRole('navigation', { name: width === 320 ? 'Mobile navigation' : 'Desktop navigation' });
     expect(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual([

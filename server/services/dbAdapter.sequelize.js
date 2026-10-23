@@ -459,6 +459,26 @@ exports.updateActivity = (id, changes) => update('Activity', id, changes);
 exports.deleteActivity = (id) => remove('Activity', id);
 
 exports.listAccounts = () => list('Account', { order: [['username', 'ASC']] });
+exports.listClockStations = () => list('ClockStation', { order: [['createdAt', 'ASC'], ['id', 'ASC']] });
+exports.getClockStationById = id => get('ClockStation', id);
+exports.getClockStationByCredentialHash = async credentialHash => (await list('ClockStation', { where: { credentialHash }, limit: 1 }))[0] || null;
+exports.createClockStation = values => create('ClockStation', values);
+exports.updateClockStation = (id, changes) => update('ClockStation', id, changes);
+exports.getClockPairing = id => get('ClockStationPairing', id);
+exports.createClockPairing = values => create('ClockStationPairing', values);
+exports.updateClockPairing = (id, changes) => update('ClockStationPairing', id, changes);
+exports.listStaffClockPins = () => list('StaffClockPin', { order: [['staffId', 'ASC']] });
+exports.getStaffClockPin = staffId => get('StaffClockPin', staffId);
+exports.getStaffClockPinByLookup = async pinLookup => (await list('StaffClockPin', { where: { pinLookup }, limit: 1 }))[0] || null;
+const saveClockValue = (name, values, primaryKey = 'id') => transact(async transaction => {
+  await model(name).upsert(values, { transaction, conflictFields: [primaryKey] });
+  return plain(await model(name).findByPk(values[primaryKey], { transaction }));
+});
+exports.saveStaffClockPin = values => saveClockValue('StaffClockPin', values, 'staffId');
+exports.deleteStaffClockPin = staffId => transact(transaction => model('StaffClockPin').destroy({ where: { staffId }, transaction }));
+exports.getClockStationAttempt = id => get('ClockStationAttempt', id);
+exports.saveClockStationAttempt = values => saveClockValue('ClockStationAttempt', values);
+exports.pruneClockStationAttempts = beforeDate => transact(transaction => model('ClockStationAttempt').destroy({ where: { startedAt: { [Op.lt]: beforeDate } }, transaction }));
 exports.getAccount = (id) => get('Account', id);
 exports.findAccount = async (username) => (await list('Account', { where: { username }, limit: 1 }))[0] || null;
 exports.createAccount = (values) => create('Account', values);
@@ -485,3 +505,11 @@ exports.listAudit = ({ limit = 50, offset = 0, actions } = {}) => list('AuditEve
 exports.getChildSafetyProfile = (childId) => get('ChildSafetyProfile', childId);
 exports.saveChildSafetyProfile = async (values) => await exports.getChildSafetyProfile(values.childId)
   ? update('ChildSafetyProfile', values.childId, values) : create('ChildSafetyProfile', values);
+
+exports.getPayrollRecord = id => get('PayrollRecord', id);
+exports.listPayrollRecords = (staffId, kind) => list('PayrollRecord', { where: { staffId, ...(kind ? { kind } : {}) }, order: [['id', 'ASC']] });
+exports.savePayrollRecord = async row => (await get('PayrollRecord', row.id)) ? update('PayrollRecord', row.id, row) : create('PayrollRecord', row);
+
+exports.countPayrollRecords = () => model('PayrollRecord').count({ transaction: transactionContext.getStore() });
+
+exports.firstPayrollRecord = async () => plain(await model('PayrollRecord').findOne({ transaction: transactionContext.getStore() }));

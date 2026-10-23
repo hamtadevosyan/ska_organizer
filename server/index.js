@@ -27,12 +27,19 @@ staffDocuments.mountUploads(app);
 // authorize before accepting their bounded, larger request bodies.
 app.use('/api/purchasing', requireSession, requireOperationalAccess,
   express.json({ limit: '1mb' }), require('./routes/purchasing'));
+// Authorize private payroll uploads before accepting bounded file bodies.
+const payroll = require('./routes/payroll');
+app.use('/api/payroll', requireSession, require('./auth/middleware').requireAdmin, express.json({ limit: '7mb' }), payroll.admin);
 app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/ready', require('./services/availability').ready);
+app.use('/api/station-clock', require('./routes/clockStations').station);
+app.use('/api/clock-stations', require('./routes/clockStations').management);
 app.use('/api/auth', require('./auth/routes').router);
 app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api/children/:childId/safety', requireSession, require('./routes/childSafety'));
+app.use('/api/time-clock', payroll.self);
+app.use('/api/work-time', payroll.work);
 app.use('/api/classroom', requireSession, require('./routes/classroom'));
 app.use('/api', requireSession, requireOperationalAccess);
 app.use('/api/registration-forms', registrationForms.router);
@@ -77,6 +84,9 @@ app.use((err, req, res, next) => {
   if (err.status === 401 && err.code !== 'INVALID_CREDENTIALS') clearCookie(res);
   if (err.retryAfter) res.set('Retry-After', String(err.retryAfter));
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: { message: 'Invalid JSON request.' } });
+  if (err.status === 503 && err.code === 'WORK_ACCESS_UNAVAILABLE') return res.status(503).json({ error: {
+    message: 'Your work status could not be verified. Ask an administrator to check the staff clock, then try again.', code: 'WORK_ACCESS_UNAVAILABLE',
+  } });
   if (err.status && err.status < 500) return res.status(err.status).json({ error: { message: err.message, fields: err.fields, code: err.code,
     // Only this known, catalog-only setup error exposes its structured guidance.
     ...(err.code === 'MENU_SETUP_REQUIRED' && err.details ? { details: err.details } : {}) } });
