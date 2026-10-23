@@ -333,7 +333,7 @@ test('a day action opens the matching detailed approval immediately', async () =
   await employee(); period('2026-10-19', '2026-10-20');
   const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-20' }));
   expect(day.getByText('Overtime needs your review. Enter the additional pay amount explicitly; no multiplier is applied automatically.')).toBeVisible();
-  fireEvent.click(day.getByText('Change paid hours or add an adjustment'));
+  fireEvent.click(day.getByText('Additional pay adjustments'));
   fireEvent.click(day.getByRole('button', { name: 'Open detailed approval for 2026-10-20' }));
   await screen.findByRole('heading', { name: 'Work time and daily approvals' });
   const panels = Array.from(document.querySelectorAll<HTMLDetailsElement>('details[data-payroll-date]'));
@@ -370,14 +370,13 @@ test('the payroll-rules shortcut opens the policy fields directly', async () => 
   expect(axios.post).not.toHaveBeenCalled();
 });
 
-test('the missing-checkout shortcut opens the unfinished session without another search', async () => {
+test('the missed-checkout form is ready on its workday without another search', async () => {
   configured(); currentDetail.ledger.days = [{ ...recordedDay('2026-10-19'), incomplete: true }];
   currentDetail.ledger.sessions = [{ id: 'open-a', start: '2026-10-19T15:00:00Z', end: null, version: 1, breaks: [] }];
   await employee(); period('2026-10-19');
-  fireEvent.click(screen.getByRole('button', { name: 'Fix checkout for 2026-10-19' }));
-  expect(await screen.findByLabelText('Corrected start (ISO timestamp)')).toHaveValue('2026-10-19T15:00:00Z');
-  expect(screen.getByLabelText('Corrected checkout (blank if open)')).toHaveValue('');
-  expect(screen.getByRole('button', { name: 'Save time correction' })).toBeVisible();
+  expect(screen.getByLabelText('Actual checkout date for 2026-10-19')).toHaveValue('2026-10-19');
+  expect(screen.getByLabelText('Actual checkout time for 2026-10-19')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Save checkout for 2026-10-19' })).toBeVisible();
   expect(axios.post).not.toHaveBeenCalled();
 });
 
@@ -466,7 +465,7 @@ test('rounding review preserves a higher intentional paid-time decision and its 
   await employee(); period('2026-10-19');
   const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
   expect(day.getByText('9 hr proposed paid time', { exact: true })).toBeVisible();
-  expect(day.getByText(/Your earlier paid-time decision is kept\. The rounded minimum is 7 hr\./)).toBeVisible();
+  expect(day.getByText(/Your earlier paid-time decision is kept\. The rounding suggestion is 7 hr\./)).toBeVisible();
   expect(day.getByText('6 hr 41 min 42 sec actual worked time')).toBeVisible();
   expect(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).toHaveTextContent('Approve 9 hr');
   expect(axios.post).not.toHaveBeenCalled();
@@ -477,6 +476,64 @@ test('rounding review preserves a higher intentional paid-time decision and its 
     rulesReviewed: true, overtimeReviewed: false,
   });
   expect(currentDetail.ledger.days[0].rawMillis).toBe(sevenHourActualMillis);
+  expect(currentDetail.ledger.days[0].paidMillis).toBe(sevenHourActualMillis);
+});
+
+test('changing an earlier approved override clears its old reason before a new lower-hours decision', async () => {
+  configured();
+  const recorded = roundedSevenHourDay({ alreadyApproved: true });
+  const oldReason = 'Sent home early; approved the full nine-hour day';
+  recorded.approval = { ...recorded.approval!, paidMillis: 9 * 3600000, regularMillis: 9 * 3600000,
+    hoursOverride: true, clockErrorConfirmed: false, hoursOverrideFingerprint: 'current-nine-hour-override', reason: oldReason };
+  recorded.review = { ...recorded.review!, state: 'approved', reasons: [] };
+  currentDetail.ledger.days = [recorded];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  fireEvent.click(day.getByText('View approved day'));
+  fireEvent.click(day.getByRole('button', { name: 'Review hours for 2026-10-19' }));
+  expect(day.getByLabelText('Paid hours for 2026-10-19')).toHaveValue(9);
+  expect(day.getByLabelText('Reason for changing paid hours for 2026-10-19')).toHaveValue(oldReason);
+  fireEvent.change(day.getByLabelText('Paid hours for 2026-10-19'), { target: { value: '6' } });
+  const reason = day.getByLabelText('Reason for changing paid hours for 2026-10-19');
+  expect(reason).toHaveValue(''); expect(reason).toBeRequired();
+  fireEvent.click(day.getByLabelText('I verified the actual hours; the clock record is incorrect.'));
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  expect(axios.post).not.toHaveBeenCalled();
+  const freshReason = 'Verified actual work was six hours; the delayed checkout record is incorrect';
+  fireEvent.change(reason, { target: { value: freshReason } });
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({
+    paidMillis: 6 * 3600000, hoursOverride: true, clockErrorConfirmed: true, reason: freshReason,
+  });
+  expect(currentDetail.ledger.days[0].rawMillis).toBe(sevenHourActualMillis);
+});
+
+test('reviewing an unchanged verified lower-hours override keeps its amount and saved reason', async () => {
+  configured();
+  const recorded = roundedSevenHourDay({ alreadyApproved: true });
+  const savedReason = 'Verified six hours of actual work after a technical checkout delay';
+  recorded.approval = { ...recorded.approval!, paidMillis: 6 * 3600000, regularMillis: 6 * 3600000,
+    hoursOverride: true, clockErrorConfirmed: true, hoursOverrideFingerprint: 'current-six-hour-override', reason: savedReason };
+  recorded.review = { ...recorded.review!, state: 'approved', reasons: [] };
+  currentDetail.ledger.days = [recorded];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  fireEvent.click(day.getByText('View approved day'));
+  fireEvent.click(day.getByRole('button', { name: 'Review hours for 2026-10-19' }));
+  expect(day.getByLabelText('Paid hours for 2026-10-19')).toHaveValue(6);
+  expect(day.getByLabelText('Paid minutes for 2026-10-19')).toHaveValue(0);
+  expect(day.getByLabelText('Reason for changing paid hours for 2026-10-19')).toHaveValue(savedReason);
+  const confirmation = day.getByLabelText('I verified the actual hours; the clock record is incorrect.');
+  expect(confirmation).toBeRequired(); expect(confirmation).not.toBeChecked();
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(confirmation);
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({
+    paidMillis: 6 * 3600000, hoursOverride: true, clockErrorConfirmed: true, reason: savedReason,
+  });
   expect(currentDetail.ledger.days[0].paidMillis).toBe(sevenHourActualMillis);
 });
 
@@ -494,6 +551,201 @@ test('the first short day in a matching seven-hour schedule proposes seven hours
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
   expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ paidMillis: 7 * 3600000, rulesReviewed: true, overtimeReviewed: false });
   expect(currentDetail.ledger.days[0].paidMillis).toBe(sevenHourActualMillis);
+});
+
+test('the proposed paid hours can be increased inline with a reason while actual clocked time is retained', async () => {
+  configured(); currentDetail.ledger.days = [roundedSevenHourDay()];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  expect(day.getByLabelText('Paid hours for 2026-10-19')).toHaveValue(7);
+  expect(day.getByLabelText('Paid minutes for 2026-10-19')).toHaveValue(0);
+  fireEvent.change(day.getByLabelText('Paid hours for 2026-10-19'), { target: { value: '9' } });
+  const approve = day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' });
+  expect(approve).toHaveTextContent('Approve 9 hr');
+  expect(day.queryByLabelText('I verified the actual hours; the clock record is incorrect.')).not.toBeInTheDocument();
+  fireEvent.click(approve);
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.change(day.getByLabelText('Reason for changing paid hours for 2026-10-19'), { target: { value: 'Sent the employee home early and approved the full working day' } });
+  fireEvent.click(approve);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({
+    paidMillis: 9 * 3600000, hoursOverride: true,
+    reason: 'Sent the employee home early and approved the full working day',
+    rulesReviewed: true, overtimeReviewed: false,
+  });
+  expect(currentDetail.ledger.days[0].rawMillis).toBe(sevenHourActualMillis);
+  expect(currentDetail.ledger.days[0].paidMillis).toBe(sevenHourActualMillis);
+});
+
+test('approving less than a faulty clock record requires a reason and explicit verification', async () => {
+  configured(); currentDetail.ledger.days = [roundedSevenHourDay()];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  fireEvent.change(day.getByLabelText('Paid hours for 2026-10-19'), { target: { value: '6' } });
+  fireEvent.change(day.getByLabelText('Reason for changing paid hours for 2026-10-19'), { target: { value: 'Forgot to check out; verified that actual work ended after six hours' } });
+  const approve = day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' });
+  const confirmation = day.getByLabelText('I verified the actual hours; the clock record is incorrect.');
+  expect(confirmation).toBeRequired(); expect(confirmation).not.toBeChecked();
+  fireEvent.click(approve); expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(confirmation);
+  fireEvent.click(approve);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({
+    paidMillis: 6 * 3600000, hoursOverride: true, clockErrorConfirmed: true,
+    reason: 'Forgot to check out; verified that actual work ended after six hours',
+  });
+  expect(currentDetail.ledger.days[0].rawMillis).toBe(sevenHourActualMillis);
+  expect(currentDetail.ledger.days[0].paidMillis).toBe(sevenHourActualMillis);
+});
+
+test('an explicit 6 hr 45 min decision may be below the rounded suggestion without claiming a clock error', async () => {
+  configured(); currentDetail.ledger.days = [roundedSevenHourDay()];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  fireEvent.change(day.getByLabelText('Paid hours for 2026-10-19'), { target: { value: '6' } });
+  fireEvent.change(day.getByLabelText('Paid minutes for 2026-10-19'), { target: { value: '45' } });
+  expect(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' })).toHaveTextContent('Approve 6 hr 45 min');
+  expect(day.queryByLabelText('I verified the actual hours; the clock record is incorrect.')).not.toBeInTheDocument();
+  fireEvent.change(day.getByLabelText('Reason for changing paid hours for 2026-10-19'), { target: { value: 'Reviewed the actual time and approved six hours and forty-five minutes' } });
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ paidMillis: (6 * 60 + 45) * 60000, hoursOverride: true });
+  expect(currentDetail.ledger.days[0].paidMillis).toBe(sevenHourActualMillis);
+});
+
+test('the full scheduled day button fills its paid hours without changing the original clocks', async () => {
+  configured();
+  const recorded = roundedSevenHourDay();
+  recorded.review!.workTime = { plannedStart: '08:00', plannedEnd: '17:00', plannedMinutes: 540, hasCapturedAllowance: true,
+    scheduleTimeZone: 'America/Los_Angeles', timeZone: 'America/Los_Angeles', checkin: '2026-10-19T15:00:00Z', checkout: '2026-10-19T21:41:42Z',
+    earlyMillis: 0, lateMillis: 0, outsideMillis: 0, status: 'within-schedule', reason: '', scheduleIssue: null };
+  currentDetail.ledger.days = [recorded];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  fireEvent.click(day.getByRole('button', { name: 'Use full scheduled day' }));
+  expect(day.getByLabelText('Paid hours for 2026-10-19')).toHaveValue(9);
+  expect(day.getByLabelText('Paid minutes for 2026-10-19')).toHaveValue(0);
+  expect(day.getByLabelText('Reason for changing paid hours for 2026-10-19')).toBeRequired();
+  expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeDisabled();
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.change(day.getByLabelText('Reason for changing paid hours for 2026-10-19'), { target: { value: 'Employer requested an early departure; full scheduled day remains paid' } });
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toMatchObject({ paidMillis: 9 * 3600000, hoursOverride: true });
+  expect(currentDetail.ledger.days[0].rawMillis).toBe(sevenHourActualMillis);
+});
+
+test('invalid edited time cannot be approved and abandoning the draft requires confirmation', async () => {
+  configured(); currentDetail.ledger.days = [roundedSevenHourDay()];
+  await employee(); period('2026-10-19');
+  const day = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  fireEvent.change(day.getByLabelText('Paid minutes for 2026-10-19'), { target: { value: '60' } });
+  expect(day.getByLabelText('Paid minutes for 2026-10-19')).toBeInvalid();
+  expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeDisabled();
+  expect(day.getByRole('alert')).toHaveTextContent('Enter whole hours and 0–59 minutes, up to 48 hours total.');
+  fireEvent.click(day.getByRole('button', { name: 'Approve recorded hours for 2026-10-19' }));
+  expect(axios.post).not.toHaveBeenCalled();
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  try {
+    fireEvent.change(screen.getByLabelText('Payroll employee'), { target: { value: 'b' } });
+    expect(screen.getByLabelText('Payroll employee')).toHaveValue('a');
+    expect(day.getByLabelText('Paid minutes for 2026-10-19')).toHaveValue(60);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Discard unsaved changes' }));
+    expect(screen.getByLabelText('Paid hours for 2026-10-19')).toHaveValue(7);
+    expect(screen.getByLabelText('Paid minutes for 2026-10-19')).toHaveValue(0);
+    expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeEnabled();
+    expect(axios.post).not.toHaveBeenCalled();
+  } finally { confirm.mockRestore(); }
+});
+
+test('a missed checkout is recorded inline before paid hours can be approved', async () => {
+  configured();
+  const date = '2026-10-19';
+  currentDetail.ledger.sessions = [{ id: 'open-session', start: '2026-10-19T15:00:00Z', end: null, version: 1, breaks: [] }];
+  currentDetail.ledger.days = [{ ...recordedDay(date, sevenHourActualMillis), incomplete: true,
+    review: { state: 'needs-attention', canApproveRecorded: false, requiresOvertimeReview: false,
+      suggestedPaidMillis: sevenHourActualMillis, roundingCreditMillis: 0,
+      reasons: [{ code: 'MISSING_CHECKOUT', action: 'time', message: 'Checkout is missing. Record the actual departure before approving this day.' }] } }];
+  await employee(); period(date);
+  const day = within(screen.getByRole('article', { name: 'Pay review for ' + date }));
+  expect(day.getByText('Missing checkout', { exact: true })).toBeVisible();
+  expect(day.queryByRole('button', { name: 'Approve recorded hours for ' + date })).not.toBeInTheDocument();
+  const saveCheckout = day.getByRole('button', { name: 'Save checkout for ' + date });
+  fireEvent.click(saveCheckout); expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.change(day.getByLabelText('Actual checkout date for ' + date), { target: { value: date } });
+  fireEvent.change(day.getByLabelText('Actual checkout time for ' + date), { target: { value: '14:00' } });
+  fireEvent.change(day.getByLabelText('Reason for recording checkout for ' + date), { target: { value: 'Employee forgot checkout; manager verified departure at 2 PM' } });
+  vi.mocked(axios.post).mockImplementationOnce(async () => {
+    currentDetail.ledger = { ...currentDetail.ledger, version: 2,
+      sessions: [{ ...currentDetail.ledger.sessions[0], end: '2026-10-19T21:00:00Z', version: 2 }],
+      days: [{ ...recordedDay(date, 6 * 3600000),
+        review: { state: 'awaiting-approval', canApproveRecorded: true, suggestedPaidMillis: 6 * 3600000, requiresOvertimeReview: false,
+          reasons: [{ code: 'APPROVAL_REQUIRED', action: 'approve', message: 'Recorded time has not been approved yet.' }] } }],
+    };
+    return { data: { data: {} } };
+  });
+  fireEvent.click(saveCheckout);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][0]).toMatch(/\/a\/corrections$/);
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toEqual({
+    version: 1, sessionId: 'open-session', start: '2026-10-19T15:00:00Z', endLocal: '2026-10-19T14:00',
+    voided: false, reason: 'Employee forgot checkout; manager verified departure at 2 PM',
+  });
+  expect(await screen.findByRole('button', { name: 'Approve recorded hours for ' + date })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Record missed checkout' })).not.toBeInTheDocument();
+  expect(screen.getByText('Correct checkout time').closest('details')).not.toHaveAttribute('open');
+  expect(currentDetail.ledger.sessions[0].start).toBe('2026-10-19T15:00:00Z');
+});
+
+test('accepting discard before reviewing another approved day resets an unsaved paid-hours edit', async () => {
+  configured();
+  currentDetail.ledger.days = [roundedSevenHourDay(), { ...recordedDay('2026-10-20'),
+    approval: { status: 'approved', mode: 'manual-reviewed', paidMillis: 8 * 3600000, regularMillis: 8 * 3600000,
+      overtimeMillis: 0, doubleMillis: 0, premiumCents: 0, adjustmentCents: 0, rulesReviewed: true, overtimeReviewed: false, reason: 'Earlier approved eight-hour day' },
+    review: { state: 'approved', reasons: [], canApproveRecorded: true, suggestedPaidMillis: 8 * 3600000, requiresOvertimeReview: false },
+  }];
+  await employee(); period('2026-10-19', '2026-10-20');
+  const first = within(screen.getByRole('article', { name: 'Pay review for 2026-10-19' }));
+  const second = within(screen.getByRole('article', { name: 'Pay review for 2026-10-20' }));
+  fireEvent.change(first.getByLabelText('Paid hours for 2026-10-19'), { target: { value: '9' } });
+  fireEvent.change(first.getByLabelText('Reason for changing paid hours for 2026-10-19'), { target: { value: 'An unsaved edit to discard' } });
+  expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeDisabled();
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  try {
+    fireEvent.click(second.getByText('View approved day'));
+    fireEvent.click(second.getByRole('button', { name: 'Review hours for 2026-10-20' }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(first.getByLabelText('Paid hours for 2026-10-19')).toHaveValue(7);
+    expect(first.queryByLabelText('Reason for changing paid hours for 2026-10-19')).not.toBeInTheDocument();
+    expect(second.getByLabelText('Paid hours for 2026-10-20')).toHaveValue(8);
+    expect(screen.getByRole('button', { name: 'Calculate pay' })).toBeEnabled();
+    expect(axios.post).not.toHaveBeenCalled();
+  } finally { confirm.mockRestore(); }
+});
+
+test('an incorrect completed checkout can be corrected in local time from the same day card', async () => {
+  configured();
+  const date = '2026-10-19';
+  currentDetail.ledger.days = [recordedDay(date)];
+  currentDetail.ledger.sessions = [{ id: 'completed-session', start: '2026-10-19T15:00:00Z', end: '2026-10-19T23:00:00Z', version: 1, breaks: [] }];
+  await employee(); period(date);
+  const day = within(screen.getByRole('article', { name: 'Pay review for ' + date }));
+  const correction = day.getByText('Correct checkout time');
+  expect(correction.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(correction);
+  expect(day.getByLabelText('Actual checkout date for ' + date)).toHaveValue(date);
+  expect(day.getByLabelText('Actual checkout time for ' + date)).toHaveValue('16:00');
+  fireEvent.change(day.getByLabelText('Actual checkout time for ' + date), { target: { value: '15:00' } });
+  fireEvent.change(day.getByLabelText('Reason for recording checkout for ' + date), { target: { value: 'Technical issue delayed checkout; verified actual departure at 3 PM' } });
+  fireEvent.click(day.getByRole('button', { name: 'Save checkout for ' + date }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[0][0]).toMatch(/\/a\/corrections$/);
+  expect(vi.mocked(axios.post).mock.calls[0][1]).toEqual({
+    version: 1, sessionId: 'completed-session', start: '2026-10-19T15:00:00Z', endLocal: '2026-10-19T15:00',
+    voided: false, reason: 'Technical issue delayed checkout; verified actual departure at 3 PM',
+  });
 });
 
 test('the second short day warns before approval even when seven paid hours match the approved schedule', async () => {
@@ -559,7 +811,7 @@ test('a second completed short workday shows the administrator the count and aff
 test('returning an overtime day for correction does not require confirming review or pricing it', async () => {
   configured(); currentDetail.ledger.days = [nineHourCreditDay()];
   await employee(); period('2026-10-19');
-  fireEvent.click(screen.getByText('Change paid hours or add an adjustment'));
+  fireEvent.click(screen.getByText('Additional pay adjustments'));
   fireEvent.click(screen.getByRole('button', { name: 'Open detailed approval for 2026-10-19' }));
   fireEvent.change(screen.getByLabelText('Decision'), { target: { value: 'returned' } });
   const amount = screen.getByLabelText('Additional pay ($)');

@@ -245,8 +245,8 @@ for (const width of [320, 1280]) test(`own clock and private pay review through 
     expect(roundedDay.review.suggestedPaidMillis).toBe(7 * 3600000);
     const roundingReason = roundedDay.review.reasons.find(reason => reason.code === 'ROUNDING_REVIEW')!;
     expect(roundingReason).toBeTruthy();
-    // Posting the old fractional value directly cannot bypass the paid-time
-    // policy shown by the calculator. The administrator must review seven hours.
+    // Posting a different paid amount without an explicit reviewed override
+    // cannot bypass the default rounded proposal.
     await data(await http.post(base + '/approvals', { data: {
       version: roundedDetail.ledger.version, profileVersion: roundedDetail.profile.version,
       date: '2026-09-21', status: 'approved', mode: 'manual-reviewed', paidMillis: 24102000,
@@ -288,8 +288,101 @@ for (const width of [320, 1280]) test(`own clock and private pay review through 
     await expect(page.getByRole('region', { name: 'Pay calculation result', exact: true })).toContainText('6 hr 41 min 42 sec');
     await expect(page.getByRole('region', { name: 'Pay calculation result', exact: true }).getByText('Approved paid time', { exact: true }).locator('..').locator('dd')).toHaveText('7 hr');
     await expect(page.getByRole('region', { name: 'Pay calculation result', exact: true })).not.toContainText('6.695');
+
+    // The same day can be paid as a full day after an early departure, or use
+    // verified actual hours after a clock mistake, without editing clock history.
+    // Opening a historical snapshot does not change the current-week date inputs.
+    await page.getByLabel('Pay period start', { exact: true }).fill('2026-09-21');
+    await page.getByLabel('Pay period end', { exact: true }).fill('2026-09-21');
+    const payDay = page.getByRole('article', { name: 'Pay review for 2026-09-21', exact: true });
+    async function approveCustomHours(hours: string, reason: string, clockError = false) {
+      const details = payDay.locator('details.payroll-day-detail');
+      if (await details.getAttribute('open') === null) await payDay.getByText('View approved day', { exact: true }).click();
+      await payDay.getByRole('button', { name: 'Review hours for 2026-09-21', exact: true }).click();
+      await payDay.getByLabel('Paid hours for 2026-09-21', { exact: true }).fill(hours);
+      await payDay.getByLabel('Paid minutes for 2026-09-21', { exact: true }).fill('0');
+      await expect(payDay.getByLabel('Reason for changing paid hours for 2026-09-21', { exact: true })).toHaveValue('');
+      await payDay.getByLabel('Reason for changing paid hours for 2026-09-21', { exact: true }).fill(reason);
+      if (clockError) await payDay.getByLabel('I verified the actual hours; the clock record is incorrect.', { exact: true }).check();
+      if (width === 320) await payDay.locator('form').filter({ has: page.getByLabel('Paid hours for 2026-09-21', { exact: true }) }).screenshot({ path: test.info().outputPath('custom-' + hours + '-hour-editor.png') });
+      const response = page.waitForResponse(value => value.url() === base + '/approvals' && value.request().method() === 'POST');
+      await payDay.getByRole('button', { name: 'Approve recorded hours for 2026-09-21', exact: true }).click();
+      const saved = await response;
+      expect(saved.status(), await saved.text()).toBe(200);
+      expect(saved.request().postDataJSON()).toMatchObject({ paidMillis: Number(hours) * 3600000, hoursOverride: true, ...(clockError ? { clockErrorConfirmed: true } : {}), reason });
+      await expect(payDay.getByText('Approved', { exact: true })).toBeVisible();
+      const recorded = await data<{ ledger: {
+        days: { date: string; paidMillis: number; approval: { paidMillis: number; reason: string; actorId: string } }[];
+        sessions: { start: string; end: string }[];
+        history: { type: string; actorId: string; after?: { paidMillis: number; reason: string } }[];
+      } }>(await http.get(base));
+      expect(recorded.ledger.days.find(day => day.date === '2026-09-21')).toMatchObject({
+        paidMillis: 24102000,
+        approval: { paidMillis: Number(hours) * 3600000, reason, actorId: expect.any(String) },
+      });
+      expect(recorded.ledger.sessions[0]).toMatchObject({ start: '2026-09-21T15:00:00.000Z', end: '2026-09-21T21:41:42.000Z' });
+      expect(recorded.ledger.history.some(entry => entry.type === 'approval' && !!entry.actorId && entry.after?.paidMillis === Number(hours) * 3600000 && entry.after.reason === reason)).toBe(true);
+      await calculate.click();
+      await expect(page.getByRole('heading', { name: 'Gross pay before taxes: $' + (Number(hours) * 20).toFixed(2), exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Pay calculation result', exact: true }).getByText('Approved paid time', { exact: true }).locator('..').locator('dd')).toHaveText(hours + ' hr');
+      if (width === 320) await page.getByRole('region', { name: 'Pay calculation result', exact: true }).screenshot({ path: test.info().outputPath('custom-' + hours + '-hour-pay.png') });
+    }
+    await approveCustomHours('9', 'Sent home early by the administrator; pay the full approved day');
+    await approveCustomHours('6', 'Verified six actual hours after the employee forgot to check out', true);
+    // Earlier finalized pay is historical even after a later daily decision.
+    await page.getByRole('button', { name: 'Open calculation snapshot', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Gross pay before taxes: $140.00', exact: true })).toBeVisible();
+    await expect(page.getByText(/Source records or calculation rules changed after this snapshot\./)).toBeVisible();
     expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
     await page.screenshot({ path: test.info().outputPath('payroll.png'), fullPage: true });
+  } finally { await context.close(); }
+});
+test('an administrator records a missed checkout locally on the pay card through real HTTP at 390px', async ({ page, browser }) => {
+  test.setTimeout(90_000); await page.setViewportSize({ width: 390, height: 1000 });
+  const http = await authenticatedApi(page), suffix = randomUUID().slice(0, 8);
+  const employee = await data<{ id: string }>(await http.post(api + '/staff', { data: { name: 'Missed checkout ' + suffix, role: 'Other' } }), 201);
+  const temporary = 'Synthetic checkout temporary 20!', password = 'Synthetic checkout changed 20!';
+  const username = 'missed-checkout-' + suffix;
+  await data(await http.post(api + '/admin/accounts', { data: { username, displayName: 'Missed checkout example', role: 'teacher', staffMemberId: employee.id, password: temporary } }), 201);
+  const context = await browser.newContext();
+  try {
+    const teacher = await context.newPage();
+    const login = await teacher.request.post(api + '/auth/login', { headers: { Origin: origin }, data: { username, password: temporary } });
+    expect(login.status()).toBe(200);
+    const changed = await teacher.request.post(api + '/auth/password', { headers: { Origin: origin, 'X-CSRF-Token': (await login.json()).csrfToken }, data: { currentPassword: temporary, password } });
+    expect(changed.status()).toBe(200);
+    await data(await teacher.request.post(api + '/time-clock', { headers: { Origin: origin, 'X-CSRF-Token': (await changed.json()).csrfToken }, data: { action: 'checkin', version: 0, requestId: randomUUID() } }));
+    const base = api + '/payroll/staff/' + employee.id;
+    const open = await data<{ ledger: { version: number; sessions: { id: string }[] } }>(await http.get(base));
+    // An ordinary authorized administrator correction supplies a historical
+    // open shift, matching the existing missed-checkout recovery path.
+    await data(await http.post(base + '/corrections', { data: { version: open.ledger.version, sessionId: open.ledger.sessions[0].id, start: '2026-09-23T15:00:00Z', end: null, voided: false, reason: 'Synthetic historical open shift for missed checkout recovery' } }));
+    await page.goto('/staff/payroll');
+    await page.getByRole('combobox', { name: 'Payroll employee', exact: true }).selectOption(employee.id);
+    await page.getByLabel('Pay period start', { exact: true }).fill('2026-09-23');
+    await page.getByLabel('Pay period end', { exact: true }).fill('2026-09-23');
+    const card = page.getByRole('article', { name: 'Pay review for 2026-09-23', exact: true });
+    await expect(card.getByText('Missing checkout', { exact: true })).toBeVisible();
+    await card.getByLabel('Actual checkout date for 2026-09-23', { exact: true }).fill('2026-09-23');
+    await card.getByLabel('Actual checkout time for 2026-09-23', { exact: true }).fill('14:00');
+    await card.getByLabel('Reason for recording checkout for 2026-09-23', { exact: true }).fill('Verified departure at 2 PM after the employee forgot to check out');
+    await card.screenshot({ path: test.info().outputPath('local-missed-checkout.png') });
+    const saved = page.waitForResponse(response => response.url() === base + '/corrections' && response.request().method() === 'POST');
+    await card.getByRole('button', { name: 'Save checkout for 2026-09-23', exact: true }).click();
+    const response = await saved;
+    expect(response.status(), await response.text()).toBe(200);
+    expect(response.request().postDataJSON()).toMatchObject({ sessionId: open.ledger.sessions[0].id, start: '2026-09-23T15:00:00.000Z', endLocal: '2026-09-23T14:00', voided: false });
+    expect(response.request().postDataJSON()).not.toHaveProperty('breaks');
+    await expect(card.getByText('Missing checkout', { exact: true })).toHaveCount(0);
+    const closed = await data<{ ledger: {
+      sessions: { start: string; end: string }[];
+      days: { date: string; paidMillis: number; incomplete: boolean }[];
+      history: { type: string; actorId: string; before?: { end: string | null }; after?: { end: string } }[];
+    } }>(await http.get(base));
+    expect(closed.ledger.sessions[0]).toMatchObject({ start: '2026-09-23T15:00:00.000Z', end: '2026-09-23T21:00:00.000Z' });
+    expect(closed.ledger.days).toEqual([expect.objectContaining({ date: '2026-09-23', paidMillis: 6 * 3600000, incomplete: false })]);
+    expect(closed.ledger.history.some(entry => entry.type === 'correction' && !!entry.actorId && entry.before?.end === null && entry.after?.end === '2026-09-23T21:00:00.000Z')).toBe(true);
+    expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(391);
   } finally { await context.close(); }
 });
 test('editor receives a home reminder and corrects a verified late clockout without private payroll access at 390px', async({page,browser})=>{
@@ -335,7 +428,7 @@ test('editor receives a home reminder and corrects a verified late clockout with
   await page.getByLabel('Pay period start',{exact:true}).fill('2026-09-22');await page.getByLabel('Pay period end',{exact:true}).fill('2026-09-22');
   const correctedPayCard=page.getByRole('article',{name:'Pay review for 2026-09-22',exact:true});
   await expect(correctedPayCard.getByText('Awaiting approval',{exact:true})).toBeVisible();
-  await correctedPayCard.getByText('Change paid hours or add an adjustment',{exact:true}).click();
+  await correctedPayCard.getByText('Additional pay adjustments',{exact:true}).click();
   await correctedPayCard.getByRole('button',{name:'Open detailed approval for 2026-09-22',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Work time and daily approvals',exact:true})).toBeVisible();
   await expect(page.locator('details.payroll-workday[open]')).toHaveCount(1);

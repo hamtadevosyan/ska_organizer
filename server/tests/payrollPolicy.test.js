@@ -260,3 +260,85 @@ test('a rate change between loading and saving a manual decision rejects the sta
   await service.approve(context.admin,context.person.id,refreshed);
   expect(await service.preview(context.admin,context.person.id,{start:'2026-10-19',end:'2026-10-19'})).toMatchObject({canFinalize:true,grossCents:24100});
 });
+
+test('sending an employee home early can retain nine paid hours with an attributed reason and immutable prior calculation', async () => {
+  const context = await setup(); await work(context, '2026-10-19', 6.695);
+  const before = await service.get(context.admin, context.person.id), original = structuredClone(before.ledger.sessions);
+  await service.approve(context.admin, context.person.id, await decision(context, '2026-10-19', { overtimeReviewed: false }));
+  const first = await service.preview(context.admin, context.person.id, { start: '2026-10-19', end: '2026-10-19' });
+  const snapshot = await service.finalize(context.admin, context.person.id, { start: first.start, end: first.end, fingerprint: first.fingerprint, requestId: randomUUID() });
+  const approved = await service.approve(context.admin, context.person.id, await decision(context, '2026-10-19', {
+    paidMillis: 9 * HOUR, hoursOverride: true, overtimeReviewed: false, reason: 'Director sent employee home early and approved the full nine-hour day',
+  }));
+  expect(approved).toMatchObject({ paidMillis: 9 * HOUR, hoursOverride: true, clockErrorConfirmed: false,
+    hoursOverrideRecord: { rawMillis: 6.695 * HOUR, recordedMillis: 6.695 * HOUR, proposedMillis: 7 * HOUR, approvedMillis: 9 * HOUR, reason: 'Director sent employee home early and approved the full nine-hour day' } });
+  expect(approved.actorId).toBe(fixture.credentials().account.id);
+  const after = await service.get(context.admin, context.person.id);
+  expect(after.ledger.sessions).toEqual(original); expect(after.ledger.days[0].paidMillis).toBe(6.695 * HOUR);
+  expect(after.ledger.days[0].review.state).toBe('approved');
+  expect(after.ledger.history.at(-1)).toMatchObject({ type: 'approval', before: { paidMillis: 7 * HOUR }, after: { paidMillis: 9 * HOUR, hoursOverride: true } });
+  expect(await service.preview(context.admin, context.person.id, { start: first.start, end: first.end })).toMatchObject({ canFinalize: true, grossCents: 18000, approvedMillis: 9 * HOUR });
+  expect(await service.snapshot(context.admin, context.person.id, snapshot.id)).toMatchObject({ sourceChanged: true, preview: { grossCents: 14000, approvedMillis: 7 * HOUR } });
+});
+
+test('a verified clock error permits fewer paid hours while retaining the original clock and approved reason', async () => {
+  const context = await setup(); await work(context, '2026-10-19', 6.695);
+  const before = await service.get(context.admin, context.person.id), original = structuredClone(before.ledger.sessions);
+  const body = await decision(context, '2026-10-19', { paidMillis: 6 * HOUR, hoursOverride: true, overtimeReviewed: false, reason: 'Verified six hours actually worked; checkout was delayed by a technical fault' });
+  await expect(service.approve(context.admin, context.person.id, body)).rejects.toMatchObject({ status: 400 });
+  const approved = await service.approve(context.admin, context.person.id, { ...body, clockErrorConfirmed: true });
+  expect(approved).toMatchObject({ paidMillis: 6 * HOUR, hoursOverride: true, clockErrorConfirmed: true });
+  const after = await service.get(context.admin, context.person.id);
+  expect(after.ledger.sessions).toEqual(original);
+  expect(after.ledger.days[0]).toMatchObject({ paidMillis: 6.695 * HOUR, approval: { paidMillis: 6 * HOUR }, review: { state: 'approved' } });
+  expect(await service.preview(context.admin, context.person.id, { start: body.date, end: body.date })).toMatchObject({ canFinalize: true, grossCents: 12000, rawMillis: 6.695 * HOUR, approvedMillis: 6 * HOUR });
+});
+
+test('reviewed fractional paid hours above actual work may replace the rounding suggestion without claiming a clock error', async () => {
+  const context = await setup(); await work(context, '2026-10-19', 6.695);
+  const body = await decision(context, '2026-10-19', { paidMillis: 6.75 * HOUR, hoursOverride: true, overtimeReviewed: false, reason: 'Administrator deliberately approved six hours and forty-five minutes' });
+  const approval = await service.approve(context.admin, context.person.id, body);
+  expect(approval).toMatchObject({ hoursOverride: true, clockErrorConfirmed: false, paidMillis: 6.75 * HOUR });
+  expect(await service.preview(context.admin, context.person.id, { start: body.date, end: body.date })).toMatchObject({ canFinalize: true, grossCents: 13500, approvedMillis: 6.75 * HOUR });
+});
+
+test('missing override confirmation, malformed flags, blank reasons and unverified reductions leave the ledger unchanged', async () => {
+  const context = await setup(); await work(context, '2026-10-19', 6.695);
+  const body = await decision(context, '2026-10-19', { paidMillis: 9 * HOUR, overtimeReviewed: false });
+  const original = await db.getPayrollRecord('ledger:' + context.person.id);
+  for (const changes of [{}, { hoursOverride: 'true' }, { hoursOverride: true, reason: ' ' }, { hoursOverride: true, clockErrorConfirmed: 'true' }, { clockErrorConfirmed: true }, { hoursOverride: true, paidMillis: 6 * HOUR }]) {
+    await expect(service.approve(context.admin, context.person.id, { ...body, ...changes })).rejects.toMatchObject({ status: 400 });
+    expect(await db.getPayrollRecord(original.id)).toEqual(original);
+  }
+});
+
+test('paid-hours overrides cannot skip administrator authorization, CSRF or explicit overtime review', async () => {
+  const context = await setup(); await work(context, '2026-10-19', 9.5);
+  const body = await decision(context, '2026-10-19', { paidMillis: 9 * HOUR, hoursOverride: true, clockErrorConfirmed: true, reason: 'Verified the employee worked nine hours despite a delayed checkout' });
+  const route = '/api/payroll/staff/' + context.person.id + '/approvals';
+  expect((await http(app).post(route).set('Origin', fixture.origin).set('Cookie', 'skao_session=' + context.admin).send(body)).status).toBe(403);
+  expect((await http(app).post(route).set('Origin', fixture.origin).set('Cookie', 'skao_session=' + context.editor.token).set('X-CSRF-Token', auth.csrfToken(context.editor.token)).send(body)).status).toBe(403);
+  await expect(service.approve(context.admin, context.person.id, { ...body, overtimeReviewed: false })).rejects.toMatchObject({ status: 400 });
+  expect((await service.approve(context.admin, context.person.id, body)).overtimeReviewed).toBe(true);
+});
+
+test('changed clock records or an effective rate invalidate an earlier approved-hours override', async () => {
+  const context = await setup(); await work(context, '2026-10-19', 6.695);
+  await service.approve(context.admin, context.person.id, await decision(context, '2026-10-19', { paidMillis: 9 * HOUR, hoursOverride: true, overtimeReviewed: false, reason: 'Approved full day after director sent employee home' }));
+  let detail = await service.get(context.admin, context.person.id);
+  await service.rate(context.admin, context.person.id, { version: detail.profile.version, effectiveOn: '2026-10-19', cents: 2200, currency: 'USD', reason: 'Corrected effective hourly rate' });
+  expect((await service.preview(context.admin, context.person.id, { start: '2026-10-19', end: '2026-10-19' })).blockers.join(' ')).toMatch(/approved-hours change needs a new review/);
+  await service.approve(context.admin, context.person.id, await decision(context, '2026-10-19', { paidMillis: 9 * HOUR, hoursOverride: true, overtimeReviewed: false, reason: 'Reviewed full-day pay against corrected effective rate' }));
+  detail = await service.get(context.admin, context.person.id); const session = detail.ledger.sessions[0];
+  await service.correct(context.admin, context.person.id, { version: detail.ledger.version, sessionId: session.id, start: session.start, end: new Date(Date.parse(session.end) - 60000).toISOString(), voided: false, reason: 'Verified actual departure was one minute earlier' });
+  expect((await service.preview(context.admin, context.person.id, { start: '2026-10-19', end: '2026-10-19' })).canFinalize).toBe(false);
+  expect((await service.get(context.admin, context.person.id)).ledger.days[0].review.state).toBe('needs-attention');
+});
+
+test('an audit failure rolls back an explicit approved-hours change and its history', async () => {
+  const context = await setup(); await work(context, '2026-10-19', 6.695);
+  const body = await decision(context, '2026-10-19', { paidMillis: 9 * HOUR, hoursOverride: true, overtimeReviewed: false, reason: 'Director approved full-day paid time' });
+  const original = await db.getPayrollRecord('ledger:' + context.person.id), audit = jest.spyOn(db, 'appendAudit').mockRejectedValueOnce(new Error('Synthetic approved-hours audit failure'));
+  try { await expect(service.approve(context.admin, context.person.id, body)).rejects.toThrow('Synthetic approved-hours audit failure'); } finally { audit.mockRestore(); }
+  expect(await db.getPayrollRecord(original.id)).toEqual(original);
+});

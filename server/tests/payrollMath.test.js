@@ -1,4 +1,4 @@
-const { daily, preview, hash, scheduledPayCredit, overtimeContext, overtimeFingerprint } = require('../services/payrollMath');
+const { daily, preview, hash, scheduledPayCredit, overtimeContext, overtimeFingerprint, hoursOverrideFingerprint } = require('../services/payrollMath');
 const rules={mode:'ca-standard',workweekStart:1,confirmed:true,reference:'Synthetic reviewed policy',dailyScheduledMinutes:480};
 const profile=(rates=[{id:'rate',effectiveOn:'2026-01-01',cents:2000,currency:'USD',sequence:1}])=>({rules,rates});
 const approval=(regularMillis,extra={})=>({status:'approved',regularMillis,overtimeMillis:0,doubleMillis:0,adjustmentCents:0,rulesReviewed:true,rulesFingerprint:hash(rules),...extra});
@@ -109,6 +109,31 @@ test('an earlier fractional approval blocks fresh finalization until whole-hour 
  expect(data).toEqual(before);
  data.approvals['2026-10-19']=manualApproval(7*3600000);
  expect(preview(data,p,'2026-10-19','2026-10-19')).toMatchObject({canFinalize:true,grossCents:14000,rawMillis:6.695*3600000,approvedMillis:7*3600000});
+});
+test('a verified lower paid-time decision binds exact clock timestamps and cannot survive a same-duration clock change',()=>{
+ const date='2026-10-19',p=profile(),data=ledger([session(date,6.695)]);
+ data.approvals[date]=manualApproval(6*3600000,{hoursOverride:true,clockErrorConfirmed:true,reason:'Verified six actual hours after a technical checkout fault'});
+ const day=daily(data)[0],saved=data.approvals[date];
+ saved.hoursOverrideFingerprint=hoursOverrideFingerprint(day,daily(data),data,p,saved.paidMillis,true,saved.reason);
+ expect(preview(data,p,date,date)).toMatchObject({canFinalize:true,grossCents:12000,rawMillis:6.695*3600000,approvedMillis:6*3600000});
+ data.sessions[0].start=new Date(Date.parse(data.sessions[0].start)+60000).toISOString();
+ data.sessions[0].end=new Date(Date.parse(data.sessions[0].end)+60000).toISOString();
+ const changed=preview(data,p,date,date);
+ expect(changed.canFinalize).toBe(false);expect(changed.rows[0].grossCents).toBeNull();
+ expect(changed.blockers.join(' ')).toMatch(/approved-hours change needs a new review/);
+});
+test('later workdays do not invalidate a previous full-day pay decision but changed captured schedule does',()=>{
+ const date='2026-10-19',p=profile(),data=ledger([session(date,6.695)]);
+ data.workWindows={[date]:{startTime:'08:00',endTime:'17:00',timeZone:'America/Los_Angeles'}};
+ data.workLimits={[date]:540};
+ data.approvals[date]=manualApproval(9*3600000,{hoursOverride:true,clockErrorConfirmed:false,reason:'Director approved the entire day after early departure'});
+ const saved=data.approvals[date];
+ saved.hoursOverrideFingerprint=hoursOverrideFingerprint(daily(data)[0],daily(data),data,p,saved.paidMillis,false,saved.reason);
+ data.sessions.push(session('2026-10-20',6.5));
+ expect(preview(data,p,date,date)).toMatchObject({canFinalize:true,grossCents:18000});
+ data.workWindows[date].endTime='16:00';
+ const changed=preview(data,p,date,date);
+ expect(changed.canFinalize).toBe(false);expect(changed.rows[0].grossCents).toBeNull();
 });
 test('manually approved paid credit remains separate from actual hours and does not manufacture weekly overtime',()=>{
  const dates=['2026-10-19','2026-10-20','2026-10-21','2026-10-22','2026-10-23'];

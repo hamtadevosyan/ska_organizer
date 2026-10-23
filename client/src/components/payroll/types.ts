@@ -1,6 +1,7 @@
 export type ClockSession = { id: string; start: string; end: string | null; version: number; voided?: boolean; breaks: { id?: string; start: string; end: string | null; paid: boolean }[] };
 export type Approval = { status: string; regularMillis: number; overtimeMillis: number; doubleMillis: number; adjustmentCents: number; reason: string; rulesReviewed: boolean;
- mode?: 'manual-reviewed'; paidMillis?: number; premiumCents?: number; overtimeReviewed?: boolean; scheduledCreditMillis?: number };
+ mode?: 'manual-reviewed'; paidMillis?: number; premiumCents?: number; overtimeReviewed?: boolean; scheduledCreditMillis?: number;
+ hoursOverride?: boolean; clockErrorConfirmed?: boolean; hoursOverrideFingerprint?: string };
 export type PayReviewReason = { code: string; message: string; date?: string; action: 'approve' | 'time' | 'work-time' | 'rates' | 'profile' };
 export type PayDayReview = { state: 'awaiting-approval' | 'needs-attention' | 'approved'; reasons: PayReviewReason[]; canApproveRecorded: boolean;
   suggestedPaidMillis?: number; scheduledCreditMillis?: number; roundingCreditMillis?: number; requiresRoundingReview?: boolean; shortDayOrdinal?: number; requiresOvertimeReview?: boolean;

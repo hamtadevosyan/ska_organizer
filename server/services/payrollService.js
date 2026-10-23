@@ -68,7 +68,7 @@ function shortDayWarnings(staff, rows, rules, start, end) {
     ...(group.planned.size === 1 ? { plannedMinutes: [...group.planned][0] } : {}),
   }));
 }
-function roundingReview(day, work, rows, rules) {
+function roundingReview(day, work, rows, rules, overrideCurrent = false) {
   const credit = math.scheduledPayCredit(day, work), context = math.overtimeContext(day, [], rules);
   const shortDates = shortDayGroups(rows, rules).get(context.weekStart)?.dates || [];
   const shortDayOrdinal = shortDates.includes(day.date) ? shortDates.filter(date => date <= day.date).length : 0;
@@ -82,7 +82,7 @@ function roundingReview(day, work, rows, rules) {
     (approval.paidMillis ?? approval.regularMillis) >= credit.suggestedPaidMillis && approval.roundingFingerprint === fingerprint;
   const belowProposal = approval?.status === 'approved' && (approval.paidMillis ?? approval.regularMillis) < credit.suggestedPaidMillis;
   return { ...credit, requiresRoundingReview, shortDayOrdinal, fingerprint,
-    pending: !day.incomplete && (belowProposal || requiresRoundingReview && !current) };
+    pending: !day.incomplete && !overrideCurrent && (belowProposal || requiresRoundingReview && !current) };
 }
 function overtimeReview(day, days, work, rules, rates) {
   const context = math.overtimeContext(day, days, rules);
@@ -105,7 +105,7 @@ async function payrollReviewDays(staffId, ledger, profile, days) {
     const reasons = [], approval = day.approval, work = workByDate.get(day.date), preview = previewByDate.get(day.date);
     const add = (code, message, action, date) => { if (!reasons.some(reason => reason.code === code && reason.message === message)) reasons.push({ code, message, action, ...(date ? { date } : {}) }); };
     const review = overtimeReview(day, days, work, rules, profile.rates);
-    const credit = roundingReview(day, work, workRowsForStaff, rules);
+    const credit = roundingReview(day, work, workRowsForStaff, rules, math.validHoursOverride(day, days, ledger.data, profile));
     const week = days.filter(row => row.date >= review.weekStart && row.date <= review.weekEnd);
     if (day.incomplete) add('MISSING_CHECKOUT', 'Checkout is missing. Record the actual departure before approving this day.', 'time');
     if (!rules.confirmed || !rules.reference.trim()) add('POLICY_UNCONFIRMED', 'The employee\'s payroll rules have not been reviewed and confirmed.', 'profile');
@@ -237,18 +237,29 @@ exports.rate = (token, staffId, payload) => authorized(token, true, async actor 
   current.data.rates.push(rate); await write('profile', staffId, current.data, current.version); await auth.audit(actor, 'payroll.rate_add', staffId); return rate;
 });
 exports.correct = (token, staffId, payload) => authorized(token, true, async actor => {
-  v.object(payload, ['version', 'sessionId', 'start', 'end', 'breaks', 'voided', 'reason']); await employee(staffId);
+  v.object(payload, ['version', 'sessionId', 'start', 'end', 'endLocal', 'endOccurrence', 'breaks', 'voided', 'reason']); await employee(staffId);
   const ledger = await read('ledger', staffId); expectVersion(payload, ledger.version); const old = ledger.data.sessions.find(s => s.id === payload.sessionId);
   if (!old) throw auth.problem('Time session not found.', 404);
+  let end = payload.end;
+  if (payload.endLocal !== undefined) {
+    if (payload.end !== undefined) throw auth.problem('Choose a local checkout time or an offset-qualified checkout, not both.');
+    if (typeof payload.endLocal !== 'string' || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/.test(payload.endLocal)) throw auth.problem('Enter the actual checkout date and time.');
+    time.validateDate(payload.endLocal.slice(0, 10));
+    if (payload.endOccurrence !== undefined && !['earlier', 'later'].includes(payload.endOccurrence)) throw auth.problem('Choose the first or second occurrence of the checkout time.');
+    const choices = wallTimeChoices(payload.endLocal.slice(0, 10), payload.endLocal.slice(11), ledger.data.timeZone);
+    if (!choices.length) throw auth.problem('That checkout time does not exist because the clocks moved forward. Choose another time.');
+    if (choices.length > 1 && !['earlier', 'later'].includes(payload.endOccurrence)) throw auth.problem('That checkout time occurs twice because the clocks moved back. Choose its first or second occurrence.');
+    end = new Date(payload.endOccurrence === 'later' ? choices.at(-1) : choices[0]).toISOString();
+  } else if (payload.endOccurrence !== undefined) throw auth.problem('Choose a local checkout time before selecting its occurrence.');
   if (payload.breaks !== undefined && (!Array.isArray(payload.breaks) || payload.breaks.length > 30) || typeof payload.voided !== 'boolean') throw auth.problem('Supply valid time records and record status.');
-  const next = { ...old, start: instant(payload.start), end: payload.end === null ? null : instant(payload.end), voided: payload.voided,
+  const next = { ...old, start: instant(payload.start), end: end === null ? null : instant(end), voided: payload.voided,
     breaks: payload.breaks === undefined ? structuredClone(old.breaks) : payload.breaks.map(b => { v.object(b, ['start', 'end', 'paid']); return { start: instant(b.start), end: b.end === null ? null : instant(b.end), paid: b.paid }; }), version: old.version + 1 };
   if (!next.voided) validateSession(next, ledger.data.sessions);
   ledger.data.history.push({ type: 'correction', before: structuredClone(old), after: structuredClone(next), reason: reason(payload.reason), ...stamp(actor) });
   invalidate(ledger.data, [old, next]); Object.assign(old, next); await write('ledger', staffId, ledger.data, ledger.version); await auth.audit(actor, 'employee_clock.correct', staffId); return { saved: true };
 });
 exports.approve = (token, staffId, payload) => authorized(token, true, async actor => {
-  v.object(payload, ['version', 'profileVersion', 'date', 'status', 'mode', 'paidMillis', 'premiumCents', 'overtimeReviewed', 'regularMillis', 'overtimeMillis', 'doubleMillis', 'adjustmentCents', 'rulesReviewed', 'reason']); await employee(staffId);
+  v.object(payload, ['version', 'profileVersion', 'date', 'status', 'mode', 'paidMillis', 'premiumCents', 'overtimeReviewed', 'regularMillis', 'overtimeMillis', 'doubleMillis', 'adjustmentCents', 'rulesReviewed', 'reason', 'hoursOverride', 'clockErrorConfirmed']); await employee(staffId);
   const ledger = await read('ledger', staffId); expectVersion(payload, ledger.version); const date = time.validateDate(payload.date);
   const days = math.daily(ledger.data), day = days.find(row => row.date === date); if (!day) throw auth.problem('No time records exist on this day.', 404);
   if (!['approved', 'returned'].includes(payload.status) || typeof payload.rulesReviewed !== 'boolean') throw auth.problem('Choose approved or returned and confirm the daily rule review.');
@@ -263,11 +274,14 @@ exports.approve = (token, staffId, payload) => authorized(token, true, async act
   if (manual && (payload.regularMillis !== undefined || payload.overtimeMillis !== undefined || payload.doubleMillis !== undefined)) throw auth.problem('Enter paid hours once, without separate automatic overtime allocations.');
   const paidMillis = integer(manual ? payload.paidMillis : payload.regularMillis, 48 * 3600000);
   const premiumCents = manual ? integer(payload.premiumCents, 100000000) : 0;
+  for (const field of ['hoursOverride', 'clockErrorConfirmed']) if (payload[field] !== undefined && typeof payload[field] !== 'boolean') throw auth.problem('Confirm the approved-hours change and any verified clock error.');
+  const hoursOverride = payload.hoursOverride === true, clockErrorConfirmed = payload.clockErrorConfirmed === true, why = reason(payload.reason);
+  if (clockErrorConfirmed && !hoursOverride) throw auth.problem('Confirm that you are changing the approved paid hours before confirming a clock error.');
   if (payload.overtimeReviewed !== undefined && typeof payload.overtimeReviewed !== 'boolean') throw auth.problem('Confirm whether overtime has been reviewed.');
   const overtimeReviewed = payload.overtimeReviewed === true;
   if (payload.status === 'approved' && review.requiresOvertimeReview && (!manual || !overtimeReviewed)) throw auth.problem('Overtime always needs administrator review. Enter the additional-pay amount explicitly and confirm the review.');
-  if (payload.status === 'approved' && paidMillis < day.paidMillis) throw auth.problem('Paid hours cannot be below the actual recorded work. Correct a verified clock error first; actual work is never capped.');
-  if (payload.status === 'approved' && paidMillis < credit.suggestedPaidMillis) throw auth.problem('Approve at least ' + readableDuration(credit.suggestedPaidMillis) + ' of whole-hour paid time. Actual recorded work is kept unchanged.');
+  if (payload.status === 'approved' && paidMillis !== credit.suggestedPaidMillis && !hoursOverride) throw auth.problem('Confirm the changed paid hours and enter a reason, or use the proposed paid time.');
+  if (payload.status === 'approved' && paidMillis < day.paidMillis && (!hoursOverride || !clockErrorConfirmed)) throw auth.problem('Verify that the clock record is incorrect before approving fewer hours, and enter the reason.');
   const adjustmentCents = payload.adjustmentCents === undefined ? day.approval?.adjustmentCents || 0 : payload.adjustmentCents;
   if (!Number.isSafeInteger(adjustmentCents) || Math.abs(adjustmentCents) > 100000000) throw auth.problem('Approved time or adjustment is outside the supported range.');
   const approval = { mode: 'manual-reviewed', rulesFingerprint: math.hash(profile.data.rules), date, status: payload.status,
@@ -279,7 +293,10 @@ exports.approve = (token, staffId, payload) => authorized(token, true, async act
     roundingCreditMillis: paidMillis === credit.suggestedPaidMillis ? credit.roundingCreditMillis : 0,
     roundingReviewed: payload.status === 'approved' && payload.rulesReviewed,
     roundingFingerprint: credit.fingerprint,
-    rulesReviewed: payload.rulesReviewed, reason: reason(payload.reason), ...stamp(actor) };
+    hoursOverride, clockErrorConfirmed,
+    ...(hoursOverride ? { hoursOverrideFingerprint: math.hoursOverrideFingerprint(day, days, ledger.data, profile.data, paidMillis, clockErrorConfirmed, why),
+      hoursOverrideRecord: { rawMillis: day.rawMillis, recordedMillis: day.paidMillis, proposedMillis: credit.suggestedPaidMillis, approvedMillis: paidMillis, reason: why } } : {}),
+    rulesReviewed: payload.rulesReviewed, reason: why, ...stamp(actor) };
   if (approval.status === 'approved' && !approval.rulesReviewed) throw auth.problem('Review actual hours, overtime and adjustments first.');
   ledger.data.history.push({ type: 'approval', ...stamp(actor), reason: approval.reason, before: ledger.data.approvals[date] || null, after: approval }); ledger.data.approvals[date] = approval;
   await write('ledger', staffId, ledger.data, ledger.version); await auth.audit(actor, 'payroll.daily_' + payload.status, staffId); return approval;
