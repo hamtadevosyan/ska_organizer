@@ -168,12 +168,12 @@ test('failed sign-ins are limited per account without disclosing account existen
 });
 
 test('twenty successful sign-ins from one IP exhaust its budget across valid accounts', async () => {
-  // databaseSetup already made one real administrator sign-in from this IP.
-  // Include that attempt instead of resetting or bypassing the real limiter.
+  // Resource setup supplies a synthetic session without consuming login attempts.
+  // Exercise all twenty successful sign-ins through the real password endpoint.
   const before = await db.listAudit();
-  expect(before.filter(event => event.action === 'session.sign_in')).toHaveLength(1);
+  expect(before.filter(event => event.action === 'session.sign_in')).toHaveLength(0);
   await create('viewer', 'rate-viewer');
-  for (let attempt = 2; attempt <= 20; attempt++) {
+  for (let attempt = 1; attempt <= 20; attempt++) {
     const viewer = attempt % 2 === 0;
     await login(viewer ? 'rate-viewer' : 'test-admin', viewer ? tempPassword : fixture.password);
   }

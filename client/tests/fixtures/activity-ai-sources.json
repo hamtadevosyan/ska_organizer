@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "synthetic-turn-taking",
+      "title": "Synthetic classroom learning reference",
+      "publisher": "Browser fixture authors",
+      "version": "2026-10-synthetic",
+      "section": "Turn taking and sorting",
+      "kind": "education",
+      "text": "Synthetic educational test excerpt: invite children to take turns sorting large colored shapes and describe their choices with a partner. This is a test reference, not a regulation or approved course material.",
+      "ageMinMonths": 24,
+      "ageMaxMonths": 72,
+      "superseded": false
+    }
+  ]
+}

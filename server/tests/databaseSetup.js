@@ -41,7 +41,7 @@ beforeEach(async () => {
     await setupStep('clearing the PostgreSQL test tables', () =>
       connection.query(`TRUNCATE ${tables.map((t) => `"${schema}"."${t}"`).join(', ')} CASCADE`));
   }
-  await setupStep('creating and signing in the test administrator', () =>
+  await setupStep('creating and validating test administrator session', () =>
     require('./helpers/authenticatedRequest').initialize(require('../index')));
 // Allow slower VM fixture setup; keep the existing timeout for each test body.
 }, process.env.DB_ADAPTER === 'sequelize' ? 60000 : 30000);

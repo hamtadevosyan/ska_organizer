@@ -55,6 +55,7 @@ app.use('/api/inventory', require('./routes/inventory'));
 // Schedule route
 app.use('/api/schedule', require('./routes/schedule'));
 // Activity route
+app.use('/api/activity-ai', require('./routes/activityAi'));
 app.use('/api/activity', require('./routes/activity'));
 // Children route
 app.use('/api/children/:childId/documents', childDocuments.router);
