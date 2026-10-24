@@ -6,24 +6,26 @@ import type { Activity, ActivityDetails, Material } from '../../api/activities';
 import type { Room } from '../../api/rooms';
 import type { InventoryItem } from '../../api/inventory';
 
-type Props = { activity: Activity | null; room?: Room; scheduleDate?: string; nameInputRef?: Ref<HTMLInputElement>;
+type Props = { activity: Activity | null; initialDetails?: ActivityDetails; room?: Room; scheduleDate?: string; nameInputRef?: Ref<HTMLInputElement>;
   submitLabel?: string; helpText?: string; disabled?: boolean;
   onDirtyChange?: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void; onSaved: (activity: Activity) => void; onClose: () => void };
 const input = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2.5';
-export function ActivityForm({ activity, room, scheduleDate, nameInputRef, submitLabel, helpText, disabled = false, onDirtyChange, onBusyChange, onSaved, onClose }: Props) {
+export function ActivityForm({ activity, initialDetails, room, scheduleDate, nameInputRef, submitLabel, helpText, disabled = false, onDirtyChange, onBusyChange, onSaved, onClose }: Props) {
   const formId = useId();
+  const initial = activity || initialDetails;
   // Older rooms can have equal age bounds. Do not copy an invalid range into a new activity.
   const roomHasAges = room?.ageMinMonths != null && room?.ageMaxMonths != null &&
     Number.isInteger(room.ageMinMonths) && Number.isInteger(room.ageMaxMonths) &&
     room.ageMinMonths >= 0 && room.ageMaxMonths > room.ageMinMonths && room.ageMaxMonths <= 216;
-  const [name, setName] = useState(activity?.name || '');
-  const [duration, setDuration] = useState(activity ? String(activity.durationMinutes ?? '') : '20');
-  const [description, setDescription] = useState(activity?.description || '');
-  const [minAge, setMinAge] = useState(String(activity ? activity.ageMinMonths ?? '' : roomHasAges ? room.ageMinMonths : ''));
-  const [maxAge, setMaxAge] = useState(String(activity ? activity.ageMaxMonths ?? '' : roomHasAges ? room.ageMaxMonths : ''));
-  const [materials, setMaterials] = useState<Material[]>(activity?.materials || []);
+  const [name, setName] = useState(initial?.name || '');
+  const [duration, setDuration] = useState(initial ? String(initial.durationMinutes ?? '') : '20');
+  const [description, setDescription] = useState(initial?.description || '');
+  const [minAge, setMinAge] = useState(String(initial ? initial.ageMinMonths ?? '' : roomHasAges ? room.ageMinMonths : ''));
+  const [maxAge, setMaxAge] = useState(String(initial ? initial.ageMaxMonths ?? '' : roomHasAges ? room.ageMaxMonths : ''));
+  const [materials, setMaterials] = useState<Material[]>(initial?.materials || []);
   const [clearOldMaterials, setClearOldMaterials] = useState(false);
   const hasOldMaterials = !!(activity?.materialsNotes?.trim() || activity?.materialsLinks?.length);
+  const suggestedMaterials = !activity && initialDetails?.materialsNotes?.trim();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [inventoryError, setInventoryError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -35,8 +37,8 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, submi
   const [error, setError] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [changed, setChanged] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [changed, setChanged] = useState(!!initialDetails);
+  const [detailsOpen, setDetailsOpen] = useState(!!initialDetails);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const errorRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
@@ -85,7 +87,8 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, submi
     if (itemId) { setDetailsOpen(true); setFields({ material: 'Click Add material for the selected item, or clear the selection before saving.' }); setError('Click Add material for the selected item, or clear the selection before saving.'); return; }
     const details: ActivityDetails = { name: name.trim(), durationMinutes: Number(duration), description: description.trim(),
       ageMinMonths: minAge === '' ? null : Number(minAge), ageMaxMonths: maxAge === '' ? null : Number(maxAge),
-      materials, roomId: activity?.roomId || null,
+      materials, roomId: initial?.roomId || null,
+      ...(!activity && initialDetails ? { materialsNotes: initialDetails.materialsNotes || '', materialsLinks: [] } : {}),
       ...(clearOldMaterials ? { materialsNotes: '', materialsLinks: [] } : {}) };
     if (scheduleDate && room && !suitable(details, room)) {
       setDetailsOpen(true);
@@ -117,6 +120,7 @@ export function ActivityForm({ activity, room, scheduleDate, nameInputRef, submi
           <p className="text-sm text-slate-600">Leave both ages empty for all ages.{!activity && roomHasAges ? ' These ages start with your selected room’s age range.' : ''}</p>
           <section aria-label="Activity materials" className="space-y-3 rounded-xl bg-slate-50 p-4">
             <h3 className="font-bold">Materials (optional)</h3><p className="text-sm text-slate-600">Enter enough for the whole activity, for all children together.</p>
+            {suggestedMaterials && <div className="rounded-lg bg-amber-50 p-3"><h4 className="font-bold">Suggested materials</h4><p className="whitespace-pre-wrap break-words">{suggestedMaterials}</p><p className="mt-2 text-sm">Check these suggestions, then link needed items and quantities to Inventory below. Suggestions alone are not included in stock or purchasing calculations.</p></div>}
             {materials.length > 0 && <ul className="space-y-2">{materials.map((material) => <li key={material.itemId} className="flex items-center justify-between gap-4">
               <span>{material.name || 'Inventory item'} — {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</span>
               <button type="button" aria-label={'Remove ' + (material.name || 'material')} className="text-red-700" onClick={() => { setMaterials(materials.filter((row) => row.itemId !== material.itemId)); setChanged(true); }}>Remove</button>

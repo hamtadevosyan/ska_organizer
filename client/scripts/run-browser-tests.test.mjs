@@ -33,11 +33,11 @@ function harness(value = report(), settings = {}) {
 }
 
 test('isolates each authentication-heavy file and groups remaining tests once', async () => {
-  const files = ['staff-account-links.spec.ts', 'teacher-care.spec.ts', 'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts', 'remembered-login.spec.ts', 'child-documents.spec.ts', 'staff-compliance.spec.ts', 'batch-receiving.spec.ts', 'purchasing-list.spec.ts', 'inventory-group-removal.spec.ts', 'payroll.spec.ts', 'clock-station.spec.ts', 'employee-work-access.spec.ts', 'rooms.spec.ts', 'activities.spec.ts'];
+  const files = ['staff-account-links.spec.ts', 'teacher-care.spec.ts', 'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts', 'remembered-login.spec.ts', 'child-documents.spec.ts', 'staff-compliance.spec.ts', 'batch-receiving.spec.ts', 'purchasing-list.spec.ts', 'inventory-group-removal.spec.ts', 'payroll.spec.ts', 'clock-station.spec.ts', 'employee-work-access.spec.ts', 'activity-ai.spec.ts', 'rooms.spec.ts', 'activities.spec.ts'];
   const h = harness(report(files));
   assert.equal(await runBrowserTests([], h.options), 0);
-  assert.equal(h.lists.length, 15);
-  assert.deepEqual(h.lists.map(lines => lines.length), [...Array(14).fill(1), 2]);
+  assert.equal(h.lists.length, 16);
+  assert.deepEqual(h.lists.map(lines => lines.length), [...Array(15).fill(1), 2]);
   assert.equal(new Set(h.lists.flat()).size, files.length);
 });
 
@@ -80,7 +80,20 @@ test('preserves the execution environment and only clears discovery JSON redirec
   const h = harness(); h.options.env.PLAYWRIGHT_JSON_OUTPUT_FILE = '/tmp/report.json'; h.options.env.PLAYWRIGHT_JSON_OUTPUT_NAME = 'report.json'; h.options.env.PLAYWRIGHT_JSON_OUTPUT_DIR = '/tmp';
   await runBrowserTests([], h.options);
   assert.deepEqual(h.calls[0].options.env, { SENTINEL: 'preserved' });
-  for (const call of h.calls.slice(1)) assert.equal(call.options.env, h.options.env);
+  for (const call of h.calls.slice(1)) assert.deepEqual(call.options.env, h.options.env);
+});
+
+test('AI fixtures use only their synthetic local runtime and other groups disable inherited AI configuration', async () => {
+  const h = harness(report(['activity-ai.spec.ts', 'rooms.spec.ts']));
+  Object.assign(h.options.env, { SKAO_AI_MODEL: 'a-real-model', SKAO_AI_URL: 'http://127.0.0.1:11434', SKAO_AI_SOURCES_FILE: '/private/references.json' });
+  await runBrowserTests([], h.options);
+  assert.equal(h.calls[1].options.env.SKAO_AI_MODEL, 'browser-local');
+  assert.equal(h.calls[1].options.env.SKAO_AI_URL, 'http://127.0.0.1:11439');
+  assert.equal(h.calls[1].options.env.SKAO_AI_SOURCES_FILE, '/project/client/tests/fixtures/activity-ai-sources.json');
+  assert.equal(h.calls[2].options.env.SKAO_AI_MODEL, undefined);
+  assert.equal(h.calls[2].options.env.SKAO_AI_URL, undefined);
+  assert.equal(h.calls[2].options.env.SKAO_AI_SOURCES_FILE, undefined);
+  assert.equal(h.options.env.SKAO_AI_MODEL, 'a-real-model');
 });
 
 test('propagates discovery failure and runs no group', async () => {

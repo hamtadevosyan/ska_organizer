@@ -157,11 +157,12 @@ test('forged headers and GET bodies do not override the live assigned class', as
 
 test('class projection HEAD is supported, and every mutation is rejected without writing', async () => {
   const own = await room(); await viewer(own);
+  const beforeAudits = await db.listAudit();
   for (const path of ['', '/children', '/activities?weekStart=' + weekStart, '/meals?weekStart=' + weekStart]) {
     expect((await request(app).head('/api/classroom' + path)).status).toBe(200);
     expect((await request(app).post('/api/classroom' + path).send({ roomId: own.id })).body.error.code).toBe('CLASSROOM_READ_ONLY');
   }
-  expect(await db.countChildren()).toBe(0); expect(await db.listAudit()).toHaveLength(1);
+  expect(await db.countChildren()).toBe(0); expect(await db.listAudit()).toEqual(beforeAudits);
 });
 
 test('all operational reads, HEAD requests and draft generation remain closed to a Class viewer', async () => {

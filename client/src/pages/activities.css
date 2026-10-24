@@ -8,6 +8,23 @@
 .planner-status-row, .planner-browse, .planner-entry-top { justify-content: space-between; }
 .planner-reuse-actions, .planner-action-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 .planner-generate-trigger { color: #62419a; border-color: #d8c5f0; background: linear-gradient(120deg, #f4ebff, #fff4df); }
+.planner-ai-trigger { color: #5143a3; border-color: #c6c1f1; background: linear-gradient(120deg, #eee8ff, #e7f3ff 65%, #fff0c7); }
+.planner-ai-settings, .planner-ai-results, .planner-ai-edit { display: grid; min-width: 0; gap: 14px; }
+.planner-ai-settings { padding: 16px; border: 1px solid #d9d0f0; border-radius: 18px; background: #fcfaff; }
+.planner-ai-card { display: grid; min-width: 0; gap: 10px; padding: 18px; border: 1px solid #d8cdf1; border-left: 5px solid #b29ae4; border-radius: 19px; background: linear-gradient(135deg, #faf4ff, #f6faff); }
+.planner-ai-card:nth-of-type(3n + 2) { background: #fff8e6; border-color: #efddab; border-left-color: #e5be66; }
+.planner-ai-card:nth-of-type(3n) { background: #fff0e7; border-color: #edcdb6; border-left-color: #e9ac80; }
+.planner-ai-number { color: #7b5eac; font-size: 13px; font-weight: 750; }
+.planner-ai-text, .planner-ai-sources blockquote { white-space: pre-wrap; overflow-wrap: anywhere; }
+.planner-ai-card > button { justify-self: start; }
+.planner-ai-sources { min-width: 0; padding: 16px; border: 1px solid #d0e0f1; border-radius: 17px; background: #f2f8ff; }
+.planner-ai-sources summary { display: flex; align-items: center; gap: 9px; }
+.planner-ai-sources section { min-width: 0; margin-top: 16px; padding-top: 14px; border-top: 1px solid #d4e1ef; }
+.planner-ai-sources blockquote { margin-top: 9px; padding-left: 12px; border-left: 3px solid #9ebce0; font-size: 14px; }
+.planner-ai-unavailable { display: grid; gap: 10px; padding: 16px; border: 1px solid #e8d5ab; border-radius: 17px; background: #fff8e8; }
+.planner-ai-unavailable > button { justify-self: start; }
+.planner-ai fieldset:disabled { opacity: .65; }
+.planner-ai :where(input:not([type='checkbox']), select, textarea) { width: 100%; min-width: 0; min-height: 46px; font-size: 16px; }
 .planner-generation-intro { display: flex; gap: 14px; align-items: start; padding: 16px; border-radius: 18px; background: linear-gradient(120deg, #f3eaff, #edf6ff 65%, #fff3d7); color: #5f3b8b; }
 .planner-generation-intro svg { flex: 0 0 26px; margin-top: 4px; }
 .planner-generation-intro strong { font-size: 19px; }

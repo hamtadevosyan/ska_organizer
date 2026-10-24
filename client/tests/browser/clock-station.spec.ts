@@ -4,6 +4,10 @@ import { api, authenticatedApi, origin, adminPassword, recordStaffClock } from '
 
 for (const width of [320, 1280]) test(`a paired public PIN station records arrivals and departures without exposing the signed-in app at ${width}px`, async ({ page, browser }) => {
   test.setTimeout(90_000); await page.setViewportSize({ width, height: 1000 });
+  // Install before navigation so the station's privacy timers are controllable.
+  // Server timestamps, credential expiry and actual HTTP requests remain real.
+  await page.clock.install({ time: Date.now() - 60_000 });
+  await page.clock.pauseAt(Date.now());
   const managementContext = await browser.newContext();
   try {
     const management = await managementContext.newPage(); const http = await authenticatedApi(management, { freshSession: true });
@@ -37,19 +41,36 @@ for (const width of [320, 1280]) test(`a paired public PIN station records arriv
     const publicBefore = privateRequests.length;
     await page.getByLabel('6-digit staff PIN', { exact: true }).fill('999999'); await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('alert')).toHaveText('PIN not recognized. Try again.'); await expect(page.getByLabel('6-digit staff PIN', { exact: true })).toHaveValue('');
+    // A slow runner must not consume the four-second confirmation while it is
+    // waiting for the clock response or before it can inspect the saved result.
+    async function clock(action: 'checkin' | 'checkout') {
+      const saved = page.waitForResponse(response => response.url() === api + '/station-clock/clock' && response.request().method() === 'POST');
+      await page.getByRole('button', { name: action === 'checkin' ? 'Check in' : 'Check out', exact: true }).click();
+      const response = await saved;
+      expect(response.status(), 'The station must persist ' + action + ' before showing confirmation').toBe(200);
+      expect(await response.json()).toEqual({ data: { action, replayed: false } });
+      await expect(page.getByRole('heading', { name: action === 'checkin' ? 'You’re checked in' : 'You’re checked out', exact: true })).toBeVisible();
+    }
     await page.getByLabel('6-digit staff PIN', { exact: true }).fill(pin); await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Check out', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Check in', exact: true }).click(); await expect(page.getByRole('heading', { name: 'You’re checked in', exact: true })).toBeVisible();
+    await clock('checkin');
     await page.getByRole('button', { name: 'Done', exact: true }).click(); await expect(page.getByRole('heading', { name, exact: true })).toHaveCount(0);
     await page.getByLabel('6-digit staff PIN', { exact: true }).fill(pin); await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Check out', exact: true })).toBeEnabled(); await expect(page.getByRole('button', { name: 'Check in', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Check out', exact: true }).click(); await expect(page.getByRole('heading', { name: 'You’re checked out', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Enter your PIN', exact: true })).toBeVisible({ timeout: 6000 });
+    await clock('checkout');
+    await page.clock.runFor(3999);
+    await expect(page.getByRole('heading', { name: 'You’re checked out', exact: true })).toBeVisible();
+    await expect(page.getByText('Thank you, ' + name + '!', { exact: true })).toBeVisible();
+    await page.clock.runFor(1);
+    await expect(page.getByRole('heading', { name: 'Enter your PIN', exact: true })).toBeVisible();
+    await expect(page.getByLabel('6-digit staff PIN', { exact: true })).toHaveValue('');
+    await expect(page.getByText('Thank you, ' + name + '!', { exact: true })).toHaveCount(0);
     expect(privateRequests.slice(publicBefore)).toEqual([]);
     expect(await page.locator('body').textContent()).not.toMatch(/hours|payroll|hourly|tax|arrived|departed/i);
     expect(await page.locator('main').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(width + 1);
     const ledger = (await (await http.get(api + '/payroll/staff/' + employee.id)).json()).data.ledger;
     expect(ledger.sessions).toHaveLength(1); expect(ledger.sessions[0].end).toBeTruthy(); expect(ledger.sessions[0].actorType).toBe('clock-station');
+    expect(Date.parse(ledger.sessions[0].end)).toBeGreaterThan(Date.parse(ledger.sessions[0].start));
     expect(ledger.history.map((event: { type: string }) => event.type)).toEqual(['checkin', 'checkout']);
     const stations = (await (await http.get(api + '/clock-stations')).json()).data.stations; const station = stations.find((value: { name: string }) => value.name === stationName); expect(station).toBeTruthy();
     await page.screenshot({ path: test.info().outputPath('clock-station-' + width + '.png'), fullPage: true });

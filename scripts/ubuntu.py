@@ -189,7 +189,59 @@ def read_source_environment(repo, node):
     code = "process.stdout.write(JSON.stringify(require('node:util').parseEnv(require('node:fs').readFileSync(process.argv[1],'utf8'))))"
     values = json.loads(run([node, '-e', code, str(path)], capture=True).stdout)
     db = database_settings(values)
-    return {'DATABASE_URL': db['url'], 'DB_SCHEMA': db['schema'], 'FACILITY_TIME_ZONE': db['zone']}
+    return {'DATABASE_URL': db['url'], 'DB_SCHEMA': db['schema'], 'FACILITY_TIME_ZONE': db['zone'],
+            **activity_ai_environment(values, repo=repo)}
+
+
+AI_ENV_KEYS = ('SKAO_AI_MODEL', 'SKAO_AI_URL', 'SKAO_AI_TIMEOUT_MS', 'SKAO_AI_SOURCES_FILE')
+
+
+def activity_ai_environment(values, *, repo=None):
+    """Allow only explicit local-AI settings; never reset other installed settings."""
+    result = {key: values[key] for key in AI_ENV_KEYS if key in values}
+    for key, value in result.items():
+        if not isinstance(value, str) or any(c in value for c in '\r\n\0'):
+            raise Failure('A local AI setting is invalid. Review the SKAO_AI settings; no settings were changed.')
+    model = result.get('SKAO_AI_MODEL', '')
+    if model and (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}', model) or
+                  any(part in model.lower() for part in ('cloud', 'remote')) or '://' in model or re.search(r':.*:', model)):
+        raise Failure('SKAO_AI_MODEL must name an installed local model, not a cloud model or URL.')
+    if result.get('SKAO_AI_URL'):
+        try:
+            url = urlsplit(result['SKAO_AI_URL'])
+            if (url.scheme != 'http' or url.hostname not in ('127.0.0.1', '::1') or
+                    url.username is not None or url.password is not None or url.query or url.fragment or
+                    url.path not in ('', '/') or not 1 <= (url.port or 80) <= 65535):
+                raise ValueError()
+        except ValueError:
+            raise Failure('SKAO_AI_URL must use a literal loopback HTTP address, with no credentials or extra path.') from None
+    if result.get('SKAO_AI_TIMEOUT_MS') and (not re.fullmatch(r'[0-9]+', result['SKAO_AI_TIMEOUT_MS']) or
+                                             not 1000 <= int(result['SKAO_AI_TIMEOUT_MS']) <= 300000):
+        raise Failure('SKAO_AI_TIMEOUT_MS must be a whole number from 1000 to 300000.')
+    if result.get('SKAO_AI_SOURCES_FILE'):
+        path = Path(result['SKAO_AI_SOURCES_FILE'])
+        # Native services deliberately cannot read home folders. References live
+        # outside the checkout/releases and are maintained separately by admin.
+        forbidden = [ROOT, Path('/home'), Path('/root'), Path('/run/user')]
+        if repo is not None:
+            forbidden.append(Path(repo))
+        resolved = path.resolve()
+        if not path.is_absolute() or any(resolved.is_relative_to(base.resolve()) for base in forbidden):
+            raise Failure('Keep the native AI references outside the checkout and home folders, for example /etc/skao/ai/references.json. Make the reviewed file readable by skao-api.')
+    return result
+
+
+def read_activity_ai_environment(repo, node):
+    path = repo / 'server/.env'
+    if not path.is_file():
+        return {}
+    code = "process.stdout.write(JSON.stringify(require('node:util').parseEnv(require('node:fs').readFileSync(process.argv[1],'utf8'))))"
+    values = json.loads(run([node, '-e', code, str(path)], capture=True).stdout)
+    return activity_ai_environment(values, repo=repo)
+
+
+def merge_activity_ai_environment(environment, changes):
+    return {**environment, **activity_ai_environment(changes)}
 
 
 def server_environment(cfg):
@@ -276,6 +328,7 @@ def public_deploy(args):
         print(f"Host address: {metadata['ip']} ({metadata['interface']}). Keep this address stable and its DNS record in sync.", flush=True)
         root_call('_packages')
     else:
+        metadata['ai_environment'] = read_activity_ai_environment(repo, node)
         root_call('_preflight')
     with tempfile.TemporaryDirectory(prefix='skao-build-') as directory:
         stage = Path(directory)
@@ -673,6 +726,7 @@ def install(stage):
         cfg = existing or configuration()
         if cfg['node'] != request['node']:
             raise Failure('The installed Node path changed; review service settings before updating.')
+        cfg = {**cfg, 'environment': merge_activity_ai_environment(cfg['environment'], request.get('ai_environment', {}))}
     listener_preflight(existing or cfg)
     create_accounts()
     release = copy_release(stage, request['revision'])
@@ -690,6 +744,10 @@ def install(stage):
     run(['dnsmasq', '--test', '--conf-file=' + str(CONF / 'dnsmasq.conf')])
     apply_firewall()
     allow_existing_ufw(cfg)
+    if request['operation'] != 'setup':
+        # Only the allowlisted AI keys above can change during update. Database,
+        # network and certificate settings continue using the installed values.
+        secure_write(CONF / 'config.json', json.dumps(cfg, indent=2) + '\n')
     activate(cfg, release)
     print(f"\nReady: https://{cfg['domain']}\nLocal DNS address for the router/test device: {cfg['ip']}\n"
           f"For the current pilot, set Cloudflare's app A record to {cfg['ip']} with DNS only (gray cloud).\n"
@@ -864,7 +922,8 @@ def management(command):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='SKAO native Ubuntu setup and maintenance (no Docker).')
+    parser = argparse.ArgumentParser(description='SKAO native Ubuntu setup and maintenance (no Docker).',
+                                     epilog='Read-only local AI diagnostics: bash SKAO.sh ai-check (no sudo).')
     sub = parser.add_subparsers(dest='command', required=True, metavar='COMMAND')
     sub.add_parser('build', help='validate a temporary production build without sudo, host setup, certificates or database access')
     setup = sub.add_parser('setup', help='build/install native HTTPS and local DNS; prompts locally for Cloudflare token')
