@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
@@ -139,7 +139,44 @@ test('setting a PIN refreshes its status and clears the secret without displayin
   expect(screen.getByRole('button', { name: 'Reset PIN for Maya' })).toBeEnabled();
   expect(screen.queryByText('123456')).not.toBeInTheDocument();
   expect(screen.queryByText('NEVER-DISPLAY-RAW-RESPONSE')).not.toBeInTheDocument();
-  expect(report).toHaveBeenLastCalledWith(false, false);
+  // The saved UI can commit before the navigation guard's passive effect.
+  await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false));
+});
+
+test('PIN save keeps navigation and duplicate writes blocked until the status refresh finishes', async () => {
+  let finishSave!: (value: { data: { data: unknown } }) => void;
+  let finishRefresh!: (value: { data: { data: SetupData } }) => void;
+  vi.mocked(axios.post).mockReturnValueOnce(new Promise(resolve => { finishSave = resolve; }));
+  await open();
+  vi.mocked(axios.get).mockReturnValueOnce(new Promise(resolve => { finishRefresh = resolve; }));
+  const input = submitPin();
+  const form = input.closest('form')!;
+  expect(report).toHaveBeenLastCalledWith(true, true);
+  expect(screen.getByRole('button', { name: 'Set PIN for Maya' })).toBeDisabled();
+  fireEvent.submit(form);
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  expect(axios.get).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    finishSave({ data: { data: { pin: '123456', secret: 'NEVER-DISPLAY-RAW-RESPONSE' } } });
+  });
+  expect(axios.get).toHaveBeenCalledTimes(2);
+  expect(report).toHaveBeenLastCalledWith(true, true);
+  expect(screen.getByRole('button', { name: 'Set PIN for Maya' })).toBeDisabled();
+  expect(screen.queryByText('PIN saved for Maya.')).not.toBeInTheDocument();
+  expect(screen.queryByText('NEVER-DISPLAY-RAW-RESPONSE')).not.toBeInTheDocument();
+  fireEvent.submit(form);
+  expect(axios.post).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    data.staff[0].pinConfigured = true;
+    finishRefresh({ data: { data: structuredClone(data) } });
+  });
+  expect(screen.getByText('PIN saved for Maya.')).toBeVisible();
+  expect(input).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Reset PIN for Maya' })).toBeEnabled();
+  await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false));
+  expect(axios.post).toHaveBeenCalledTimes(1);
 });
 
 test('a rejected PIN change clears the secret and leaves an explicit retry action', async () => {
@@ -150,7 +187,7 @@ test('a rejected PIN change clears the secret and leaves an explicit retry actio
   expect(input).toHaveValue('');
   expect(screen.getByRole('button', { name: 'Set PIN for Maya' })).toBeEnabled();
   expect(screen.queryByText('PIN-RAW-SECRET-123456')).not.toBeInTheDocument();
-  expect(report).toHaveBeenLastCalledWith(false, false);
+  await waitFor(() => expect(report).toHaveBeenLastCalledWith(false, false));
 });
 
 test('disabling a PIN sends null, clears its draft and refreshes the available action', async () => {
