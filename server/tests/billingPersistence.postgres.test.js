@@ -106,7 +106,7 @@ test('billing migration preserves populated child records and enforces native ow
         dateOfBirth: '2022-05-06', active: false, roomId: null, createdAt: now, updatedAt: now }], { transaction });
     });
     const before = await connection.query(`SELECT * FROM ${quoted('Children')}`, { type: QueryTypes.SELECT });
-    expect(await migrate(connection, schema)).toEqual(['029-child-billing']);
+    expect(await migrate(connection, schema)).toEqual(['029-child-billing', '030-ccrc-statements']);
     expect(await connection.query(`SELECT * FROM ${quoted('Children')}`, { type: QueryTypes.SELECT })).toEqual(before);
     expect(await migrate(connection, schema)).toEqual([]);
     const insert = (childId, data, version) => connection.query(`INSERT INTO ${quoted('ChildBillingRecords')}

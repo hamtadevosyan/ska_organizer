@@ -396,6 +396,32 @@ def listener_preflight(cfg=None):
                     raise Failure(f'API port 3001 is occupied at {fields[3]}. Stop the manually started Node server before setup.')
 
 
+def ccrc_tools_ready():
+    tools = ('pdfinfo', 'pdftotext', 'pdftoppm', 'pdfimages', 'tesseract', 'prlimit')
+    if any(shutil.which(tool) is None for tool in tools):
+        return False
+    probe = ('from PIL import Image, ImageOps; '
+             'assert callable(ImageOps.exif_transpose); '
+             'assert getattr(Image, "Resampling", Image).LANCZOS is not None')
+    if run(['/usr/bin/python3', '-c', probe], check=False, quiet=True).returncode:
+        return False
+    languages = run(['tesseract', '--list-langs'], capture=True, check=False)
+    return languages.returncode == 0 and 'eng' in languages.stdout.splitlines()
+
+
+def ensure_ccrc_tools():
+    """Provision local reading before activating either a new or updated release."""
+    if not ccrc_tools_ready():
+        print('Installing local CCRC PDF and photo reading prerequisites.', flush=True)
+        run(['apt-get', '--error-on=any', 'update'])
+        run(['apt-get', '-o', f'DPkg::Lock::Timeout={APT_LOCK_TIMEOUT}', 'install', '-y',
+             '--no-install-recommends', 'poppler-utils', 'tesseract-ocr',
+             'tesseract-ocr-eng', 'util-linux', 'python3-pil'])
+        if not ccrc_tools_ready():
+            raise Failure('Local CCRC reading tools failed verification. Resolve the package error and rerun SKAO.sh setup/update.')
+    print('Local CCRC PDF and photo reading verified.', flush=True)
+
+
 def packages():
     check_managed()
     cfg = configuration() if (CONF / 'config.json').exists() else None
@@ -429,7 +455,7 @@ def packages():
         run(['apt-get', '-o', f'DPkg::Lock::Timeout={APT_LOCK_TIMEOUT}', 'install', '-y',
              'caddy', 'certbot', 'python3-certbot-dns-cloudflare', 'dnsmasq-base', 'dnsutils',
              'nftables', 'postgresql-client', 'build-essential', 'python3', 'ca-certificates',
-             'curl', 'openssl', 'iproute2', 'tesseract-ocr', 'tesseract-ocr-eng'])
+             'curl', 'openssl', 'iproute2', 'poppler-utils', 'tesseract-ocr', 'tesseract-ocr-eng', 'util-linux', 'python3-pil'])
     except Failure as error:
         raise Failure(f'{error} Prerequisite installation did not complete. '
                       'If APT still reports a lock, let the other package operation finish and rerun setup. '
@@ -728,6 +754,7 @@ def install(stage):
             raise Failure('The installed Node path changed; review service settings before updating.')
         cfg = {**cfg, 'environment': merge_activity_ai_environment(cfg['environment'], request.get('ai_environment', {}))}
     listener_preflight(existing or cfg)
+    ensure_ccrc_tools()
     create_accounts()
     release = copy_release(stage, request['revision'])
     HELPER.parent.mkdir(parents=True, exist_ok=True)

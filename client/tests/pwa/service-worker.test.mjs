@@ -187,13 +187,16 @@ test('API, credentials, writes, other origins and unknown/query asset URLs never
     '/api/clock-stations', '/api/station-clock/session', '/api/station-clock/identify', '/api/station-clock/clock',
     '/api/billing', '/api/billing/alerts', '/api/billing/children/private-child',
     '/api/billing/children/private-child/payments', '/api/billing/children/private-child/profile',
+    '/api/billing/statements', '/api/billing/statements/private-statement',
+    '/api/billing/statements/private-statement/content', '/api/billing/statements/private-statement/content?download=1',
+    '/api/billing/statements/private-statement/review', '/api/billing/statements/private-statement/post',
     '/api/ready', '/assets/private.json', 'https://elsewhere.test/assets/private.js', manifest[0].url + '?private=value'];
   for (const path of paths) {
     assert.equal(sw.dispatch(path).response, undefined, path);
     assert.equal(sw.dispatch(path, {}, true).response, undefined, path);
   }
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']) {
-    for (const endpoint of ['/api/attendance/checkin', '/api/station-clock/identify', '/api/station-clock/clock', '/api/work-time/staff/employee/clock', '/api/billing/children/private-child/payments', '/api/billing/children/private-child/charges']) {
+    for (const endpoint of ['/api/attendance/checkin', '/api/station-clock/identify', '/api/station-clock/clock', '/api/work-time/staff/employee/clock', '/api/billing/children/private-child/payments', '/api/billing/children/private-child/charges', '/api/billing/statements', '/api/billing/statements/private-statement/review', '/api/billing/statements/private-statement/post']) {
     const { request, response } = sw.dispatch(endpoint, {
       method, headers: { 'X-CSRF-Token': 'synthetic-security-token', Cookie: 'synthetic-session' },
     });
@@ -211,7 +214,7 @@ test('offline route reload returns only the public shell and never stores route/
   await sw.lifecycle('install');
   const before = sw.keys();
   sw.network(async () => { throw new TypeError('Synthetic offline'); });
-  for (const path of ['/attendance?room=sensitive-room-id', '/staff/work-time', '/staff/payroll?employee=private-id', '/staff/clock', '/staff/clock-station', '/time-clock', '/billing?child=private-child']) {
+  for (const path of ['/attendance?room=sensitive-room-id', '/staff/work-time', '/staff/payroll?employee=private-id', '/staff/clock', '/staff/clock-station', '/time-clock', '/billing?child=private-child', '/billing/ccrc-statements?statement=private-statement']) {
     const response = await sw.dispatch(path, {}, true).response;
     assert.equal(await response.text(), bodies.get('/index.html').toString());
   }

@@ -3,9 +3,9 @@ name: Server persistence tests
 on:
   push:
     branches: [main, development, 'feature/**']
-    paths: ['server/**', '.github/workflows/server-tests.yml']
+    paths: ['server/**', 'scripts/setup-ccrc-ocr.sh', '.github/workflows/server-tests.yml']
   pull_request:
-    paths: ['server/**', '.github/workflows/server-tests.yml']
+    paths: ['server/**', 'scripts/setup-ccrc-ocr.sh', '.github/workflows/server-tests.yml']
   workflow_dispatch:
 
 permissions:
@@ -51,8 +51,10 @@ jobs:
           CREATE ROLE skao_ci_test WITH LOGIN PASSWORD 'ci-test-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
           ALTER DATABASE ska_organizer_test OWNER TO skao_ci_test;
           SQL
-      - name: Install local recipe photo reader
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+      - name: Install local PDF, camera and recipe reading tools
+        run: |
+          bash ../scripts/setup-ccrc-ocr.sh
+          python3 -c 'from PIL import Image, ImageOps'
       - name: Mock API suite
         run: npm test -- --silent
       - name: PostgreSQL API and migration suite

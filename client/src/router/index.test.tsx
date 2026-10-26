@@ -7,6 +7,7 @@ import AppRoutes from './index';
 
 const mounted = vi.hoisted(() => vi.fn());
 vi.mock('../pages/Accounts', () => ({ default: () => { mounted('accounts'); return <p>Operational page</p>; } }));
+vi.mock('../pages/CCRCStatements', () => ({ default: () => { mounted('ccrc-statements'); return <p>Private CCRC statement page</p>; } }));
 vi.mock('../pages/Billing', () => ({ default: () => { mounted('billing'); return <p>Private billing page</p>; } }));
 vi.mock('../pages/RegistrationForms', () => ({ default: () => { mounted('forms'); return <p>Operational page</p>; } }));
 vi.mock('../pages/Rooms', () => ({ default: () => { mounted('rooms'); return <p>Operational page</p>; } }));
@@ -32,7 +33,7 @@ vi.mock('../pages/TeacherCare', () => ({ default: ({ section }: { section: strin
 
 function CurrentPath() { const location = useLocation(); return <output aria-label="Current path">{location.pathname + location.search + location.hash}</output>; }
 
-test.each(['/dashboard', '/children', '/billing', '/rooms/another-class', '/attendance', '/activities', '/meals', '/staff', '/inventory', '/purchasing', '/receiving', '/reports', '/accounts', '/registration-forms', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station', '/unknown'])('Class viewer deep link %s redirects before mounting an operational page', async path => {
+test.each(['/dashboard', '/children', '/billing', '/billing/ccrc-statements', '/rooms/another-class', '/attendance', '/activities', '/meals', '/staff', '/inventory', '/purchasing', '/receiving', '/reports', '/accounts', '/registration-forms', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station', '/unknown'])('Class viewer deep link %s redirects before mounting an operational page', async path => {
   mounted.mockClear();
   render(<SignedIn account={{ ...testAccount, role: 'viewer', roomId: 'own-class' }}><MemoryRouter initialEntries={[path]}>
     <AppRoutes /><CurrentPath />
@@ -64,7 +65,7 @@ test.each(['admin', 'editor'] as const)('%s retains the ordinary operational rou
 });
 
 
-test.each(['/staff', '/children', '/billing', '/attendance', '/accounts', '/inventory', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station'])('Teacher deep link %s cannot mount global management', async path => {
+test.each(['/staff', '/children', '/billing', '/billing/ccrc-statements', '/attendance', '/accounts', '/inventory', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station'])('Teacher deep link %s cannot mount global management', async path => {
   mounted.mockClear();
   render(<SignedIn account={{ ...testAccount, role: 'teacher', roomId: 'own-class' }}><MemoryRouter initialEntries={[path]}><AppRoutes /><CurrentPath /></MemoryRouter></SignedIn>);
   expect(await screen.findByRole('heading', { name: 'Class overview' })).toBeVisible();
@@ -144,4 +145,18 @@ test('administrator opens tuition while an editor redirects before mounting the 
   expect(await screen.findByText('Operational page')).toBeVisible();
   expect(mounted).not.toHaveBeenCalledWith('billing');
   expect(screen.getByLabelText('Current path')).toHaveTextContent('/children');
+});
+
+
+test.each(['admin', 'editor', 'teacher', 'viewer'] as const)('%s opens CCRC statements only with administrator access', async role => {
+  mounted.mockClear();
+  render(<SignedIn account={{ ...testAccount, role }}><MemoryRouter initialEntries={['/billing/ccrc-statements?statement=private-import']}><AppRoutes /><CurrentPath /></MemoryRouter></SignedIn>);
+  if (role === 'admin') {
+    expect(screen.getByText('Private CCRC statement page')).toBeVisible();
+    expect(mounted).toHaveBeenCalledWith('ccrc-statements');
+  } else {
+    expect(mounted).not.toHaveBeenCalledWith('ccrc-statements');
+    expect(screen.queryByText('Private CCRC statement page')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Current path')).not.toHaveTextContent('/billing/ccrc-statements');
+  }
 });

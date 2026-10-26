@@ -48,7 +48,7 @@ Changes use a child billing version and request identifier. A stale edit is reje
 
 Financial data and drafts are excluded from the service worker's public cache. Signing out, losing session access or leaving the protected app clears protected in-memory content. PostgreSQL migration **029-child-billing** adds a separate child billing table and preserves existing child, attendance and payroll data. Normal database backups include the billing records; no separate payroll key is needed for this feature.
 
-CCRC statement upload and extraction is **SKAO-113**. SKAO-112 provides its payment ledger but does not import files.
+Use **Tuition → Import CCRC statement** to upload a private PDF or image, review its extracted pages and payment lines, and explicitly register the actual receipts. See [CCRC payment statements](ccrc-statements.md) for local reading, manual fallback, duplicate protection and source history. Importing receipts leaves the separate monthly CCRC review pending until the administrator confirms that month's parent balance and due date.
 
 ## API and validation
 

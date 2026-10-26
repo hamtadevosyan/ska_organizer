@@ -62,6 +62,30 @@ exports.open=()=>{if(process.env.PROBE_CASE==='KEY_MISMATCH')throw Error('SYNTHE
                 self.assertNotIn('SYNTHETIC-PRIVATE', result.stdout + result.stderr)
 
 
+class CcrcDeploymentTests(unittest.TestCase):
+    def test_ready_tools_do_not_touch_apt(self):
+        with patch.object(u, 'ccrc_tools_ready', return_value=True), patch.object(u, 'run') as run:
+            u.ensure_ccrc_tools()
+        run.assert_not_called()
+
+    def test_missing_tools_install_and_verify_before_continuing(self):
+        with patch.object(u, 'ccrc_tools_ready', side_effect=[False, True]), patch.object(u, 'run') as run:
+            u.ensure_ccrc_tools()
+        self.assertEqual(run.call_args_list[0].args[0], ['apt-get', '--error-on=any', 'update'])
+        self.assertIn('python3-pil', run.call_args_list[1].args[0])
+        self.assertIn('DPkg::Lock::Timeout=600', run.call_args_list[1].args[0])
+
+    def test_failed_install_stops_deployment(self):
+        with patch.object(u, 'ccrc_tools_ready', return_value=False), patch.object(u, 'run', side_effect=u.Failure('APT failed')):
+            with self.assertRaises(u.Failure):
+                u.ensure_ccrc_tools()
+
+    def test_failed_verification_stops_deployment(self):
+        with patch.object(u, 'ccrc_tools_ready', return_value=False), patch.object(u, 'run'):
+            with self.assertRaises(u.Failure):
+                u.ensure_ccrc_tools()
+
+
 class NativeTests(unittest.TestCase):
     def setUp(self):
         self.contexts = ExitStack()

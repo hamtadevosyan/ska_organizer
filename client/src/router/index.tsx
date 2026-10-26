@@ -18,6 +18,7 @@ import Reports from "../pages/Reports";
 import Classroom from "../pages/Classroom";
 import TeacherCare from "../pages/TeacherCare";
 import Billing from "../pages/Billing";
+import CCRCStatements from "../pages/CCRCStatements";
 import { useAuth } from "../auth/context";
 
 import WorkTime from "../pages/WorkTime";
@@ -54,6 +55,7 @@ export default function AppRoutes() {
       <Route path="/rooms" element={<Rooms />} />
       <Route path="/rooms/:roomId" element={<RoomRoster />} />
       <Route path="/children" element={<Children />} />
+      <Route path="/billing/ccrc-statements" element={account?.role === 'admin' ? <CCRCStatements /> : <Navigate to="/children" replace />} />
       <Route path="/billing" element={account?.role === 'admin' ? <Billing /> : <Navigate to="/children" replace />} />
       <Route path="/attendance" element={<Attendance />} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

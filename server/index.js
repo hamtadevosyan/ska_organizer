@@ -23,6 +23,7 @@ const registrationForms = require('./routes/registrationForms');
 registrationForms.mountUploads(app);
 const staffDocuments = require('./routes/staffDocuments');
 staffDocuments.mountUploads(app);
+require('./routes/ccrcStatements').mount(app);
 // Reviewed purchasing previews carry signed source snapshots. Authenticate and
 // authorize before accepting their bounded, larger request bodies.
 app.use('/api/purchasing', requireSession, requireOperationalAccess,

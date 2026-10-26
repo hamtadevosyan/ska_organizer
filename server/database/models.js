@@ -298,6 +298,16 @@ module.exports = (sequelize) => {
     data: { type: DataTypes.JSONB, allowNull: false },
     version: { type: DataTypes.INTEGER, allowNull: false },
   }, { tableName: 'ChildBillingRecords' });
+  const CcrcStatementImport = sequelize.define('CcrcStatementImport', {
+    id: { type: DataTypes.UUID, primaryKey: true, allowNull: false, defaultValue: DataTypes.UUIDV4 },
+    fingerprint: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    filename: { type: DataTypes.STRING(200), allowNull: false },
+    contentType: { type: DataTypes.STRING(32), allowNull: false },
+    byteLength: { type: DataTypes.INTEGER, allowNull: false },
+    content: { type: DataTypes.BLOB, allowNull: false },
+    data: { type: DataTypes.JSONB, allowNull: false },
+    version: { type: DataTypes.INTEGER, allowNull: false },
+  }, { tableName: 'CcrcStatementImports' });
   const ClockStation = sequelize.define('ClockStation', {
     id: id(), name: { type: DataTypes.STRING(160), allowNull: false },
     credentialHash: { type: DataTypes.STRING(64), allowNull: false, unique: true },
@@ -319,7 +329,7 @@ module.exports = (sequelize) => {
     id: { type: DataTypes.STRING(64), primaryKey: true, allowNull: false },
     startedAt: { type: DataTypes.DATE, allowNull: false }, count: { type: DataTypes.INTEGER, allowNull: false },
   }, { timestamps: false });
-  return { ChildBillingRecord, PayrollRecord, Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
+  return { CcrcStatementImport, ChildBillingRecord, PayrollRecord, Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
     ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision,
     ClockStation, ClockStationPairing, StaffClockPin, ClockStationAttempt };

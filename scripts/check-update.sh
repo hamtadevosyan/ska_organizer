@@ -6,7 +6,7 @@ umask 077
 
 usage() {
   cat <<'HELP'
-Usage: bash scripts/check-update.sh [--inventory | --access | --payroll | --ai | --billing] [--dry-run] [--backup-dir DIR]
+Usage: bash scripts/check-update.sh [--inventory | --access | --payroll | --ai | --billing | --ccrc] [--dry-run] [--backup-dir DIR]
 
 Back up the configured database, verify the archive, apply pending migrations,
 then run server tests, PostgreSQL tests, client tests, build, lint and browser tests.
@@ -16,6 +16,7 @@ then run server tests, PostgreSQL tests, client tests, build, lint and browser t
   --payroll          Run employee clock, private payroll and related access suites.
   --ai               Run local activity AI, planner and related access suites.
   --billing          Run child tuition, payment, overdue-alert and access suites.
+  --ccrc             Run CCRC statement extraction, reviewed posting and privacy suites.
   --dry-run          Print the steps without reading credentials or running them.
   --backup-dir DIR   Backup directory (default: ~/ska_backups).
   --help             Show this help.
@@ -32,6 +33,7 @@ access_only=false
 payroll_only=false
 ai_only=false
 billing_only=false
+ccrc_only=false
 dry_run=false
 backup_dir="${HOME}/ska_backups"
 while (($#)); do
@@ -41,6 +43,7 @@ while (($#)); do
     --payroll) payroll_only=true; shift ;;
     --ai) ai_only=true; shift ;;
     --billing) billing_only=true; shift ;;
+    --ccrc) ccrc_only=true; shift ;;
     --dry-run) dry_run=true; shift ;;
     --backup-dir)
       if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
@@ -53,11 +56,11 @@ while (($#)); do
 done
 
 selected_modes=0
-for selection in "$inventory_only" "$access_only" "$payroll_only" "$ai_only" "$billing_only"; do
+for selection in "$inventory_only" "$access_only" "$payroll_only" "$ai_only" "$billing_only" "$ccrc_only"; do
   if "$selection"; then ((selected_modes+=1)); fi
 done
 if ((selected_modes > 1)); then
-  printf 'Choose only one of --inventory, --access, --payroll, --ai or --billing.\n' >&2
+  printf 'Choose only one of --inventory, --access, --payroll, --ai, --billing or --ccrc.\n' >&2
   exit 2
 fi
 
@@ -98,6 +101,13 @@ if "$billing_only"; then
   postgres_tests+=(-- --runTestsByPath tests/billing.test.js tests/billingMath.test.js tests/billingStorage.test.js tests/billingPersistence.postgres.test.js tests/children.test.js tests/workAccess.test.js)
   client_tests+=(-- src/pages/Billing.test.tsx src/api/billing.test.ts src/components/billing/BillingAlerts.test.tsx src/pages/Children.test.tsx src/components/AppShell.test.tsx src/router/index.test.tsx src/pages/Dashboard.test.tsx src/auth/WorkAccessGate.test.tsx)
   browser_tests+=(-- tests/browser/billing.spec.ts)
+fi
+
+if "$ccrc_only"; then
+  server_tests+=(-- --runTestsByPath tests/ccrcStatements.test.js tests/ccrcStatementExtraction.test.js tests/ccrcStatementParser.test.js tests/ccrcStatementStorage.test.js tests/billing.test.js tests/billingMath.test.js tests/workAccess.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/ccrcStatements.test.js tests/ccrcStatementStorage.test.js tests/ccrcStatements.postgres.test.js tests/billing.test.js tests/billingMath.test.js tests/billingPersistence.postgres.test.js tests/workAccess.test.js)
+  client_tests+=(-- src/pages/CCRCStatements.test.tsx src/pages/CCRCStatements.navigation.test.tsx src/api/ccrcStatements.test.ts src/components/billing/ccrcStatementReview.test.ts src/pages/Billing.test.tsx src/components/billing/BillingAlerts.test.tsx src/router/index.test.tsx src/auth/WorkAccessGate.test.tsx)
+  browser_tests+=(-- tests/browser/ccrc-statements.spec.ts tests/browser/billing.spec.ts)
 fi
 
 current_step='Preflight'
@@ -200,7 +210,23 @@ else
   done
   if ! "$inventory_only" && ! "$access_only" && ! "$payroll_only" && ! "$ai_only"; then
     if ! command -v tesseract >/dev/null 2>&1 || ! tesseract --list-langs 2>/dev/null | grep -qx 'eng'; then
-      printf '%s\n' 'Local recipe OCR is required by the photo-import checks. Run: bash scripts/setup-recipe-ocr.sh' >&2
+      if "$ccrc_only" || ((selected_modes == 0)); then
+        printf '%s\n' 'Local statement OCR with English data is required. Run: bash scripts/setup-ccrc-ocr.sh' >&2
+      else
+        printf '%s\n' 'Local recipe OCR is required by the photo-import checks. Run: bash scripts/setup-recipe-ocr.sh' >&2
+      fi
+      exit 1
+    fi
+  fi
+  if "$ccrc_only" || ((selected_modes == 0)); then
+    for tool in pdfinfo pdftotext pdftoppm pdfimages prlimit python3; do
+      if ! command -v "$tool" >/dev/null 2>&1; then
+        printf 'Local statement reading needs %s. Run: bash scripts/setup-ccrc-ocr.sh\n' "$tool" >&2
+        exit 1
+      fi
+    done
+    if ! python3 -c 'from PIL import Image, ImageOps' >/dev/null 2>&1; then
+      printf '%s\n' 'Local photo orientation support is missing. Run: bash scripts/setup-ccrc-ocr.sh' >&2
       exit 1
     fi
   fi
@@ -233,6 +259,7 @@ if ! "$inventory_only"; then
   pwa_browser_tests=(npm run test:browser:pwa)
   if "$access_only"; then pwa_browser_tests+=(-- tests/pwa-browser/teacher-safety-caching.spec.ts); fi
   if "$payroll_only"; then pwa_browser_tests+=(-- tests/pwa-browser/payroll-caching.spec.ts tests/pwa-browser/clock-station-caching.spec.ts tests/pwa-browser/employee-work-access-caching.spec.ts tests/pwa-browser/teacher-safety-caching.spec.ts); fi
+  if "$ccrc_only"; then pwa_browser_tests+=(-- tests/pwa-browser/ccrc-statement-caching.spec.ts tests/pwa-browser/billing-caching.spec.ts); fi
   run_in 'PWA browser privacy checks (production build)' client env NODE_ENV=test "${pwa_browser_tests[@]}"
 fi
 
