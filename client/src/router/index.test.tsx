@@ -7,6 +7,7 @@ import AppRoutes from './index';
 
 const mounted = vi.hoisted(() => vi.fn());
 vi.mock('../pages/Accounts', () => ({ default: () => { mounted('accounts'); return <p>Operational page</p>; } }));
+vi.mock('../pages/Billing', () => ({ default: () => { mounted('billing'); return <p>Private billing page</p>; } }));
 vi.mock('../pages/RegistrationForms', () => ({ default: () => { mounted('forms'); return <p>Operational page</p>; } }));
 vi.mock('../pages/Rooms', () => ({ default: () => { mounted('rooms'); return <p>Operational page</p>; } }));
 vi.mock('../pages/RoomRoster', () => ({ default: () => { mounted('roster'); return <p>Operational page</p>; } }));
@@ -31,7 +32,7 @@ vi.mock('../pages/TeacherCare', () => ({ default: ({ section }: { section: strin
 
 function CurrentPath() { const location = useLocation(); return <output aria-label="Current path">{location.pathname + location.search + location.hash}</output>; }
 
-test.each(['/dashboard', '/children', '/rooms/another-class', '/attendance', '/activities', '/meals', '/staff', '/inventory', '/purchasing', '/receiving', '/reports', '/accounts', '/registration-forms', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station', '/unknown'])('Class viewer deep link %s redirects before mounting an operational page', async path => {
+test.each(['/dashboard', '/children', '/billing', '/rooms/another-class', '/attendance', '/activities', '/meals', '/staff', '/inventory', '/purchasing', '/receiving', '/reports', '/accounts', '/registration-forms', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station', '/unknown'])('Class viewer deep link %s redirects before mounting an operational page', async path => {
   mounted.mockClear();
   render(<SignedIn account={{ ...testAccount, role: 'viewer', roomId: 'own-class' }}><MemoryRouter initialEntries={[path]}>
     <AppRoutes /><CurrentPath />
@@ -63,7 +64,7 @@ test.each(['admin', 'editor'] as const)('%s retains the ordinary operational rou
 });
 
 
-test.each(['/staff', '/children', '/attendance', '/accounts', '/inventory', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station'])('Teacher deep link %s cannot mount global management', async path => {
+test.each(['/staff', '/children', '/billing', '/attendance', '/accounts', '/inventory', '/work-time', '/payroll', '/staff/work-time', '/staff/payroll', '/staff/clock', '/staff/clock-station'])('Teacher deep link %s cannot mount global management', async path => {
   mounted.mockClear();
   render(<SignedIn account={{ ...testAccount, role: 'teacher', roomId: 'own-class' }}><MemoryRouter initialEntries={[path]}><AppRoutes /><CurrentPath /></MemoryRouter></SignedIn>);
   expect(await screen.findByRole('heading', { name: 'Class overview' })).toBeVisible();
@@ -132,4 +133,15 @@ test.each(['admin', 'editor', 'teacher', 'viewer'] as const)('%s legacy personal
   expect(screen.getByRole('heading', { name: 'Staff check-in has moved' })).toBeVisible();
   expect(screen.queryByRole('button', { name: /check in|check out/i })).not.toBeInTheDocument();
   expect(mounted).not.toHaveBeenCalled();
+});
+
+test('administrator opens tuition while an editor redirects before mounting the financial page', async () => {
+  mounted.mockClear();
+  const view = (role: 'admin' | 'editor') => <SignedIn account={{ ...testAccount, role }}><MemoryRouter initialEntries={['/billing?child=example']}><AppRoutes /><CurrentPath /></MemoryRouter></SignedIn>;
+  const admin = render(view('admin'));
+  expect(screen.getByText('Private billing page')).toBeVisible(); expect(mounted).toHaveBeenCalledWith('billing');
+  admin.unmount(); mounted.mockClear(); render(view('editor'));
+  expect(await screen.findByText('Operational page')).toBeVisible();
+  expect(mounted).not.toHaveBeenCalledWith('billing');
+  expect(screen.getByLabelText('Current path')).toHaveTextContent('/children');
 });

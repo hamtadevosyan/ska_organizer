@@ -1,4 +1,4 @@
-import { Building2, Boxes, ClipboardCheck, FileText, House, PackageCheck, Palette, ShoppingCart, Users, Utensils } from 'lucide-react';
+import { Building2, Boxes, ClipboardCheck, FileText, House, PackageCheck, Palette, ShoppingCart, Users, Utensils, WalletCards } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '../auth/context';
 
@@ -17,6 +17,7 @@ const navigation = {
   receiving: { to: '/receiving', label: 'Receipts', icon: PackageCheck },
   staff: { to: '/staff', label: 'Staff', icon: Users },
   reports: { to: '/reports', label: 'Reports', icon: FileText },
+  billing: { to: '/billing', label: 'Tuition', icon: WalletCards, adminOnly: true },
   accounts: { to: '/accounts', label: 'Accounts', icon: Users, adminOnly: true },
   registrationForms: { to: '/registration-forms', label: 'Registration forms', icon: FileText, adminOnly: true },
 } satisfies Record<string, NavigationItem>;

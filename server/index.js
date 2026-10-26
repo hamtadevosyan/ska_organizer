@@ -42,6 +42,7 @@ app.use('/api/time-clock', payroll.self);
 app.use('/api/work-time', payroll.work);
 app.use('/api/classroom', requireSession, require('./routes/classroom'));
 app.use('/api', requireSession, requireOperationalAccess);
+app.use('/api/billing', require('./routes/billing'));
 app.use('/api/registration-forms', registrationForms.router);
 app.use('/api/staff-compliance', staffDocuments.compliance);
 
@@ -119,18 +120,22 @@ if (require.main === module) {
       // Native deployments bind loopback; Docker/development retain their default.
       const host = process.env.BIND_HOST || undefined;
       const server = app.listen(port, host, () => console.log(`Server running on port ${port}`));
+      const stopBilling = require('./services/billingService').startMaintenance();
       let closing = false;
       const shutdown = () => {
         if (closing) return;
         closing = true;
+        const billingStopped = stopBilling();
         const deadline = setTimeout(() => process.exit(1), 10000);
         deadline.unref();
         server.close(async () => {
+          await billingStopped;
           await db.close?.();
           clearTimeout(deadline);
         });
       };
       server.on('error', async (error) => {
+        await stopBilling();
         console.error(`Could not listen on port ${port} (${error.code}).`);
         await db.close?.();
         process.exitCode = 1;

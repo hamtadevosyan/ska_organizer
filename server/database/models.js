@@ -293,6 +293,11 @@ module.exports = (sequelize) => {
     action: DataTypes.STRING(80), entityId: DataTypes.STRING, occurredAt: DataTypes.DATE,
   }, { timestamps: false });
   const PayrollRecord = sequelize.define('PayrollRecord', { id: id(), staffId: { type: DataTypes.STRING, allowNull: false }, kind: { type: DataTypes.STRING(16), allowNull: false }, ciphertext: { type: DataTypes.TEXT, allowNull: false }, version: { type: DataTypes.INTEGER, allowNull: false } });
+  const ChildBillingRecord = sequelize.define('ChildBillingRecord', {
+    childId: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
+    data: { type: DataTypes.JSONB, allowNull: false },
+    version: { type: DataTypes.INTEGER, allowNull: false },
+  }, { tableName: 'ChildBillingRecords' });
   const ClockStation = sequelize.define('ClockStation', {
     id: id(), name: { type: DataTypes.STRING(160), allowNull: false },
     credentialHash: { type: DataTypes.STRING(64), allowNull: false, unique: true },
@@ -314,7 +319,7 @@ module.exports = (sequelize) => {
     id: { type: DataTypes.STRING(64), primaryKey: true, allowNull: false },
     startedAt: { type: DataTypes.DATE, allowNull: false }, count: { type: DataTypes.INTEGER, allowNull: false },
   }, { timestamps: false });
-  return { PayrollRecord, Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
+  return { ChildBillingRecord, PayrollRecord, Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
     ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision,
     ClockStation, ClockStationPairing, StaffClockPin, ClockStationAttempt };

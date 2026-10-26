@@ -513,3 +513,24 @@ exports.savePayrollRecord = async row => (await get('PayrollRecord', row.id)) ? 
 exports.countPayrollRecords = () => model('PayrollRecord').count({ transaction: transactionContext.getStore() });
 
 exports.firstPayrollRecord = async () => plain(await model('PayrollRecord').findOne({ transaction: transactionContext.getStore() }));
+
+exports.getChildBillingRecord = childId => get('ChildBillingRecord', childId);
+exports.listChildBillingRecords = () => list('ChildBillingRecord', { order: [['childId', 'ASC']] });
+exports.saveChildBillingRecord = async (row, expectedVersion = row?.version - 1) => {
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0 || expectedVersion >= 2147483647 || row?.version !== expectedVersion + 1 ||
+      !row.data || typeof row.data !== 'object' || Array.isArray(row.data)) {
+    throw Object.assign(new Error('A valid billing object and next version are required.'), { status: 400 });
+  }
+  return exports.withAuthLock(async () => {
+    const transaction = transactionContext.getStore();
+    const entity = model('ChildBillingRecord');
+    // The advisory lock protects first creation, before a record exists to lock.
+    const previous = await entity.findByPk(row.childId, { transaction, lock: transaction.LOCK.UPDATE });
+    if ((previous?.version || 0) !== expectedVersion) {
+      throw Object.assign(new Error('This billing record changed. Refresh before saving.'), { status: 409, code: 'BILLING_CONFLICT' });
+    }
+    const values = { childId: row.childId, data: structuredClone(row.data), version: row.version,
+      createdAt: previous?.createdAt || row.createdAt || new Date(), updatedAt: row.updatedAt || new Date() };
+    return plain(previous ? await previous.update(values, { transaction }) : await entity.create(values, { transaction }));
+  });
+};

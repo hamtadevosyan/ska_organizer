@@ -52,7 +52,7 @@ class UpdateCheckSelectionTests(unittest.TestCase):
                 self.assertTrue((REPO / section / path).is_file(), path + ' must exist')
 
     def test_all_focus_modes_remain_mutually_exclusive_before_reading_settings(self):
-        for first, second in itertools.combinations(('--inventory', '--access', '--payroll', '--ai'), 2):
+        for first, second in itertools.combinations(('--inventory', '--access', '--payroll', '--ai', '--billing'), 2):
             with self.subTest(first=first, second=second):
                 result = self.run_check(first, second, '--dry-run')
                 self.assertEqual(result.returncode, 2)
@@ -80,6 +80,24 @@ class UpdateCheckSelectionTests(unittest.TestCase):
                      'tests/authenticatedFixture.test.js', 'tests/recipePhoto.test.js',
                      'tests/classroomAccess.test.js', 'tests/authentication.test.js'):
             self.assertIn(name, section)
+
+    def test_billing_selects_persistence_payments_alerts_and_private_ui_checks(self):
+        result = self.run_check('--billing', '--dry-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        postgres = result.stdout.split('PostgreSQL tests (separate test database)', 1)[1].split('Client component tests', 1)[0]
+        for name in ('tests/billing.test.js', 'tests/billingMath.test.js', 'tests/billingStorage.test.js',
+                     'tests/billingPersistence.postgres.test.js', 'tests/children.test.js', 'tests/workAccess.test.js'):
+            self.assertIn(name, postgres)
+        for name in ('Billing.test.tsx', 'BillingAlerts.test.tsx', 'tests/browser/billing.spec.ts',
+                     'Database backup: pg_dump', 'Apply pending database migrations',
+                     'Client production build', 'Static PWA privacy checks',
+                     'PWA browser privacy checks (production build)'):
+            self.assertIn(name, result.stdout)
+        self.assertNotIn('tests/recipePhotoOcr.test.js', result.stdout)
+        self.assertNotIn('tests/localActivityAi.test.js', result.stdout)
+        for section, output in re.findall(r'  In (server|client): ([^\n]+)', result.stdout):
+            for path in re.findall(r'(?:tests|src)/[A-Za-z0-9_./-]+', output):
+                self.assertTrue((REPO / section / path).is_file(), path + ' must exist')
 
 
 if __name__ == '__main__':

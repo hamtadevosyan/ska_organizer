@@ -27,11 +27,11 @@ exports.createChild = async (req, res, next) => {
   catch (error) { failure(error, res, next); }
 };
 exports.updateChild = async (req, res, next) => {
-  try { childResponse(res, await children.updateChild(req.params.id, req.body)); }
+  try { childResponse(res, await children.updateChild(req.params.id, req.body, req.account)); }
   catch (error) { failure(error, res, next); }
 };
 exports.setEnrollment = async (req, res, next) => {
-  try { childResponse(res, await children.setEnrollment(req.params.id, req.body)); }
+  try { childResponse(res, await children.setEnrollment(req.params.id, req.body, req.account)); }
   catch (error) { failure(error, res, next); }
 };
 exports.assignRoom = async (req, res, next) => {
