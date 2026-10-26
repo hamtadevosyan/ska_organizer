@@ -1,20 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { api, authenticatedApi } from '../browser/auth-helpers';
-import { billingChild, billingData } from '../browser/billing-fixtures';
+import { ccrcBillingChild, billingData } from '../browser/billing-fixtures';
 import type { BillingDetail } from '../browser/billing-fixtures';
 
 test('tuition balances, payment references and drafts never enter offline storage', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 1000 });
   const http = await authenticatedApi(page);
-  const fixture = await billingChild(http, 'PrivateTuition');
+  const fixture = await ccrcBillingChild(http);
   const marker = 'PRIVATE-TUITION-REFERENCE-' + randomUUID().slice(0, 8);
   const monthly = fixture.detail.charges.find(charge => charge.kind === 'monthly')!;
   expect(monthly).toBeTruthy();
   const paid = await billingData<BillingDetail>(await http.post(fixture.path + '/payments', { data: {
-    version: fixture.detail.version, requestId: randomUUID(), payer: 'family', amountCents: 1234,
-    date: fixture.detail.today, method: 'cash', reference: marker, chargeId: monthly.id,
+    version: fixture.detail.version, requestId: randomUUID(), payer: 'ccrc', amountCents: 1234,
+    date: fixture.detail.today, method: 'ccrc', reference: marker, chargeId: monthly.id,
   } }));
   expect(paid.payments).toHaveLength(1);
   const privateResponse = await http.get(fixture.path);

@@ -25,3 +25,16 @@ test('an adjustment retains original amounts and resolves a five-day alert witho
   expect(math.chargeView(charge, [], '2026-10-06')).toMatchObject({ amountCents: 0, outstandingCents: 0, status: 'waived', payers: { family: { overdue: false } } });
   expect(charge.payers.family.amountCents).toBe(20000);
 });
+
+test('a pending service month keeps every cent in the ledger without asserting a fixed subsidy or overdue parent debt', () => {
+  const charge = { id: 'monthly:2026-10', settlementMode: 'ccrc_actual', tuitionCents: 100001, ccrcReview: null, adjustments: [] };
+  const payments = [
+    { id: 'ccrc-receipt', payer: 'ccrc', amountCents: 75049, serviceChargeId: charge.id, serviceMonth: '2026-10', allocations: [{ chargeId: charge.id, amountCents: 75049 }] },
+    { id: 'parent-receipt', payer: 'family', amountCents: 19001, allocations: [{ chargeId: charge.id, amountCents: 19001 }] },
+  ];
+  const pending = math.chargeView(charge, payments, '2026-12-31');
+  expect(pending).toMatchObject({ status: 'awaiting_ccrc', paidCents: 94050, outstandingCents: 5951, ccrcReceivedCents: 75049, ccrcUnappliedCents: 0, payers: { family: { dueDate: null, overdue: false }, ccrc: { outstandingCents: 0 } } });
+  expect(math.totals([pending], payments.map(math.paymentView))).toMatchObject({ chargedCents: 100001, receivedCents: 94050, outstandingCents: 5951, awaitingCcrcCents: 5951, awaitingCcrcCount: 1, familyOutstandingCents: 0, ccrcOutstandingCents: 0, overdueCents: 0 });
+  const settled = math.chargeView({ ...charge, ccrcReview: { familyDueDate: '2026-12-26' } }, payments, '2026-12-31');
+  expect(settled).toMatchObject({ status: 'partial', payers: { family: { outstandingCents: 5951, daysOverdue: 5, overdue: true } } });
+});

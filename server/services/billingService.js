@@ -6,7 +6,7 @@ const v = require('./childDocumentValidation');
 const math = require('./billingMath');
 const empty = () => ({ profile: null, charges: [], payments: [], history: [], requests: [] });
 const stamp = actor => ({ actorId: actor.id, actorName: actor.id ? actor.displayName || actor.username : 'Automatic monthly billing', at: new Date().toISOString() });
-const profileSettings = profile => profile ? Object.fromEntries(['billingStart', 'billingEnd', 'enabled', 'registrationCents', 'effectiveMonth', 'familyCents', 'ccrcCents', 'familyDueDay', 'ccrcDueDay', 'pausedForEnrollment', 'pausedOn'].filter(key => Object.hasOwn(profile, key)).map(key => [key, profile[key]])) : null;
+const profileSettings = profile => profile ? Object.fromEntries(['billingStart', 'billingEnd', 'enabled', 'registrationCents', 'effectiveMonth', 'monthlyCents', 'ccrcManaged', 'familyCents', 'ccrcCents', 'familyDueDay', 'ccrcDueDay', 'pausedForEnrollment', 'pausedOn'].filter(key => Object.hasOwn(profile, key)).map(key => [key, profile[key]])) : null;
 const nameOf = child => [child.firstName, child.lastName].filter(Boolean).join(' ') || child.name || child.id;
 const childDto = child => ({ id: child.id, name: nameOf(child), active: child.active !== false });
 const canonical = value => value && typeof value === 'object' ? Array.isArray(value) ? value.map(canonical) : Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
@@ -52,7 +52,8 @@ function generate(data, child, throughMonth, actor) {
   if (missing.length > 120) throw math.invalid('Generate no more than 120 missing months at a time. Choose an earlier through month first.', 'throughMonth');
   for (const { period, rate } of missing) {
       const charge = { id: 'monthly:' + period, kind: 'monthly', month: period, title: 'Tuition · ' + period, createdAt: new Date().toISOString(),
-        payers: Object.fromEntries(math.payers.map(payer => [payer, { amountCents: rate[payer + 'Cents'], dueDate: math.dueDate(period, rate[payer + 'DueDay']) }])), adjustments: [] };
+        payers: Object.fromEntries(math.payers.map(payer => [payer, { amountCents: Object.hasOwn(rate, 'monthlyCents') ? (payer === 'family' ? rate.monthlyCents : 0) : rate[payer + 'Cents'], dueDate: math.dueDate(period, rate[payer + 'DueDay'] || rate.familyDueDay) }])), adjustments: [],
+        ...(rate.ccrcManaged ? { settlementMode: 'ccrc_actual', tuitionCents: rate.monthlyCents, ccrcReview: null } : {}) };
       data.charges.push(charge); history(data, 'monthly_charge', actor, { chargeId: charge.id, month: period });
   }
   return missing.length;
@@ -96,25 +97,28 @@ exports.summary = token => db.withAuthLock(async () => {
   await auth.audit(actor, 'billing.summary'); return { today, timeZone: time.timeZone(), children: list, totals };
 });
 exports.alerts = token => db.withAuthLock(async () => {
-  const actor = await administrator(token), today = time.dateAt(), items = []; let pendingMonthlyCharges = 0;
+  const actor = await administrator(token), today = time.dateAt(), items = []; let pendingMonthlyCharges = 0, awaitingCcrcCount = 0, awaitingCcrcCents = 0;
   for (const row of await db.listChildBillingRecords()) {
     const child = await db.getChildById(row.childId); if (!child) continue;
     pendingMonthlyCharges += missingMonths(row.data, child, today.slice(0, 7)).length;
-    for (const charge of row.data.charges.map(value => math.chargeView(value, row.data.payments, today))) for (const payer of math.payers) {
+    for (const charge of row.data.charges.map(value => math.chargeView(value, row.data.payments, today))) {
+      if (charge.pendingCcrc) { awaitingCcrcCount++; awaitingCcrcCents += charge.outstandingCents; }
+      for (const payer of math.payers) {
       const amount = charge.payers[payer];
       if (amount.overdue) items.push({ id: encodeURIComponent(child.id) + ':' + encodeURIComponent(charge.id) + ':' + payer,
         childId: child.id, childName: nameOf(child), payer, chargeId: charge.id, title: charge.title, dueDate: amount.dueDate,
         daysOverdue: amount.daysOverdue, outstandingCents: amount.outstandingCents });
+      }
     }
   }
   items.sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id));
   await auth.audit(actor, 'billing.alerts');
   const totalOutstandingCents = items.reduce((sum, row) => sum + row.outstandingCents, 0);
-  if (!Number.isSafeInteger(totalOutstandingCents)) throw new Error('Invalid billing aggregate arithmetic.');
-  return { today, timeZone: time.timeZone(), items, count: items.length, totalOutstandingCents, pendingMonthlyCharges };
+  if (![totalOutstandingCents, awaitingCcrcCents].every(Number.isSafeInteger)) throw new Error('Invalid billing aggregate arithmetic.');
+  return { today, timeZone: time.timeZone(), items, count: items.length, totalOutstandingCents, pendingMonthlyCharges, awaitingCcrcCount, awaitingCcrcCents };
 });
 exports.profile = (token, childId, payload) => mutate(token, childId, 'profile', payload,
-  ['billingStart', 'billingEnd', 'effectiveMonth', 'familyCents', 'ccrcCents', 'familyDueDay', 'ccrcDueDay', 'registrationCents', 'enabled', 'reason'], (data, actor, child) => {
+  ['billingStart', 'billingEnd', 'effectiveMonth', 'monthlyCents', 'ccrcManaged', 'familyCents', 'ccrcCents', 'familyDueDay', 'ccrcDueDay', 'registrationCents', 'enabled', 'reason'], (data, actor, child) => {
     const start = date(payload.billingStart, 'billingStart'), end = payload.billingEnd == null || payload.billingEnd === '' ? null : date(payload.billingEnd, 'billingEnd');
     if (end && end < start) throw math.invalid('Billing end must be on or after billing start.', 'billingEnd');
     if (typeof payload.enabled !== 'boolean') throw math.invalid('Choose whether monthly billing is enabled.', 'enabled');
@@ -123,11 +127,21 @@ exports.profile = (token, childId, payload) => mutate(token, childId, 'profile',
     const effectiveMonth = math.month(payload.effectiveMonth, 'effectiveMonth');
     if (!data.profile && effectiveMonth > start.slice(0, 7)) throw math.invalid('The first rate must cover the billing start month.', 'effectiveMonth');
     const rate = { effectiveMonth, ...stamp(actor) };
-    for (const payer of math.payers) {
-      rate[payer + 'Cents'] = math.cents(payload[payer + 'Cents'], payer + 'Cents');
-      const dueDay = payload[payer + 'DueDay'];
-      if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) throw math.invalid('Choose a due day from 1 to 31.', payer + 'DueDay');
-      rate[payer + 'DueDay'] = dueDay;
+    if (Object.hasOwn(payload, 'monthlyCents')) {
+      if (['familyCents', 'ccrcCents', 'ccrcDueDay'].some(key => Object.hasOwn(payload, key))) throw math.invalid('Set one monthly tuition amount rather than a fixed CCRC share.', 'monthlyCents');
+      rate.monthlyCents = math.cents(payload.monthlyCents, 'monthlyCents');
+      if (typeof payload.ccrcManaged !== 'boolean') throw math.invalid('Choose whether this child receives CCRC payments.', 'ccrcManaged');
+      rate.ccrcManaged = payload.ccrcManaged;
+      if (!Number.isInteger(payload.familyDueDay) || payload.familyDueDay < 1 || payload.familyDueDay > 31) throw math.invalid('Choose a due day from 1 to 31.', 'familyDueDay');
+      rate.familyDueDay = payload.familyDueDay;
+    } else {
+      if (Object.hasOwn(payload, 'ccrcManaged')) throw math.invalid('Set one monthly tuition amount for this child.', 'monthlyCents');
+      for (const payer of math.payers) {
+        rate[payer + 'Cents'] = math.cents(payload[payer + 'Cents'], payer + 'Cents');
+        const dueDay = payload[payer + 'DueDay'];
+        if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) throw math.invalid('Choose a due day from 1 to 31.', payer + 'DueDay');
+        rate[payer + 'DueDay'] = dueDay;
+      }
     }
     const rates = [...(data.profile?.rates || []), rate];
     if (!rates.some(value => value.effectiveMonth <= start.slice(0, 7))) throw math.invalid('A saved rate must cover the billing start month.', 'billingStart');
@@ -153,6 +167,35 @@ exports.charge = (token, childId, payload) => mutate(token, childId, 'charge', p
     if (payload.kind === 'manual' && !charge.payers.family.amountCents && !charge.payers.ccrc.amountCents) throw math.invalid('A manual charge must have a positive amount.', 'amountCents');
     data.charges.push(charge); history(data, 'charge', actor, { chargeId: charge.id, reason: reason(payload.reason) });
   });
+function reopenCcrcReview(data, charge, actor, cause) {
+  if (charge.settlementMode !== 'ccrc_actual' || !charge.ccrcReview) return;
+  history(data, 'ccrc_review_reopened', actor, { chargeId: charge.id, before: charge.ccrcReview, reason: cause });
+  charge.ccrcReview = null;
+}
+exports.ccrcMode = (token, childId, chargeId, payload) => mutate(token, childId, 'ccrc_mode:' + chargeId, payload, ['reason'], (data, actor) => {
+  const charge = data.charges.find(row => row.id === chargeId);
+  if (!charge || charge.kind !== 'monthly' || charge.settlementMode === 'ccrc_actual') throw math.invalid('Choose a monthly tuition charge that still uses fixed payer shares.', 'chargeId');
+  const before = math.chargeView(charge, data.payments, time.dateAt());
+  const conversionReason = reason(payload.reason);
+  charge.settlementMode = 'ccrc_actual';
+  charge.tuitionCents = math.payers.reduce((sum, payer) => sum + charge.payers[payer].amountCents, 0);
+  charge.ccrcReview = null;
+  charge.ccrcConversion = { reason: conversionReason, ...stamp(actor) };
+  const after = math.chargeView(charge, data.payments, time.dateAt());
+  if (before.amountCents !== after.amountCents || before.paidCents !== after.paidCents) throw new Error('Invalid billing conversion arithmetic.');
+  history(data, 'ccrc_mode', actor, { chargeId: charge.id, reason: conversionReason, before: { amountCents: before.amountCents, payers: before.payers }, after: { settlementMode: charge.settlementMode, amountCents: after.amountCents } });
+});
+exports.ccrcReview = (token, childId, chargeId, payload) => mutate(token, childId, 'ccrc_review:' + chargeId, payload, ['familyDueDate', 'reason', 'acknowledgeUnappliedCredit'], (data, actor) => {
+  const charge = data.charges.find(row => row.id === chargeId);
+  if (!charge || charge.settlementMode !== 'ccrc_actual') throw math.invalid('Choose a monthly tuition charge that uses actual CCRC payments.', 'chargeId');
+  const familyDueDate = date(payload.familyDueDate, 'familyDueDate');
+  if (familyDueDate < time.dateAt()) throw math.invalid('Choose today or a future parent due date after reviewing CCRC payments.', 'familyDueDate');
+  const before = charge.ccrcReview || null;
+  const current = math.chargeView(charge, data.payments, time.dateAt());
+  if (current.ccrcUnappliedCents > 0 && payload.acknowledgeUnappliedCredit !== true) throw math.invalid('Review and acknowledge the unapplied CCRC credit before confirming this parent balance. No parent refund or transfer is performed automatically.', 'acknowledgeUnappliedCredit');
+  charge.ccrcReview = { familyDueDate, reason: reason(payload.reason), ccrcPaidCents: current.payers.ccrc.paidCents, ccrcUnappliedCents: current.ccrcUnappliedCents, acknowledgeUnappliedCredit: payload.acknowledgeUnappliedCredit === true, ...stamp(actor) };
+  history(data, 'ccrc_review', actor, { chargeId: charge.id, reason: charge.ccrcReview.reason, before, after: charge.ccrcReview });
+});
 exports.payment = (token, childId, payload) => mutate(token, childId, 'payment', payload,
   ['payer', 'amountCents', 'date', 'method', 'reference', 'chargeId'], (data, actor) => {
     const payer = payerOf(payload.payer), amountCents = positive(payload.amountCents), paidDate = date(payload.date);
@@ -162,9 +205,12 @@ exports.payment = (token, childId, payload) => mutate(token, childId, 'payment',
     if (payload.chargeId != null && payload.chargeId !== '') {
       const charge = data.charges.find(value => value.id === payload.chargeId);
       if (!charge) throw math.invalid('Choose an existing charge for this child.', 'chargeId');
-      const outstanding = math.chargeView(charge, data.payments, time.dateAt()).payers[payer].outstandingCents;
-      if (outstanding <= 0) throw math.invalid('This payer has no outstanding amount on that charge.', 'chargeId');
-      payment.allocations.push({ chargeId: charge.id, amountCents: Math.min(amountCents, outstanding), ...stamp(actor) });
+      const outstanding = math.chargeView(charge, data.payments, time.dateAt()).allocationCapacityCents[payer];
+      const actualCcrc = payer === 'ccrc' && charge.settlementMode === 'ccrc_actual';
+      if (outstanding <= 0 && !actualCcrc) throw math.invalid('This payer has no outstanding amount on that charge.', 'chargeId');
+      if (actualCcrc) { payment.serviceChargeId = charge.id; payment.serviceMonth = charge.month; }
+      if (outstanding > 0) payment.allocations.push({ chargeId: charge.id, amountCents: Math.min(amountCents, outstanding), ...stamp(actor) });
+      if (payer === 'ccrc') reopenCcrcReview(data, charge, actor, 'An additional CCRC receipt changed this service month. Review the parent balance again.');
     }
     data.payments.push(payment); history(data, 'payment', actor, { paymentId: payment.id });
   });
@@ -172,22 +218,38 @@ exports.credit = (token, childId, payload) => mutate(token, childId, 'credit', p
   const payment = data.payments.find(row => row.id === payload.paymentId && !row.reversed), charge = data.charges.find(row => row.id === payload.chargeId), amount = positive(payload.amountCents);
   if (!payment || !charge) throw math.invalid('Choose an available payment credit and a charge for this child.', 'paymentId');
   if (amount > math.paymentView(payment).creditCents) throw math.invalid('The amount exceeds this payment credit.', 'amountCents');
-  if (amount > math.chargeView(charge, data.payments, time.dateAt()).payers[payment.payer].outstandingCents) throw math.invalid('The credit exceeds this payer’s outstanding amount on the charge.', 'amountCents');
+  if (amount > math.chargeView(charge, data.payments, time.dateAt()).allocationCapacityCents[payment.payer]) throw math.invalid('The credit exceeds this payer’s outstanding amount on the charge.', 'amountCents');
+  if (payment.payer === 'ccrc') {
+    reopenCcrcReview(data, charge, actor, 'A CCRC credit allocation changed this service month. Review the parent balance again.');
+    const source = data.charges.find(row => row.id === payment.serviceChargeId);
+    if (source) reopenCcrcReview(data, source, actor, 'Unapplied CCRC credit from this service month was allocated. Review the receipt reconciliation again.');
+  }
   payment.allocations.push({ chargeId: charge.id, amountCents: amount, ...stamp(actor) }); history(data, 'credit', actor, { paymentId: payment.id, chargeId: charge.id });
 });
 exports.reverse = (token, childId, paymentId, payload) => mutate(token, childId, 'reverse:' + paymentId, payload, ['reason'], (data, actor) => {
   const payment = data.payments.find(row => row.id === paymentId);
   if (!payment || payment.reversed) throw math.invalid('Choose an unreversed payment.', 'paymentId');
+  if (payment.payer === 'ccrc') for (const affectedId of new Set([payment.serviceChargeId, ...payment.allocations.map(row => row.chargeId)].filter(Boolean))) {
+    const charge = data.charges.find(row => row.id === affectedId);
+    if (charge) reopenCcrcReview(data, charge, actor, 'A CCRC receipt was reversed. Review the parent balance again.');
+  }
   payment.reversed = true; payment.reverseReason = reason(payload.reason); payment.reversedAt = new Date().toISOString(); payment.reversedBy = actor.id;
   history(data, 'payment_reversal', actor, { paymentId: payment.id, reason: payment.reverseReason });
 });
 exports.adjust = (token, childId, chargeId, payload) => mutate(token, childId, 'adjust:' + chargeId, payload, ['payer', 'amountCents', 'dueDate', 'reason'], (data, actor) => {
   const charge = data.charges.find(row => row.id === chargeId); if (!charge) throw math.invalid('Choose a charge for this child.', 'chargeId');
   const payer = payerOf(payload.payer), amount = math.cents(payload.amountCents, 'amountCents', true), current = math.chargeView(charge, data.payments, time.dateAt()).payers[payer];
+  if (charge.settlementMode === 'ccrc_actual') {
+    if (payer !== 'family') throw math.invalid('Adjust the total tuition amount; CCRC amounts come from actual payment receipts.', 'payer');
+    if (payload.dueDate !== undefined) throw math.invalid('Set the parent due date by reviewing CCRC payments.', 'dueDate');
+    const currentCharge = math.chargeView(charge, data.payments, time.dateAt());
+    if (currentCharge.amountCents + amount < currentCharge.paidCents) throw math.invalid('Reverse allocated payments before reducing tuition below the total already applied.', 'amountCents');
+  }
   if (current.amountCents + amount < current.paidCents) throw math.invalid('Reverse allocated payments before reducing a charge below the amount already applied.', 'amountCents');
   const dueDate = payload.dueDate === undefined ? undefined : date(payload.dueDate, 'dueDate');
   if (!amount && !dueDate) throw math.invalid('Enter an adjustment or corrected due date.', 'amountCents');
   const change = { id: randomUUID(), payer, amountCents: amount, ...(dueDate ? { dueDate } : {}), reason: reason(payload.reason), ...stamp(actor) };
+  reopenCcrcReview(data, charge, actor, 'The tuition total changed. Review the parent balance again.');
   charge.adjustments.push(change); history(data, 'adjustment', actor, { chargeId: charge.id, adjustmentId: change.id, reason: change.reason });
 });
 // Trusted composition from the already authorized enrollment mutation. The

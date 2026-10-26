@@ -158,6 +158,10 @@ test.each(['editor', 'teacher', 'viewer'])('%s cannot read billing pages, alerts
   }
   const response = await supertest(app).post(path('profile')).set('Cookie', 'skao_session=' + sessionToken).set('Origin', fixture.origin).set('X-CSRF-Token', auth.csrfToken(sessionToken)).send(profile());
   expect(response.status).toBe(403); expect(await db.getChildBillingRecord(child.id)).toBeNull();
+  for (const action of ['ccrc-mode', 'ccrc-review']) {
+    const denied = await supertest(app).post(path('charges/monthly:2026-10/' + action)).set('Cookie', 'skao_session=' + sessionToken).set('Origin', fixture.origin).set('X-CSRF-Token', auth.csrfToken(sessionToken)).send(payload(0, { reason: 'Not permitted', familyDueDate: '2026-10-06' }));
+    expect(denied.status).toBe(403);
+  }
 });
 
 test('ordinary session, origin and CSRF protections remain active on billing requests', async () => {
@@ -300,5 +304,220 @@ test('profile corrections retain attributed before and after settings without du
   expect(event).toMatchObject({ actorId: fixture.credentials().account.id, actorName: 'Test Administrator', reason: 'Corrected enrollment billing agreement',
     before: { enabled: true, billingEnd: null, registrationCents: 20000 }, after: { enabled: false, billingEnd: '2026-10-20', registrationCents: 15000 } });
   expect(event.before).not.toHaveProperty('rates'); expect(event.after).not.toHaveProperty('rates');
+  expect(saved.profile.rates).toHaveLength(2);
+});
+
+const monthlyProfile = (version = 0, extra = {}) => payload(version, { billingStart: '2026-10-01', billingEnd: null, enabled: true, effectiveMonth: '2026-10', monthlyCents: 120000, ccrcManaged: true, familyDueDay: 1, registrationCents: 20000, ...extra });
+async function at(value) {
+  setTime(value);
+  await db.updateSession(auth.digest(token()), { createdAt: new Date(), lastSeenAt: new Date(), expiresAt: new Date(Date.now() + config.absoluteMs) });
+}
+const actualReceipt = (saved, amountCents, extra = {}) => payload(saved.version, { payer: 'ccrc', amountCents, date: saved.today, method: 'ccrc', reference: 'Synthetic statement', chargeId: 'monthly:2026-10', ...extra });
+const review = (saved, extra = {}) => payload(saved.version, { familyDueDate: saved.today, reason: 'Reviewed actual CCRC statement for this service month', ...extra });
+
+test('one tuition fee waits for actual CCRC receipts; a following-month receipt reduces only its service month', async () => {
+  await at('2026-11-26T18:00:00Z');
+  let saved = await post('profile', monthlyProfile());
+  expect(saved.profile).toMatchObject({ monthlyCents: 120000, ccrcManaged: true });
+  expect(saved.profile).not.toHaveProperty('ccrcCents');
+  expect(saved.charges.map(row => row.status)).toEqual(['awaiting_ccrc', 'awaiting_ccrc']);
+  expect(saved.totals).toMatchObject({ chargedCents: 240000, familyOutstandingCents: 0, ccrcOutstandingCents: 0, awaitingCcrcCents: 240000, awaitingCcrcCount: 2 });
+  expect((await service.alerts(token())).items).toEqual([]);
+  const receipt = actualReceipt(saved, 100000, { date: '2026-11-20' });
+  saved = await post('payments', receipt);
+  expect((await post('payments', receipt)).payments).toHaveLength(1);
+  expect(saved.payments[0]).toMatchObject({ date: '2026-11-20', amountCents: 100000, allocations: [{ chargeId: 'monthly:2026-10', amountCents: 100000 }] });
+  expect(saved.charges[0]).toMatchObject({ month: '2026-10', amountCents: 120000, paidCents: 100000, outstandingCents: 20000, pendingCcrc: true, payers: { family: { dueDate: null, overdue: false }, ccrc: { paidCents: 100000, outstandingCents: 0 } } });
+  expect(saved.charges[1]).toMatchObject({ month: '2026-11', paidCents: 0, outstandingCents: 120000, pendingCcrc: true });
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved, { familyDueDate: '2026-11-30' }));
+  expect(saved.charges[0]).toMatchObject({ pendingCcrc: false, status: 'partial', ccrcReview: { ccrcPaidCents: 100000, familyDueDate: '2026-11-30' }, payers: { family: { amountCents: 20000, outstandingCents: 20000 } } });
+  expect(saved.totals).toMatchObject({ familyOutstandingCents: 20000, awaitingCcrcCents: 120000, awaitingCcrcCount: 1 });
+  await at('2026-12-05T08:00:00Z');
+  expect((await service.alerts(token())).items).toMatchObject([{ chargeId: 'monthly:2026-10', payer: 'family', daysOverdue: 5, outstandingCents: 20000 }]);
+  saved = await post('payments', actualReceipt(saved, 20000, { payer: 'family', date: '2026-12-05', method: 'cash' }));
+  expect(saved.charges[0]).toMatchObject({ status: 'paid', pendingCcrc: false, outstandingCents: 0 });
+  expect((await service.alerts(token())).items).toEqual([]);
+});
+
+test('partial and different monthly CCRC amounts remain pending until an explicit reviewed parent due date', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 40000));
+  saved = await post('payments', actualReceipt(saved, 60000));
+  expect(saved.charges[0]).toMatchObject({ pendingCcrc: true, status: 'awaiting_ccrc', outstandingCents: 20000 });
+  saved = await post('payments', actualReceipt(saved, 10000, { payer: 'family', method: 'cash' }));
+  expect(saved.totals).toMatchObject({ paidCents: 110000, awaitingCcrcCents: 10000, familyOutstandingCents: 0 });
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved));
+  expect(saved.totals.familyOutstandingCents).toBe(10000);
+  await at('2026-11-20T18:00:00Z');
+  await service.runMaintenance(); saved = await detail();
+  saved = await post('payments', actualReceipt(saved, 75000, { chargeId: 'monthly:2026-11' }));
+  saved = await post('charges/monthly:2026-11/ccrc-review', review(saved));
+  expect(saved.charges.map(row => row.payers.family.outstandingCents)).toEqual([10000, 45000]);
+});
+
+test('a zero CCRC result can be reviewed, but no review may backdate the parent due date', async () => {
+  let saved = await post('profile', monthlyProfile());
+  await post('charges/monthly:2026-10/ccrc-review', review(saved, { familyDueDate: '2026-10-01' }), 400);
+  await post('charges/monthly:2026-10/ccrc-review', review(saved, { reason: '' }), 400);
+  expect((await detail()).charges[0].pendingCcrc).toBe(true);
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved, { reason: 'Statement reviewed: no subsidy was paid for this month' }));
+  expect(saved.charges[0]).toMatchObject({ ccrcReview: { ccrcPaidCents: 0 }, pendingCcrc: false, payers: { family: { outstandingCents: 120000, dueDate: '2026-10-06' } } });
+});
+
+test('fully covered tuition still needs CCRC review and excess receipts remain explicit payer credits', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 140000));
+  expect(saved.charges[0]).toMatchObject({ status: 'awaiting_ccrc', pendingCcrc: true, outstandingCents: 0 });
+  expect(saved.payments[0]).toMatchObject({ amountCents: 140000, allocatedCents: 120000, creditCents: 20000 });
+  expect(saved.totals).toMatchObject({ chargedCents: 120000, paidCents: 120000, receivedCents: 140000, ccrcCreditCents: 20000, awaitingCcrcCount: 1, awaitingCcrcCents: 0 });
+  await post('charges/monthly:2026-10/ccrc-review', review(saved), 400);
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved, { acknowledgeUnappliedCredit: true }));
+  expect(saved.charges[0]).toMatchObject({ status: 'paid', pendingCcrc: false });
+  expect(saved.totals.awaitingCcrcCount).toBe(0);
+});
+
+test('parent prepayments and CCRC receipts cannot overallocate or silently refund and move money to another month', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 30000, { payer: 'family', method: 'cash' }));
+  saved = await post('payments', actualReceipt(saved, 100000));
+  expect(saved.charges[0]).toMatchObject({ amountCents: 120000, paidCents: 120000, outstandingCents: 0, payers: { family: { amountCents: 30000, paidCents: 30000 }, ccrc: { amountCents: 90000, paidCents: 90000 } } });
+  expect(saved.totals).toMatchObject({ familyCreditCents: 0, ccrcCreditCents: 10000 });
+  expect(saved.payments[0].allocations[0].amountCents).toBe(30000);
+  expect(saved.payments[1].allocations[0].amountCents).toBe(90000);
+});
+
+test('a later CCRC receipt, reversal or credit allocation reopens review without creating an overdue parent alert', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 50000));
+  const firstPayment = saved.payments[0];
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved));
+  await at('2026-10-11T18:00:00Z');
+  expect((await service.alerts(token())).count).toBe(1);
+  saved = await post('payments', actualReceipt(saved, 25000, { date: '2026-10-11' }));
+  expect(saved.charges[0]).toMatchObject({ ccrcReview: null, pendingCcrc: true, outstandingCents: 45000 });
+  expect((await service.alerts(token())).count).toBe(0);
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved));
+  saved = await post('payments/' + firstPayment.id + '/reverse', payload(saved.version, { reason: 'Statement corrected the first receipt' }));
+  expect(saved.charges[0]).toMatchObject({ pendingCcrc: true, outstandingCents: 95000 });
+  expect(saved.history.filter(row => row.type === 'ccrc_review_reopened')).toHaveLength(2);
+  saved = await post('payments', actualReceipt(saved, 10000, { chargeId: null }));
+  const credit = saved.payments.at(-1);
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved));
+  saved = await post('credits', payload(saved.version, { paymentId: credit.id, chargeId: 'monthly:2026-10', amountCents: 10000 }));
+  expect(saved.charges[0]).toMatchObject({ pendingCcrc: true, outstandingCents: 85000 });
+  expect(saved.history.filter(row => row.type === 'ccrc_review_reopened')).toHaveLength(3);
+});
+
+test('family receipt reversals preserve the reviewed CCRC amount and parent due date', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 100000));
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved));
+  saved = await post('payments', actualReceipt(saved, 20000, { payer: 'family' }));
+  const before = saved.charges[0].ccrcReview;
+  saved = await post('payments/' + saved.payments.at(-1).id + '/reverse', payload(saved.version, { reason: 'Parent payment returned' }));
+  expect(saved.charges[0]).toMatchObject({ pendingCcrc: false, outstandingCents: 20000, ccrcReview: before });
+});
+
+test('tuition adjustments use one total, preserve its snapshot and require a new CCRC review', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 100000));
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved));
+  const edit = { payer: 'family', amountCents: -10000, reason: 'Approved tuition discount' };
+  await post('charges/monthly:2026-10/adjustments', payload(saved.version, { ...edit, payer: 'ccrc' }), 400);
+  await post('charges/monthly:2026-10/adjustments', payload(saved.version, { ...edit, dueDate: '2026-10-20' }), 400);
+  await post('charges/monthly:2026-10/adjustments', payload(saved.version, { ...edit, amountCents: -20001 }), 400);
+  saved = await post('charges/monthly:2026-10/adjustments', payload(saved.version, edit));
+  expect(saved.charges[0]).toMatchObject({ tuitionCents: 120000, amountCents: 110000, outstandingCents: 10000, pendingCcrc: true, adjustments: [{ amountCents: -10000 }] });
+});
+
+test('legacy fixed shares convert only explicitly, retaining original charge fields, payments and adjustments', async () => {
+  let saved = await post('profile', profile());
+  saved = await post('charges/monthly:2026-10/adjustments', payload(saved.version, { payer: 'family', amountCents: -1000, reason: 'Synthetic existing discount' }));
+  saved = await post('payments', actualReceipt(saved, 10000));
+  const original = (await db.getChildBillingRecord(child.id)).data.charges[0];
+  const body = payload(saved.version, { reason: 'Use actual CCRC receipts instead of an estimated monthly split' });
+  saved = await post('charges/monthly:2026-10/ccrc-mode', body);
+  expect(saved.charges[0]).toMatchObject({ settlementMode: 'ccrc_actual', tuitionCents: 100000, amountCents: 99000, paidCents: 10000, outstandingCents: 89000, pendingCcrc: true });
+  const stored = (await db.getChildBillingRecord(child.id)).data.charges[0];
+  expect(stored.payers).toEqual(original.payers); expect(stored.adjustments).toEqual(original.adjustments);
+  expect((await post('charges/monthly:2026-10/ccrc-mode', body)).version).toBe(saved.version);
+  await post('charges/monthly:2026-10/ccrc-mode', { ...body, requestId: randomUUID(), version: saved.version }, 400);
+  expect((await service.alerts(token())).items).toEqual([]);
+});
+
+test('CCRC review and mode conversion are atomic with audit, version and idempotent requests', async () => {
+  let saved = await post('profile', profile());
+  for (const action of ['ccrc-mode', 'ccrc-review']) {
+    const body = action === 'ccrc-mode' ? payload(saved.version, { reason: 'Reviewed conversion' }) : review(saved);
+    const before = await db.getChildBillingRecord(child.id);
+    const audit = jest.spyOn(db, 'appendAudit').mockRejectedValueOnce(new Error('Synthetic CCRC audit failure'));
+    const logging = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try { await post('charges/monthly:2026-10/' + action, body, 500); } finally { audit.mockRestore(); logging.mockRestore(); }
+    expect(await db.getChildBillingRecord(child.id)).toEqual(before);
+    saved = await post('charges/monthly:2026-10/' + action, body);
+    expect((await post('charges/monthly:2026-10/' + action, body)).version).toBe(saved.version);
+    await post('charges/monthly:2026-10/' + action, { ...body, reason: 'Changed meaning' }, 409);
+  }
+});
+
+test.each([
+  { monthlyCents: -1 }, { monthlyCents: 0.1 }, { monthlyCents: '120000' }, { ccrcManaged: undefined }, { ccrcManaged: 'yes' }, { ccrcCents: 10000 }, { familyCents: 100000 },
+])('a single monthly fee rejects malformed or mixed split settings: %s', async extra => {
+  await post('profile', monthlyProfile(0, extra), 400);
+  expect(await db.getChildBillingRecord(child.id)).toBeNull();
+});
+
+test('a child without CCRC gets the same single tuition fee with the ordinary monthly parent due date', async () => {
+  const saved = await post('profile', monthlyProfile(0, { ccrcManaged: false }));
+  expect(saved.charges[0]).toMatchObject({ status: 'unpaid', amountCents: 120000, payers: { family: { amountCents: 120000, dueDate: '2026-10-01', overdue: true }, ccrc: { amountCents: 0 } } });
+  expect(saved.totals).toMatchObject({ familyOutstandingCents: 120000, awaitingCcrcCount: 0, ccrcOutstandingCents: 0 });
+});
+
+test('a CCRC receipt after full parent payment keeps service provenance as unapplied credit and needs explicit reconciliation', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 120000, { payer: 'family', method: 'cash' }));
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved));
+  const body = actualReceipt(saved, 100000);
+  const before = await db.getChildBillingRecord(child.id);
+  const audit = jest.spyOn(db, 'appendAudit').mockRejectedValueOnce(new Error('Synthetic receipt audit failure'));
+  const logging = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try { await post('payments', body, 500); } finally { audit.mockRestore(); logging.mockRestore(); }
+  expect(await db.getChildBillingRecord(child.id)).toEqual(before);
+  saved = await post('payments', body);
+  expect((await post('payments', body)).payments).toHaveLength(2);
+  const receipt = saved.payments.at(-1);
+  expect(receipt).toMatchObject({ amountCents: 100000, allocatedCents: 0, creditCents: 100000, allocations: [], serviceChargeId: 'monthly:2026-10', serviceMonth: '2026-10' });
+  expect(saved.charges[0]).toMatchObject({ amountCents: 120000, paidCents: 120000, outstandingCents: 0, ccrcReceivedCents: 100000, ccrcUnappliedCents: 100000, pendingCcrc: true, status: 'awaiting_ccrc', payers: { ccrc: { paidCents: 0 } } });
+  await post('charges/monthly:2026-10/ccrc-review', review(saved), 400);
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved, { acknowledgeUnappliedCredit: true, reason: 'Keep receipt as CCRC credit while the parent prepayment is reconciled separately' }));
+  expect(saved.charges[0].ccrcReview).toMatchObject({ ccrcUnappliedCents: 100000, acknowledgeUnappliedCredit: true });
+  saved = await post('payments/' + receipt.id + '/reverse', payload(saved.version, { reason: 'Statement payment corrected' }));
+  expect(saved.charges[0]).toMatchObject({ pendingCcrc: true, ccrcReceivedCents: 0, ccrcUnappliedCents: 0, paidCents: 120000 });
+  expect(saved.payments[0].allocations[0].amountCents).toBe(120000);
+});
+
+test('explicitly applying service-linked credit elsewhere preserves source provenance without counting allocated credit as unapplied', async () => {
+  let saved = await post('profile', monthlyProfile());
+  saved = await post('payments', actualReceipt(saved, 140000));
+  const receipt = saved.payments[0];
+  saved = await post('charges/monthly:2026-10/ccrc-review', review(saved, { acknowledgeUnappliedCredit: true }));
+  await at('2026-11-06T18:00:00Z');
+  await service.runMaintenance(); saved = await detail();
+  saved = await post('credits', payload(saved.version, { paymentId: receipt.id, chargeId: 'monthly:2026-11', amountCents: 20000 }));
+  expect(saved.payments[0]).toMatchObject({ serviceChargeId: 'monthly:2026-10', serviceMonth: '2026-10', creditCents: 0 });
+  expect(saved.charges[0]).toMatchObject({ ccrcReceivedCents: 140000, ccrcUnappliedCents: 0, pendingCcrc: true, payers: { ccrc: { paidCents: 120000 } } });
+  expect(saved.charges[1]).toMatchObject({ ccrcReceivedCents: 0, ccrcUnappliedCents: 0, outstandingCents: 100000, payers: { ccrc: { paidCents: 20000 } } });
+});
+
+test('new monthly-fee histories affect only uncharged months and retain the original service-month settlement mode', async () => {
+  let saved = await post('profile', monthlyProfile());
+  const original = (await db.getChildBillingRecord(child.id)).data.charges[0];
+  saved = await post('profile', monthlyProfile(saved.version, { effectiveMonth: '2026-11', monthlyCents: 140000, ccrcManaged: false, familyDueDay: 10 }));
+  expect((await db.getChildBillingRecord(child.id)).data.charges[0]).toEqual(original);
+  await at('2026-11-15T18:00:00Z');
+  expect(await service.runMaintenance()).toMatchObject({ generated: 1, failed: 0 });
+  saved = await detail();
+  expect(saved.charges[0]).toMatchObject({ tuitionCents: 120000, settlementMode: 'ccrc_actual', pendingCcrc: true });
+  expect(saved.charges[1]).toMatchObject({ amountCents: 140000, payers: { family: { outstandingCents: 140000, dueDate: '2026-11-10' }, ccrc: { amountCents: 0 } } });
   expect(saved.profile.rates).toHaveLength(2);
 });

@@ -78,3 +78,12 @@ test('pending monthly charges are visible instead of implying all tuition is set
   show(); await screen.findByText(/Some monthly charges need updating/);
   expect(screen.getByRole('link', { name: 'Open tuition to check charges' })).toHaveAttribute('href', '/billing');
 });
+
+
+test('CCRC review is shown separately from overdue parent amounts while actual receipts are pending', async () => {
+  vi.mocked(getBillingAlerts).mockResolvedValue({ ...alerts(), items: [], count: 0, totalOutstandingCents: 0, awaitingCcrcCount: 2, awaitingCcrcCents: 120000 });
+  show(); await screen.findByText(/2 service months await CCRC review/);
+  expect(screen.getByRole('link', { name: 'Review CCRC payments' })).toHaveAttribute('href', '/billing?status=ccrc');
+  expect(screen.getByText('No tuition payments are five days overdue.')).toBeVisible();
+  expect(screen.queryByRole('link', { name: 'Review overdue tuition' })).not.toBeInTheDocument();
+});

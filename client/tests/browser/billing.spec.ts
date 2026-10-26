@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { api, authenticatedApi, origin } from './auth-helpers';
-import { billingChild, billingData, billingDate } from './billing-fixtures';
+import { billingChild, billingData, billingDate, ccrcBillingChild } from './billing-fixtures';
 import type { BillingDetail } from './billing-fixtures';
 
 type ConfiguredDetail = BillingDetail & {
-  profile: { enabled: boolean; familyCents: number; ccrcCents: number; pausedForEnrollment?: boolean; pausedOn?: string; billingStart: string } | null;
+  profile: { enabled: boolean; monthlyCents: number; ccrcManaged: boolean; pausedForEnrollment?: boolean; pausedOn?: string; billingStart: string } | null;
   pendingMonthlyCharges: number;
 };
 
@@ -51,29 +51,27 @@ test('mobile tuition setup preserves charged months and pauses billing across en
   const setup = page.getByRole('form', { name: 'Billing setup', exact: true });
   await setup.getByLabel('Billing starts', { exact: true }).fill(month + '-01');
   await setup.getByLabel('Applies from month', { exact: true }).fill(month);
-  await setup.getByLabel('Family monthly amount ($)', { exact: true }).fill('300.00');
-  await setup.getByLabel('CCRC monthly amount ($)', { exact: true }).fill('700.00');
-  await setup.getByLabel('Family due day', { exact: true }).fill('31');
-  await setup.getByLabel('CCRC due day', { exact: true }).fill('31');
+  await setup.getByLabel('Monthly tuition ($)', { exact: true }).fill('1000.00');
+  await setup.getByRole('checkbox', { name: 'CCRC helps pay this child’s tuition', exact: true }).uncheck();
+  await setup.getByLabel('Parent due day', { exact: true }).fill('31');
   await setup.getByLabel('Registration fee ($)', { exact: true }).fill('100.00');
   await setup.getByRole('checkbox', { name: 'Create monthly tuition charges', exact: true }).check();
   const saved = page.waitForResponse(response => response.request().method() === 'POST' && response.url() === path + '/profile');
   await setup.getByRole('button', { name: 'Save tuition setup', exact: true }).click();
   const first = await billingData<ConfiguredDetail>(await saved);
   expect(first.charges).toHaveLength(1);
-  expect(first.charges[0]).toMatchObject({ kind: 'monthly', payers: { family: { amountCents: 30000 }, ccrc: { amountCents: 70000 } } });
+  expect(first.charges[0]).toMatchObject({ kind: 'monthly', payers: { family: { amountCents: 100000 }, ccrc: { amountCents: 0 } } });
   expect(first.charges.some(charge => charge.kind === 'registration')).toBe(false);
   await page.reload();
   await expect(page.getByRole('article', { name: 'Charge ' + first.charges[0].title, exact: true })).toBeVisible();
   const futureMonth = new Date(month + '-01T12:00:00Z'); futureMonth.setUTCMonth(futureMonth.getUTCMonth() + 1);
   await page.getByRole('button', { name: 'Edit tuition setup', exact: true }).click();
   await setup.getByLabel('Applies from month', { exact: true }).fill(futureMonth.toISOString().slice(0, 7));
-  await setup.getByLabel('Family monthly amount ($)', { exact: true }).fill('400.00');
-  await setup.getByLabel('CCRC monthly amount ($)', { exact: true }).fill('600.00');
+  await setup.getByLabel('Monthly tuition ($)', { exact: true }).fill('1100.00');
   const edited = page.waitForResponse(response => response.request().method() === 'POST' && response.url() === path + '/profile');
   await setup.getByRole('button', { name: 'Save tuition setup', exact: true }).click();
   const changed = await billingData<ConfiguredDetail>(await edited);
-  expect(changed.profile).toMatchObject({ familyCents: 40000, ccrcCents: 60000 });
+  expect(changed.profile).toMatchObject({ monthlyCents: 110000, ccrcManaged: false });
   expect(changed.charges).toEqual(first.charges);
 
   expect((await http.put(api + '/children/' + child.id + '/enrollment', { data: { active: false } })).status()).toBe(200);
@@ -206,4 +204,86 @@ test('editors and class viewers cannot open tuition pages or receive financial d
       for (const url of [api + '/billing', api + '/billing/alerts', path]) expect((await other.request.get(url)).status()).toBe(403);
     } finally { await context.close(); }
   }
+});
+
+for (const width of [320, 1280]) test(`actual CCRC receipts settle the prior service month before the parent balance is confirmed at ${width}px`, async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width, height: 1000 });
+  const http = await authenticatedApi(page), fixture = await ccrcBillingChild(http);
+  const monthly = fixture.detail.charges[0];
+  expect(monthly).toMatchObject({ month: fixture.serviceMonth, settlementMode: 'ccrc_actual', pendingCcrc: true, status: 'awaiting_ccrc' });
+  expect(monthly.payers.family).toMatchObject({ dueDate: null, overdue: false });
+  expect(fixture.detail.totals).toMatchObject({ familyOutstandingCents: 0, ccrcOutstandingCents: 0, awaitingCcrcCents: 120000 });
+  const alertsBefore = await billingData<{ items: { childId: string }[] }>(await http.get(api + '/billing/alerts'));
+  expect(alertsBefore.items.filter(alert => alert.childId === fixture.child.id)).toEqual([]);
+  await page.goto('/billing?child=' + fixture.child.id);
+  const card = page.getByRole('article', { name: 'Charge ' + monthly.title, exact: true });
+  await expect(card).toContainText('Awaiting CCRC');
+  await expect(card).toContainText('$1,200.00');
+  await fits(page, width);
+  if (width === 320) await page.screenshot({ path: test.info().outputPath('billing-ccrc-pending-320.png'), fullPage: true });
+
+  async function receipt(amount: string, cents: number) {
+    await page.getByRole('button', { name: 'Record payment', exact: true }).click();
+    const form = page.getByRole('form', { name: 'Record payment', exact: true });
+    await form.getByRole('combobox', { name: 'Paid by', exact: true }).selectOption('ccrc');
+    await form.getByRole('combobox', { name: 'Payment method', exact: true }).selectOption('ccrc');
+    await form.getByLabel('Amount received ($)', { exact: true }).fill(amount);
+    await form.getByLabel('Payment date', { exact: true }).fill(fixture.detail.today);
+    await form.getByRole('combobox', { name: 'Apply payment to', exact: true }).selectOption(monthly.id);
+    await expect(form.getByRole('combobox', { name: 'Apply payment to', exact: true })).toHaveValue(monthly.id);
+    await expect(form.getByRole('combobox', { name: 'Apply payment to', exact: true }).locator('option:checked')).toContainText(fixture.serviceMonth);
+    const saved = page.waitForResponse(response => response.request().method() === 'POST' && response.url() === fixture.path + '/payments');
+    await form.getByRole('button', { name: 'Save payment', exact: true }).click();
+    const response = await saved, detail = await billingData<BillingDetail>(response);
+    const payment = detail.payments.at(-1)!;
+    expect(payment).toMatchObject({ payer: 'ccrc', date: fixture.detail.today, amountCents: cents, allocations: [{ chargeId: monthly.id, amountCents: cents }] });
+    // The date the money arrived does not silently change the service month.
+    expect(payment.date!.slice(0, 7)).not.toBe(fixture.serviceMonth);
+    expect(detail.charges[0]).toMatchObject({ month: fixture.serviceMonth, pendingCcrc: true });
+    expect(detail.charges[0].payers.family.overdue).toBe(false);
+    const replay = await billingData<BillingDetail>(await http.post(fixture.path + '/payments', { data: response.request().postDataJSON() }));
+    expect(replay.version).toBe(detail.version);
+    expect(replay.payments).toHaveLength(detail.payments.length);
+    return detail;
+  }
+  const partial = await receipt('600.00', 60000);
+  expect(partial.totals).toMatchObject({ awaitingCcrcCents: 60000, familyOutstandingCents: 0 });
+  const received = await receipt('400.00', 40000);
+  expect(received.totals).toMatchObject({ awaitingCcrcCents: 20000, familyOutstandingCents: 0 });
+  await expect(card).toContainText('$200.00');
+  await expect(card).toContainText('Awaiting CCRC');
+  if (width === 320) await page.screenshot({ path: test.info().outputPath('billing-ccrc-receipts-320.png'), fullPage: true });
+
+  await card.getByRole('button', { name: 'Finish CCRC review for ' + monthly.title, exact: true }).click();
+  const review = page.getByRole('form', { name: 'Finish CCRC review', exact: true });
+  await review.getByLabel('Parent due date', { exact: true }).fill(fixture.detail.today);
+  await review.getByLabel('Review note', { exact: true }).fill('Both synthetic statement payments received for this service month.');
+  await review.getByRole('checkbox', { name: 'I checked the CCRC payments for this service month.', exact: true }).check();
+  const reviewed = page.waitForResponse(response => response.request().method() === 'POST' && response.url() === fixture.path + '/charges/' + encodeURIComponent(monthly.id) + '/ccrc-review');
+  await review.getByRole('button', { name: 'Confirm parent balance', exact: true }).click();
+  const confirmed = await billingData<BillingDetail>(await reviewed);
+  expect(confirmed.charges[0]).toMatchObject({ pendingCcrc: false, payers: { family: { outstandingCents: 20000, dueDate: fixture.detail.today, overdue: false } } });
+  expect(confirmed.totals).toMatchObject({ familyOutstandingCents: 20000, awaitingCcrcCents: 0 });
+  await page.reload();
+  await expect(card).toContainText('$200.00');
+  await expect(card).not.toContainText('Awaiting CCRC');
+  await fits(page, width);
+  if (width === 320) await page.screenshot({ path: test.info().outputPath('billing-ccrc-confirmed-320.png'), fullPage: true });
+
+  const parentPayment = await billingData<BillingDetail>(await http.post(fixture.path + '/payments', { data: {
+    version: confirmed.version, requestId: randomUUID(), payer: 'family', amountCents: 20000,
+    date: confirmed.today, method: 'cash', reference: 'Synthetic remaining parent balance', chargeId: monthly.id,
+  } }));
+  expect(parentPayment.charges[0]).toMatchObject({ status: 'paid', payers: { family: { outstandingCents: 0 } } });
+  expect(parentPayment.totals.outstandingCents).toBe(0);
+  // Correcting a received subsidy payment reopens the review instead of
+  // silently declaring the parent overdue under the superseded due date.
+  const reversed = await billingData<BillingDetail>(await http.post(fixture.path + '/payments/' + received.payments[0].id + '/reverse', { data: {
+    version: parentPayment.version, requestId: randomUUID(), reason: 'Synthetic statement correction',
+  } }));
+  expect(reversed.charges[0]).toMatchObject({ pendingCcrc: true, payers: { family: { overdue: false, dueDate: null } } });
+  expect(reversed.payments[0].reversed).toBe(true);
+  expect(reversed.totals).toMatchObject({ familyOutstandingCents: 0, awaitingCcrcCents: 60000 });
+  expect((await billingData<{ items: { childId: string }[] }>(await http.get(api + '/billing/alerts'))).items.filter(alert => alert.childId === fixture.child.id)).toEqual([]);
 });

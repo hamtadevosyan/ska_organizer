@@ -11,4 +11,6 @@ for (const [path, method] of [['profile', 'profile'], ['generate', 'generate'], 
 }
 router.post('/children/:childId/payments/:paymentId/reverse', async (req, res) => res.json({ data: await service.reverse(req.sessionToken, req.params.childId, req.params.paymentId, req.body || {}) }));
 router.post('/children/:childId/charges/:chargeId/adjustments', async (req, res) => res.json({ data: await service.adjust(req.sessionToken, req.params.childId, req.params.chargeId, req.body || {}) }));
+router.post('/children/:childId/charges/:chargeId/ccrc-mode', async (req, res) => res.json({ data: await service.ccrcMode(req.sessionToken, req.params.childId, req.params.chargeId, req.body || {}) }));
+router.post('/children/:childId/charges/:chargeId/ccrc-review', async (req, res) => res.json({ data: await service.ccrcReview(req.sessionToken, req.params.childId, req.params.chargeId, req.body || {}) }));
 module.exports = router;
