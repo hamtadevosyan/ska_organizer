@@ -5,7 +5,7 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  payrollRecords: [], rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
+  childBillingRecords: [], payrollRecords: [], rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   clockStations: [], clockStationPairings: [], staffClockPins: [], clockStationAttempts: [],
   childSafetyProfiles: {}, children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
@@ -251,6 +251,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.childBillingRecords = [];
     mock.payrollRecords = [];
     mock.scheduleWeeks = [];
     mock.rooms = []; mock.scheduleEntries = []; mock.staff = []; mock.inventoryGroups = []; mock.inventoryGroupOperations = []; mock.inventoryItems = []; mock.inventoryMovements = []; mock.purchaseReceipts = []; mock.purchaseBatches = [];
@@ -323,6 +324,9 @@ module.exports = {
   },
 
   deleteChild: async (id) => {
+    if (mock.childBillingRecords.some(row => row.childId === id)) {
+      throw Object.assign(new Error('Child billing history must be retained.'), { name: 'SequelizeForeignKeyConstraintError' });
+    }
     const idx = mock.children.findIndex((c) => c.id === id);
     if (idx === -1) return false;
     mock.children.splice(idx, 1);
@@ -755,3 +759,26 @@ module.exports.savePayrollRecord = async row => { const i = mock.payrollRecords.
 module.exports.countPayrollRecords = async () => mock.payrollRecords.length;
 
 module.exports.firstPayrollRecord = async () => structuredClone(mock.payrollRecords[0] || null);
+
+module.exports.getChildBillingRecord = async childId => structuredClone(mock.childBillingRecords.find(row => row.childId === childId) || null);
+module.exports.listChildBillingRecords = async () => structuredClone(mock.childBillingRecords.slice().sort((a, b) => a.childId.localeCompare(b.childId)));
+module.exports.saveChildBillingRecord = async (row, expectedVersion = row?.version - 1) => {
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0 || expectedVersion >= 2147483647 || row?.version !== expectedVersion + 1 ||
+      !row.data || typeof row.data !== 'object' || Array.isArray(row.data)) {
+    throw Object.assign(new Error('A valid billing object and next version are required.'), { status: 400 });
+  }
+  return withTransaction(async () => {
+    const index = mock.childBillingRecords.findIndex(value => value.childId === row.childId);
+    const previous = index < 0 ? null : mock.childBillingRecords[index];
+    if ((previous?.version || 0) !== expectedVersion) {
+      throw Object.assign(new Error('This billing record changed. Refresh before saving.'), { status: 409, code: 'BILLING_CONFLICT' });
+    }
+    if (!mock.children.some(child => child.id === row.childId)) {
+      throw Object.assign(new Error('The billing child does not exist.'), { name: 'SequelizeForeignKeyConstraintError' });
+    }
+    const saved = structuredClone({ childId: row.childId, data: row.data, version: row.version,
+      createdAt: previous?.createdAt || row.createdAt || mock.nowIso(), updatedAt: row.updatedAt || mock.nowIso() });
+    if (index < 0) mock.childBillingRecords.push(saved); else mock.childBillingRecords[index] = saved;
+    return structuredClone(saved);
+  });
+};

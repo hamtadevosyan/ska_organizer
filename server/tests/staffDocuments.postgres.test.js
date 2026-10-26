@@ -103,7 +103,7 @@ test('the additive staff migration preserves pre-existing staff and blank forms 
         VALUES ($1, $2, 1, 'synthetic-existing.png', 'image/png', $3, $4, $5, $6, $7, $8, $9, $10, $4)`,
       { bind: [revisionId, formId, content.length, checksum, content, now, actor.id, actor.username, randomUUID(), 'Synthetic old request'], transaction });
     });
-    expect(await migrate(connection, schema)).toEqual(['020-staff-documents', '021-purchasing-lists', '022-purchase-batches', '023-inventory-group-lifecycle', '024-classroom-account-scope', '025-teacher-care-access', '026-staff-account-links', '027-employee-payroll', '028-clock-stations']);
+    expect(await migrate(connection, schema)).toEqual(['020-staff-documents', '021-purchasing-lists', '022-purchase-batches', '023-inventory-group-lifecycle', '024-classroom-account-scope', '025-teacher-care-access', '026-staff-account-links', '027-employee-payroll', '028-clock-stations', '029-child-billing']);
     const [staff] = await connection.query(`SELECT id, name FROM "${schema}"."StaffMembers"`);
     expect(staff).toEqual([{ id: staffId, name: 'Synthetic existing employee' }]);
     const [forms] = await connection.query(`SELECT id, audience, "currentRevisionId", "expirationRequired" FROM "${schema}"."RegistrationForms"`);

@@ -1,4 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, test, vi } from 'vitest';
 import axios from 'axios';
 import Children from './Children';
@@ -14,6 +16,7 @@ const room: Room = { id: 'room', name: 'Sunflower', ageMinMonths: 24, ageMaxMont
 const child: ChildRecord = { id: 'child', firstName: 'Synthetic', lastName: 'Child', dateOfBirth: '2022-01-15',
   preferredName: 'Sunny', active: true, roomId: room.id, notes: 'Uses a blue cup.' };
 let roster: ChildRecord[];
+const render = (ui: ReactNode) => renderView(<MemoryRouter>{ui}</MemoryRouter>);
 beforeEach(() => {
   vi.resetAllMocks(); roster = [{ ...child }];
   vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -102,6 +105,7 @@ test('ending enrollment preserves the record for the inactive roster and profile
   expect(within(row).getByText('Inactive')).toBeInTheDocument();
   fireEvent.click(within(row).getByRole('button', { name: 'View Synthetic Child' }));
   await screen.findByText('Uses a blue cup.');
+  expect(screen.getByRole('link', { name: 'Open tuition for Synthetic Child' })).toHaveAttribute('href', '/billing?child=child');
   expect(axios.put).toHaveBeenCalledWith(expect.stringContaining('/api/children/child/enrollment'), { active: false });
 });
 
@@ -112,6 +116,8 @@ test('read-only accounts can view a profile without enrollment edit controls', a
   expect(within(row).queryByRole('button', { name: /Edit|End enrollment/ })).not.toBeInTheDocument();
   fireEvent.click(within(row).getByRole('button', { name: 'View Synthetic Child' }));
   await screen.findByText('Uses a blue cup.');
+  expect(screen.queryByRole('region', { name: 'Child tuition' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Open tuition/ })).not.toBeInTheDocument();
 });
 
 test('reactivation prompts when the retained room has become full', async () => {

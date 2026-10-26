@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import { childName, getChildProfile } from '../../api/children';
 import type { ChildProfile as Profile } from '../../api/children';
 import type { Room } from '../../api/rooms';
@@ -42,6 +43,7 @@ export function ChildProfile({ id, rooms, onClose, closeLabel = 'Close profile',
     {error && <p role="alert" className="text-red-800">{error}</p>}
     {!profile && !error && <p role="status">Loading profile…</p>}
     {profile && <>
+      {account?.role === 'admin' && <section className="rounded-xl border border-violet-100 bg-violet-50/60 p-4" aria-label="Child tuition"><h3 className="font-semibold">Tuition &amp; payments</h3><p className="my-2 text-sm text-slate-600">Monthly fees, registration and payment history.</p><Link className="ska-link" to={'/billing?child=' + encodeURIComponent(profile.child.id)}>Open tuition for {childName(profile.child)}</Link></section>}
       {['admin', 'editor'].includes(account?.role || '') && <div><button className="ska-button" disabled={work.busy} onClick={() => { if (!safetyWork.dirty || window.confirm('Discard the unsaved safety card changes?')) { setShowSafety(value => !value); setSafetyWork({ dirty: false, busy: false }); } }}>{showSafety ? 'Hide health & emergency' : 'Health & emergency'}</button>{showSafety && <ChildSafetyCard childId={id} name={childName(profile.child)} onWorkChange={setSafetyWork} />}</div>}
       {account?.role === 'editor' && <EnrollmentProgress childId={profile.child.id} />}
       <ChildDocuments childId={profile.child.id} openAdd={openAddDocuments} onWorkChange={setDocumentWork} />

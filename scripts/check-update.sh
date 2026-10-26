@@ -6,7 +6,7 @@ umask 077
 
 usage() {
   cat <<'HELP'
-Usage: bash scripts/check-update.sh [--inventory | --access | --payroll | --ai] [--dry-run] [--backup-dir DIR]
+Usage: bash scripts/check-update.sh [--inventory | --access | --payroll | --ai | --billing] [--dry-run] [--backup-dir DIR]
 
 Back up the configured database, verify the archive, apply pending migrations,
 then run server tests, PostgreSQL tests, client tests, build, lint and browser tests.
@@ -15,6 +15,7 @@ then run server tests, PostgreSQL tests, client tests, build, lint and browser t
   --access           Run class access, teacher safety and attendance suites.
   --payroll          Run employee clock, private payroll and related access suites.
   --ai               Run local activity AI, planner and related access suites.
+  --billing          Run child tuition, payment, overdue-alert and access suites.
   --dry-run          Print the steps without reading credentials or running them.
   --backup-dir DIR   Backup directory (default: ~/ska_backups).
   --help             Show this help.
@@ -30,6 +31,7 @@ inventory_only=false
 access_only=false
 payroll_only=false
 ai_only=false
+billing_only=false
 dry_run=false
 backup_dir="${HOME}/ska_backups"
 while (($#)); do
@@ -38,6 +40,7 @@ while (($#)); do
     --access) access_only=true; shift ;;
     --payroll) payroll_only=true; shift ;;
     --ai) ai_only=true; shift ;;
+    --billing) billing_only=true; shift ;;
     --dry-run) dry_run=true; shift ;;
     --backup-dir)
       if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
@@ -49,8 +52,12 @@ while (($#)); do
   esac
 done
 
-if { "$inventory_only" && "$access_only"; } || { "$payroll_only" && { "$inventory_only" || "$access_only"; }; } || { "$ai_only" && { "$inventory_only" || "$access_only" || "$payroll_only"; }; }; then
-  printf 'Choose only one of --inventory, --access, --payroll or --ai.\n' >&2
+selected_modes=0
+for selection in "$inventory_only" "$access_only" "$payroll_only" "$ai_only" "$billing_only"; do
+  if "$selection"; then ((selected_modes+=1)); fi
+done
+if ((selected_modes > 1)); then
+  printf 'Choose only one of --inventory, --access, --payroll, --ai or --billing.\n' >&2
   exit 2
 fi
 
@@ -84,6 +91,13 @@ if "$ai_only"; then
   postgres_tests+=(-- --runTestsByPath tests/authenticatedFixture.test.js tests/recipePhoto.test.js tests/classroomAccess.test.js tests/authentication.test.js tests/localActivityAi.test.js tests/localActivityKnowledge.test.js tests/activityAi.test.js tests/activityPlannerGeneration.test.js tests/activityPlannerGeneration.postgres.test.js tests/workAccess.test.js)
   client_tests+=(-- src/components/activities/ActivityAiIdeas.test.tsx src/pages/ActivityAiPlanner.test.tsx src/pages/Activities.test.tsx src/components/activities/ActivityComposer.test.tsx src/components/activities/ActivityGenerate.test.tsx src/auth/WorkAccessGate.test.tsx src/auth/transport.test.ts)
   browser_tests+=(-- tests/browser/activity-ai.spec.ts tests/browser/activity-generation.spec.ts tests/browser/core-screens.spec.ts)
+fi
+
+if "$billing_only"; then
+  server_tests+=(-- --runTestsByPath tests/billing.test.js tests/billingMath.test.js tests/billingStorage.test.js tests/children.test.js tests/workAccess.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/billing.test.js tests/billingMath.test.js tests/billingStorage.test.js tests/billingPersistence.postgres.test.js tests/children.test.js tests/workAccess.test.js)
+  client_tests+=(-- src/pages/Billing.test.tsx src/api/billing.test.ts src/components/billing/BillingAlerts.test.tsx src/pages/Children.test.tsx src/components/AppShell.test.tsx src/router/index.test.tsx src/pages/Dashboard.test.tsx src/auth/WorkAccessGate.test.tsx)
+  browser_tests+=(-- tests/browser/billing.spec.ts)
 fi
 
 current_step='Preflight'

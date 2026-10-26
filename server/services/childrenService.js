@@ -45,20 +45,22 @@ exports.createChild = (payload) => db.withRoomLock(async () => {
   await checkRoom(values, null, payload.confirmOverCapacity === true);
   return db.createChild(values);
 });
-exports.updateChild = (id, payload) => db.withRoomLock(async () => {
+exports.updateChild = (id, payload, actor) => db.withRoomLock(async () => {
   const previous = await db.getChildById(id);
   if (!previous) return null;
   const values = validateChild(payload, previous);
   await checkDuplicates(values, previous, payload.confirmDuplicate === true);
   await checkRoom(values, previous, payload.confirmOverCapacity === true);
-  return db.updateChild(id, values);
+  const updated = await db.updateChild(id, values);
+  if (previous.active !== false && values.active === false) await require('./billingService').pauseForEnrollment(id, actor);
+  return updated;
 });
-exports.setEnrollment = (id, payload) => {
+exports.setEnrollment = (id, payload, actor) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof payload.active !== 'boolean' ||
       Object.keys(payload).some((key) => !['active', 'roomId', 'confirmOverCapacity'].includes(key))) {
     throw problem('Supply an enrollment status and optional room/capacity confirmation.');
   }
-  return exports.updateChild(id, payload);
+  return exports.updateChild(id, payload, actor);
 };
 exports.assignRoom = (id, payload) => db.withRoomLock(async () => {
   if (!payload || !Object.hasOwn(payload, 'roomId') || Object.keys(payload).some((key) => !['roomId', 'confirmOverCapacity'].includes(key)) ||
