@@ -1,3 +1,4 @@
+import OrganizerAssistant from "../pages/OrganizerAssistant";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Accounts from "../pages/Accounts";
@@ -37,6 +38,7 @@ export default function AppRoutes() {
   const { account } = useAuth();
   // Resolve viewer routes before any operational page mounts or requests data.
   if ((account?.role === 'viewer' || account?.role === 'teacher')) return <Routes>
+    <Route path="/assistant" element={<OrganizerAssistant />} />
     <Route path="/my-time" element={<MyTime />} />
     <Route path="/classroom" element={<Classroom section="overview" />} />
     <Route path="/classroom/children" element={account.role === 'teacher' ? <TeacherCare section="children" /> : <Classroom section="children" />} />
@@ -47,7 +49,8 @@ export default function AppRoutes() {
   </Routes>;
   return (
     <Routes>
-      <Route path="/my-time" element={<MyTime />} />
+      <Route path="/assistant" element={<OrganizerAssistant />} />
+    <Route path="/my-time" element={<MyTime />} />
       <Route path="/payroll" element={<StaffRedirect to="/staff/payroll" />} />
       <Route path="/work-time" element={<StaffRedirect to="/staff/work-time" />} />
       <Route path="/accounts" element={<Accounts />} />

@@ -21,7 +21,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   // Close stale overlays on browser back/forward, including query-only navigation.
   useEffect(() => { setPanel(null); }, [location.key]);
   useEffect(() => {
-    const labels: Record<string, string> = { dashboard: 'Home', attendance: 'Attendance', activities: 'Activities', meals: 'Meals',
+    const labels: Record<string, string> = { assistant: 'AI assistant', dashboard: 'Home', attendance: 'Attendance', activities: 'Activities', meals: 'Meals',
       children: 'Children', rooms: 'Rooms & Classes', inventory: 'Inventory', purchasing: 'Purchasing', receiving: 'Receive purchases', staff: 'Staff', reports: 'Reports', accounts: 'Accounts' };
     const sectionLabels: Record<string, string> = { '/staff/clock': 'Staff · Clock in/out', '/staff/clock-station': 'Staff · Clock station', '/staff/work-time': 'Staff · Work time', '/staff/payroll': 'Staff · Pay & time', '/classroom': 'My class', '/classroom/children': 'Class children',
       '/classroom/activities': 'Class activities', '/classroom/meals': 'Class meals', '/classroom/attendance': 'Class attendance' };

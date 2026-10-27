@@ -90,10 +90,10 @@ if "$payroll_only"; then
 fi
 
 if "$ai_only"; then
-  server_tests+=(-- --runTestsByPath tests/authenticatedFixture.test.js tests/recipePhoto.test.js tests/classroomAccess.test.js tests/localActivityAi.test.js tests/localActivityKnowledge.test.js tests/activityAi.test.js tests/activityPlannerGeneration.test.js tests/activityPlanner.test.js tests/authentication.test.js tests/workAccess.test.js)
-  postgres_tests+=(-- --runTestsByPath tests/authenticatedFixture.test.js tests/recipePhoto.test.js tests/classroomAccess.test.js tests/authentication.test.js tests/localActivityAi.test.js tests/localActivityKnowledge.test.js tests/activityAi.test.js tests/activityPlannerGeneration.test.js tests/activityPlannerGeneration.postgres.test.js tests/workAccess.test.js)
-  client_tests+=(-- src/components/activities/ActivityAiIdeas.test.tsx src/pages/ActivityAiPlanner.test.tsx src/pages/Activities.test.tsx src/components/activities/ActivityComposer.test.tsx src/components/activities/ActivityGenerate.test.tsx src/auth/WorkAccessGate.test.tsx src/auth/transport.test.ts)
-  browser_tests+=(-- tests/browser/activity-ai.spec.ts tests/browser/activity-generation.spec.ts tests/browser/core-screens.spec.ts)
+  server_tests+=(-- --runTestsByPath tests/authenticatedFixture.test.js tests/recipePhoto.test.js tests/classroomAccess.test.js tests/localActivityAi.test.js tests/localAiRuntime.test.js tests/organizerAssistant.test.js tests/localActivityKnowledge.test.js tests/activityAi.test.js tests/activityPlannerGeneration.test.js tests/activityPlanner.test.js tests/authentication.test.js tests/workAccess.test.js)
+  postgres_tests+=(-- --runTestsByPath tests/authenticatedFixture.test.js tests/recipePhoto.test.js tests/classroomAccess.test.js tests/authentication.test.js tests/localActivityAi.test.js tests/localAiRuntime.test.js tests/organizerAssistant.test.js tests/localActivityKnowledge.test.js tests/activityAi.test.js tests/activityPlannerGeneration.test.js tests/activityPlannerGeneration.postgres.test.js tests/workAccess.test.js)
+  client_tests+=(-- src/pages/OrganizerAssistant.test.tsx src/router/index.test.tsx src/components/activities/ActivityAiIdeas.test.tsx src/pages/ActivityAiPlanner.test.tsx src/pages/Activities.test.tsx src/components/activities/ActivityComposer.test.tsx src/components/activities/ActivityGenerate.test.tsx src/auth/WorkAccessGate.test.tsx src/auth/transport.test.ts)
+  browser_tests+=(-- tests/browser/organizer-assistant.spec.ts tests/browser/activity-ai.spec.ts tests/browser/activity-generation.spec.ts tests/browser/core-screens.spec.ts)
 fi
 
 if "$billing_only"; then

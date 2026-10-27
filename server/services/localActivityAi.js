@@ -1,4 +1,3 @@
-const http = require('node:http');
 const rooms = require('./roomService');
 const knowledge = require('./localActivityKnowledge');
 const { fieldError } = require('./catalogValidation');
@@ -6,85 +5,7 @@ const { object, identifier } = require('./activityValidation');
 
 const focuses = ['balanced', 'language', 'creative', 'physical', 'discovery', 'social'];
 const plain = value => typeof value === 'string' && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]|<[^>]*>|https?:\/\/|www\.|data:|javascript:|!\[|\]\(/i.test(value);
-const issue = (code, message) => Object.assign(new Error(message), { status: 424, code });
-const unavailable = () => issue('AI_UNAVAILABLE', 'The local AI is unavailable. You can keep using saved activities.');
-const localOnly = () => issue('AI_LOCAL_ONLY_REQUIRED', 'The AI runtime must have cloud features disabled and a local model installed. Ask an administrator to check the local AI setup.');
-let active = false;
-
-function configuration() {
-  const model = (process.env.SKAO_AI_MODEL || '').trim();
-  if (!model) return null;
-  if (model.length > 128 || !/^[a-z0-9][a-z0-9._/:-]*$/i.test(model) || /cloud|remote|:\/\/|:.*:/i.test(model)) throw localOnly();
-  const address = process.env.SKAO_AI_URL || 'http://127.0.0.1:11434';
-  let url;
-  try { url = new URL(address); } catch { throw localOnly(); }
-  // Literal loopback only: no DNS, user-provided host, proxy, or redirect path.
-  if (!/^http:\/\/(127\.0\.0\.1|\[::1\])(?::\d+)?\/?$/.test(address) ||
-      url.protocol !== 'http:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw localOnly();
-  const rawTimeout = process.env.SKAO_AI_TIMEOUT_MS || '120000';
-  if (!/^\d+$/.test(rawTimeout) || Number(rawTimeout) < 1000 || Number(rawTimeout) > 300000) {
-    throw issue('AI_CONFIGURATION_INVALID', 'The local AI timeout must be between 1,000 and 300,000 milliseconds.');
-  }
-  return { model, url, timeout: Number(rawTimeout) };
-}
-
-function jsonRequest(config, method, path, value, signal) {
-  const payload = value === undefined ? undefined : Buffer.from(JSON.stringify(value));
-  return new Promise((resolve, reject) => {
-    // Native HTTP does not consult HTTP_PROXY/NODE_USE_ENV_PROXY or follow redirects.
-    const request = http.request({ protocol: config.url.protocol, hostname: config.url.hostname.replace(/^\[|\]$/g, ''),
-      port: config.url.port || 80, path, method, agent: false,
-      maxHeaderSize: 16384, signal, headers: { Accept: 'application/json', ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {}) } }, response => {
-      if (response.statusCode !== 200 || !/^application\/json(?:;|$)/i.test(response.headers['content-type'] || '')) {
-        response.destroy(); reject(Object.assign(unavailable(), { runtimeStatus: response.statusCode })); return;
-      }
-      const chunks = []; let size = 0;
-      response.on('data', chunk => {
-        size += chunk.length;
-        if (size > 262144) { response.destroy(); reject(issue('AI_INVALID_RESPONSE', 'The local AI returned too much data. Try fewer activity ideas.')); }
-        else chunks.push(chunk);
-      });
-      response.once('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-        catch { reject(issue('AI_INVALID_RESPONSE', 'The local AI returned an unreadable response. Try again.')); }
-      });
-      response.once('error', () => reject(signal.aborted ? signal.reason : unavailable()));
-    });
-    request.once('error', () => reject(signal.aborted ? signal.reason : unavailable()));
-    request.end(payload);
-  });
-}
-
-function remoteMetadata(value, depth = 0) {
-  if (!value || typeof value !== 'object' || depth > 15) return false;
-  return Object.entries(value).some(([key, item]) =>
-    (/remote|cloud/i.test(key) && item !== undefined && item !== null && item !== '' && item !== false && item !== 0) ||
-    (key === 'capabilities' && Array.isArray(item) && item.some(capability => /remote|cloud/i.test(String(capability)))) || remoteMetadata(item, depth + 1));
-}
-
-async function verifyRuntime(config, signal) {
-  let status;
-  try { status = await jsonRequest(config, 'GET', '/api/status', undefined, signal); }
-  catch (error) { if (error.runtimeStatus === 404) throw localOnly(); throw error; }
-  if (status?.cloud?.disabled !== true) throw localOnly();
-  const tags = await jsonRequest(config, 'GET', '/api/tags', undefined, signal);
-  const names = new Set([config.model, config.model.includes(':') ? config.model : config.model + ':latest']);
-  const model = Array.isArray(tags?.models) ? tags.models.find(item => names.has(item?.name) || names.has(item?.model)) : null;
-  if (!model || !Number.isSafeInteger(model.size) || model.size <= 0 || !/^[a-f0-9]{64}$/i.test(model.digest || '') || remoteMetadata(model)) throw localOnly();
-  const name = names.has(model.name) ? model.name : model.model;
-  const details = await jsonRequest(config, 'POST', '/api/show', { model: name, verbose: false }, signal);
-  if (!details?.model_info || typeof details.model_info !== 'object' || !Object.keys(details.model_info).length || remoteMetadata(details)) throw localOnly();
-  return name;
-}
-
-async function limited(config, options, operation, timeout = config.timeout) {
-  const deadline = new AbortController();
-  const timer = setTimeout(() => deadline.abort(issue('AI_TIMEOUT', 'The local AI took too long. Try fewer ideas or a shorter activity.')), timeout);
-  timer.unref();
-  const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
-  try { return await operation(signal); }
-  finally { clearTimeout(timer); }
-}
+const { configuration, jsonRequest, remoteMetadata, verifyRuntime, limited, generate, issue } = require('./localAiRuntime');
 
 async function status(options = {}) {
   let config;
@@ -157,9 +78,7 @@ async function draft(payload, options = {}) {
   }
   const config = configuration();
   if (!config) throw issue('AI_NOT_CONFIGURED', 'Local AI is not set up yet. You can keep using saved activities.');
-  if (active) throw Object.assign(issue('AI_BUSY', 'Another activity request is running. Try again in a moment.'), { status: 429, retryAfter: 5 });
-  active = true;
-  try {
+  return generate(async () => {
     const sources = await knowledge.retrieve({ ageMinMonths: room.ageMinMonths, ageMaxMonths: room.ageMaxMonths, focus: values.focus, theme: values.theme });
     return await limited(config, options, async signal => {
       const model = await verifyRuntime(config, signal);
@@ -177,7 +96,7 @@ async function draft(payload, options = {}) {
         'Suggested materials are not Inventory allocations. Link and check material quantities before planning purchases.',
       ] };
     });
-  } finally { active = false; }
+  });
 }
 
 module.exports = { status, draft };

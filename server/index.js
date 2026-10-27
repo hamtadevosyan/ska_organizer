@@ -41,6 +41,7 @@ app.use('/api/admin', require('./auth/routes').admin);
 app.use('/api/children/:childId/safety', requireSession, require('./routes/childSafety'));
 app.use('/api/time-clock', payroll.self);
 app.use('/api/work-time', payroll.work);
+app.use('/api/assistant', requireSession, require('./routes/organizerAssistant'));
 app.use('/api/classroom', requireSession, require('./routes/classroom'));
 app.use('/api', requireSession, requireOperationalAccess);
 app.use('/api/billing', require('./routes/billing'));

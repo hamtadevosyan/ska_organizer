@@ -1,4 +1,4 @@
-import { Building2, Boxes, ClipboardCheck, FileText, House, PackageCheck, Palette, ShoppingCart, Users, Utensils, WalletCards } from 'lucide-react';
+import { Building2, Boxes, ClipboardCheck, FileText, House, PackageCheck, Palette, ShoppingCart, Sparkles, Users, Utensils, WalletCards } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '../auth/context';
 
@@ -17,6 +17,7 @@ const navigation = {
   receiving: { to: '/receiving', label: 'Receipts', icon: PackageCheck },
   staff: { to: '/staff', label: 'Staff', icon: Users },
   reports: { to: '/reports', label: 'Reports', icon: FileText },
+  assistant: { to: '/assistant', label: 'AI assistant', icon: Sparkles },
   billing: { to: '/billing', label: 'Tuition', icon: WalletCards, adminOnly: true },
   accounts: { to: '/accounts', label: 'Accounts', icon: Users, adminOnly: true },
   registrationForms: { to: '/registration-forms', label: 'Registration forms', icon: FileText, adminOnly: true },
@@ -28,6 +29,7 @@ const classroomItems: NavigationItem[] = [
   { to: '/classroom/children', label: 'Children', icon: Users },
   { to: '/classroom/activities', label: 'Activities', icon: Palette },
   { to: '/classroom/meals', label: 'Meals', icon: Utensils },
+  navigation.assistant,
 ];
 export const primaryNavigation: NavigationItem[] = [
   navigation.dashboard, navigation.attendance, navigation.activities, navigation.meals,
@@ -40,7 +42,7 @@ export function getNavigationItems(role?: Role) {
 }
 
 export function getPrimaryNavigationItems(role?: Role) {
-  return role === 'teacher' ? [classroomItems[0], { to: '/classroom/attendance', label: 'Attendance', icon: ClipboardCheck }, classroomItems[2], classroomItems[3]] : role === 'viewer' ? classroomItems : primaryNavigation;
+  return role === 'teacher' ? [classroomItems[0], { to: '/classroom/attendance', label: 'Attendance', icon: ClipboardCheck }, classroomItems[2], classroomItems[3]] : role === 'viewer' ? classroomItems.slice(0, 4) : primaryNavigation;
 }
 
 export function getMoreItems(role?: Role) {

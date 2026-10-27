@@ -11,7 +11,7 @@ const isolatedFiles = new Set([
   'staff-account-links.spec.ts', 'teacher-care.spec.ts', 'classroom-access.spec.ts', 'authentication.spec.ts', 'auth-fixture-session.spec.ts',
   'remembered-login.spec.ts', 'child-documents.spec.ts', 'staff-compliance.spec.ts',
   'batch-receiving.spec.ts', 'purchasing-list.spec.ts', 'inventory-group-removal.spec.ts',
-  'payroll.spec.ts', 'clock-station.spec.ts', 'employee-work-access.spec.ts', 'activity-ai.spec.ts', 'billing.spec.ts', 'ccrc-statements.spec.ts',
+  'payroll.spec.ts', 'clock-station.spec.ts', 'employee-work-access.spec.ts', 'activity-ai.spec.ts', 'organizer-assistant.spec.ts', 'billing.spec.ts', 'ccrc-statements.spec.ts',
 ]);
 const passthrough = new Set(['--list', '--help', '-h', '--version', '-V', '--shard', '--last-failed', '--ui', '--ui-host', '--ui-port', '--debug']);
 
@@ -113,7 +113,7 @@ export async function runBrowserTests(args = [], options = {}) {
       // Ordinary fixture groups never inherit a developer's live AI settings.
       const executionEnv = { ...env };
       for (const key of Object.keys(executionEnv)) if (key.startsWith('SKAO_AI_')) delete executionEnv[key];
-      if (path.posix.basename(name) === 'activity-ai.spec.ts') Object.assign(executionEnv, {
+      if (['activity-ai.spec.ts', 'organizer-assistant.spec.ts'].includes(path.posix.basename(name))) Object.assign(executionEnv, {
         SKAO_AI_MODEL: 'browser-local', SKAO_AI_URL: 'http://127.0.0.1:11439',
         SKAO_AI_SOURCES_FILE: path.join(cwd, 'tests/fixtures/activity-ai-sources.json'),
       });

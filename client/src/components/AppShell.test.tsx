@@ -65,7 +65,7 @@ test.each(['admin', 'editor'] as const)('More and desktop preserve %s account vi
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const more = within(screen.getByRole('navigation', { name: 'More navigation' }));
   expect(more.getAllByRole('link').map((link) => link.textContent)).toEqual([
-    'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Receipts', 'Staff', 'Reports', ...(role === 'admin' ? ['Tuition', 'Accounts', 'Registration forms'] : []),
+    'Children', 'Rooms & Classes', 'Inventory', 'Purchasing', 'Receipts', 'Staff', 'Reports', 'AI assistant', ...(role === 'admin' ? ['Tuition', 'Accounts', 'Registration forms'] : []),
   ]);
   expect(more.queryByRole('link', { name: 'Meals' })).not.toBeInTheDocument();
 });
@@ -91,6 +91,7 @@ test('Class viewer navigation contains only class pages and account actions', ()
     const nav = within(screen.getByRole('navigation', { name }));
     expect(nav.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual([
       '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals',
+      ...(name === 'Desktop navigation' ? ['/assistant'] : []),
     ]);
     expect(nav.getByRole('link', { name: 'Children' })).toHaveAttribute('aria-current', 'page');
     expect(nav.getByRole('link', { name: 'My class' })).not.toHaveAttribute('aria-current');
@@ -100,7 +101,7 @@ test('Class viewer navigation contains only class pages and account actions', ()
   expect(document.querySelector('.app-breadcrumb strong')).toHaveTextContent('Children');
   fireEvent.click(screen.getByRole('button', { name: 'More' }));
   const dialog = within(screen.getByRole('dialog', { name: 'More' }));
-  expect(dialog.queryAllByRole('link')).toHaveLength(0);
+  expect(dialog.getByRole('link', { name: 'AI assistant' })).toHaveAttribute('href', '/assistant');
   expect(dialog.getByRole('button', { name: 'Change password' })).toBeEnabled();
   expect(dialog.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   expect(dialog.getByText('Class viewer')).toBeVisible();

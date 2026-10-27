@@ -10,7 +10,7 @@ This is the first implemented part of SKAO-93. General source-based questions, a
 
 The current adapter supports Ollama's local HTTP API. It is replaceable; Ollama or any particular model has not been selected as the benchmark winner. This update installs no runtime or model, performs no download, and changes no Windows, router, firewall or device settings. Model licensing and hardware performance must be evaluated before selecting an artifact for actual use.
 
-The runtime must run on the same host or be reachable through an administrator-managed loopback forward. Bind it to `127.0.0.1`, enable `OLLAMA_NO_CLOUD=1`, and restart the runtime. The adapter first requires `/api/status` to report `cloud.disabled: true`, then checks that the configured model is installed locally and has no remote-model metadata. Older runtimes without this status API fail closed. Configure no hosted model, cloud alias or externally accessible runtime URL.
+The runtime may run on the same host, through an administrator-managed loopback forward, or on an explicitly configured private HTTPS AI machine as described in `docs/organizer-assistant.md`. Bind it to `127.0.0.1`, enable `OLLAMA_NO_CLOUD=1`, and restart the runtime. The adapter first requires `/api/status` to report `cloud.disabled: true`, then checks that the configured model is installed locally and has no remote-model metadata. Older runtimes without this status API fail closed. Configure no hosted model, cloud alias or externally accessible runtime URL.
 
 Add these settings to the checkout's `server/.env`, using the exact name of your already installed, reviewed local model:
 
@@ -22,7 +22,7 @@ SKAO_AI_TIMEOUT_MS=120000
 # SKAO_AI_SOURCES_FILE=/etc/skao/ai/references.json
 ```
 
-`SKAO_AI_MODEL=` disables the feature. The URL accepts a literal loopback address only; clients cannot select an endpoint or model. Timeout is bounded to 300,000 ms. Slow or unavailable AI never triggers a cloud fallback. Keep the runtime's management API off the LAN and public domain.
+`SKAO_AI_MODEL=` disables the feature. By default the URL accepts a literal loopback address only; the SKAO-92 private HTTPS option requires explicit opt-in and a dedicated token. clients cannot select an endpoint or model. Timeout is bounded to 300,000 ms. Slow or unavailable AI never triggers a cloud fallback. Keep the runtime's management API off the LAN and public domain.
 
 From the repository root, run the read-only diagnostic:
 
@@ -75,3 +75,6 @@ Regression tests use synthetic source excerpts and a deterministic loopback HTTP
 Before operational use, complete model selection/benchmarking (SKAO-89), local runtime deployment and offline network observation (SKAO-90), the approved source collection (SKAO-91), broader assistant access integration (SKAO-92) and held-out quality/privacy qualification (SKAO-94). The app remains useful with AI disabled.
 
 API behavior follows the official [Ollama generation API](https://docs.ollama.com/api/generate) and [local-only configuration guidance](https://docs.ollama.com/faq). The adapter deliberately requires the runtime's cloud-disabled status rather than assuming that a loopback address alone guarantees local inference.
+
+
+SKAO-92 adds a read-only scoped operational assistant and shared loopback/private-HTTPS transport. See `docs/organizer-assistant.md` for the role matrix, snapshots, retention and separate-machine configuration. General regulatory questions and source retrieval remain separate work.
