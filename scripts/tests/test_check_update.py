@@ -16,7 +16,7 @@ class UpdateCheckSelectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); marker = root / 'must-not-run'
             commands = root / 'commands'; commands.mkdir()
-            for name in ('node', 'npm', 'pg_dump', 'pg_restore', 'mktemp', 'tesseract'):
+            for name in ('node', 'npm', 'pg_dump', 'pg_restore', 'mktemp', 'tesseract', 'pdfinfo', 'pdftotext', 'pdftoppm', 'pdfimages', 'prlimit', 'python3'):
                 command = commands / name
                 command.write_text('#!/bin/sh\nprintf called >> "' + str(marker) + '"\nexit 99\n')
                 command.chmod(0o700)
@@ -52,7 +52,7 @@ class UpdateCheckSelectionTests(unittest.TestCase):
                 self.assertTrue((REPO / section / path).is_file(), path + ' must exist')
 
     def test_all_focus_modes_remain_mutually_exclusive_before_reading_settings(self):
-        for first, second in itertools.combinations(('--inventory', '--access', '--payroll', '--ai', '--billing'), 2):
+        for first, second in itertools.combinations(('--inventory', '--access', '--payroll', '--ai', '--billing', '--ccrc'), 2):
             with self.subTest(first=first, second=second):
                 result = self.run_check(first, second, '--dry-run')
                 self.assertEqual(result.returncode, 2)
@@ -95,6 +95,25 @@ class UpdateCheckSelectionTests(unittest.TestCase):
             self.assertIn(name, result.stdout)
         self.assertNotIn('tests/recipePhotoOcr.test.js', result.stdout)
         self.assertNotIn('tests/localActivityAi.test.js', result.stdout)
+        for section, output in re.findall(r'  In (server|client): ([^\n]+)', result.stdout):
+            for path in re.findall(r'(?:tests|src)/[A-Za-z0-9_./-]+', output):
+                self.assertTrue((REPO / section / path).is_file(), path + ' must exist')
+
+    def test_ccrc_selects_extraction_atomic_posting_and_private_source_checks(self):
+        result = self.run_check('--ccrc', '--dry-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        postgres = result.stdout.split('PostgreSQL tests (separate test database)', 1)[1].split('Client component tests', 1)[0]
+        for name in ('tests/ccrcStatements.test.js', 'tests/ccrcStatementStorage.test.js',
+                     'tests/ccrcStatements.postgres.test.js', 'tests/billingPersistence.postgres.test.js'):
+            self.assertIn(name, postgres)
+        for name in ('tests/ccrcStatementExtraction.test.js', 'tests/ccrcStatementParser.test.js',
+                     'CCRCStatements.test.tsx', 'ccrcStatements.test.ts',
+                     'tests/browser/ccrc-statements.spec.ts', 'tests/pwa-browser/ccrc-statement-caching.spec.ts',
+                     'Database backup: pg_dump', 'Apply pending database migrations', 'Client production build',
+                     'Static PWA privacy checks', 'PWA browser privacy checks (production build)'):
+            self.assertIn(name, result.stdout)
+        for name in ('tests/localActivityAi.test.js', 'tests/payroll.test.js'):
+            self.assertNotIn(name, result.stdout)
         for section, output in re.findall(r'  In (server|client): ([^\n]+)', result.stdout):
             for path in re.findall(r'(?:tests|src)/[A-Za-z0-9_./-]+', output):
                 self.assertTrue((REPO / section / path).is_file(), path + ' must exist')

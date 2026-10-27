@@ -196,8 +196,7 @@ exports.ccrcReview = (token, childId, chargeId, payload) => mutate(token, childI
   charge.ccrcReview = { familyDueDate, reason: reason(payload.reason), ccrcPaidCents: current.payers.ccrc.paidCents, ccrcUnappliedCents: current.ccrcUnappliedCents, acknowledgeUnappliedCredit: payload.acknowledgeUnappliedCredit === true, ...stamp(actor) };
   history(data, 'ccrc_review', actor, { chargeId: charge.id, reason: charge.ccrcReview.reason, before, after: charge.ccrcReview });
 });
-exports.payment = (token, childId, payload) => mutate(token, childId, 'payment', payload,
-  ['payer', 'amountCents', 'date', 'method', 'reference', 'chargeId'], (data, actor) => {
+function recordPayment(data, actor, payload) {
     const payer = payerOf(payload.payer), amountCents = positive(payload.amountCents), paidDate = date(payload.date);
     if (paidDate > time.dateAt()) throw math.invalid('A recorded payment cannot be dated in the future.', 'date');
     const payment = { id: randomUUID(), payer, amountCents, date: paidDate, method: v.text(payload.method, 'method', 80), reference: v.text(payload.reference, 'reference', 160),
@@ -213,6 +212,33 @@ exports.payment = (token, childId, payload) => mutate(token, childId, 'payment',
       if (payer === 'ccrc') reopenCcrcReview(data, charge, actor, 'An additional CCRC receipt changed this service month. Review the parent balance again.');
     }
     data.payments.push(payment); history(data, 'payment', actor, { paymentId: payment.id });
+}
+exports.payment = (token, childId, payload) => mutate(token, childId, 'payment', payload,
+  ['payer', 'amountCents', 'date', 'method', 'reference', 'chargeId'], (data, actor) => recordPayment(data, actor, payload));
+// Trusted composition for the administrator-only statement importer. Its outer
+// authorization transaction includes every child receipt and the source record.
+// The ordinary payment HTTP route deliberately does not accept source metadata.
+exports.importPayment = (token, childId, payload) => mutate(token, childId, 'statement_payment', payload,
+  ['payer', 'amountCents', 'date', 'method', 'reference', 'chargeId', 'source'], async (data, actor) => {
+    const source = payload.source;
+    v.object(source, ['statementId', 'statementLineId', 'page', 'excerpt', 'fingerprint', 'statementReference', 'paymentReference', 'entryReference', 'serviceMonth', 'statementReported'], 'statement source');
+    v.requestId(source.statementId); v.requestId(source.statementLineId);
+    if (!Number.isSafeInteger(source.page) || source.page < 1 || source.page > 12 || !/^[0-9a-f]{64}$/.test(source.fingerprint) ||
+        source.statementReported !== true || payload.payer !== 'ccrc') throw math.invalid('Supply a valid reviewed CCRC statement source.', 'source');
+    math.month(source.serviceMonth, 'serviceMonth');
+    const statement = await db.getCcrcStatementIdentity(source.statementId);
+    if (!statement || statement.fingerprint !== source.fingerprint || statement.status !== 'draft') throw math.invalid('A reviewed draft statement source is required.', 'source');
+    const safeSource = { ...source, excerpt: v.text(source.excerpt, 'excerpt', 2000, { required: true }),
+      statementReference: v.text(source.statementReference, 'statementReference', 160, { required: true }),
+      paymentReference: v.text(source.paymentReference, 'paymentReference', 160, { required: true }), entryReference: v.text(source.entryReference, 'entryReference', 160) };
+    if (payload.chargeId) {
+      const target = data.charges.find(charge => charge.id === payload.chargeId);
+      if (!target || target.settlementMode !== 'ccrc_actual' || target.month !== source.serviceMonth) throw math.invalid('Select the actual CCRC tuition charge for this service month.', 'source');
+    }
+    recordPayment(data, actor, payload);
+    const payment = data.payments.at(-1);
+    payment.source = safeSource; payment.serviceMonth = source.serviceMonth;
+    history(data, 'statement_payment', actor, { paymentId: payment.id, statementId: source.statementId, statementLineId: source.statementLineId, page: source.page });
   });
 exports.credit = (token, childId, payload) => mutate(token, childId, 'credit', payload, ['paymentId', 'chargeId', 'amountCents'], (data, actor) => {
   const payment = data.payments.find(row => row.id === payload.paymentId && !row.reversed), charge = data.charges.find(row => row.id === payload.chargeId), amount = positive(payload.amountCents);

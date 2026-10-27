@@ -3,9 +3,9 @@ name: Native Ubuntu deployment checks
 on:
   push:
     branches: [main, development, 'feature/**']
-    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/setup-recipe-ocr.sh', 'scripts/activity-ai-check.sh', 'scripts/check-update.sh', 'scripts/tests/*ubuntu*', 'scripts/tests/test_*.py', 'deploy/ubuntu/**', 'server/index.js', 'server/scripts/check-activity-ai.js', 'server/services/localActivity*.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
+    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/setup-recipe-ocr.sh', 'scripts/setup-ccrc-ocr.sh', 'scripts/activity-ai-check.sh', 'scripts/check-update.sh', 'scripts/tests/*ubuntu*', 'scripts/tests/test_*.py', 'deploy/ubuntu/**', 'server/index.js', 'server/scripts/check-activity-ai.js', 'server/services/localActivity*.js', 'server/services/normalizeCcrcImage.py', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
   pull_request:
-    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/setup-recipe-ocr.sh', 'scripts/activity-ai-check.sh', 'scripts/check-update.sh', 'scripts/tests/*ubuntu*', 'scripts/tests/test_*.py', 'deploy/ubuntu/**', 'server/index.js', 'server/scripts/check-activity-ai.js', 'server/services/localActivity*.js', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
+    paths: ['SKAO.sh', 'scripts/ubuntu.py', 'scripts/setup-recipe-ocr.sh', 'scripts/setup-ccrc-ocr.sh', 'scripts/activity-ai-check.sh', 'scripts/check-update.sh', 'scripts/tests/*ubuntu*', 'scripts/tests/test_*.py', 'deploy/ubuntu/**', 'server/index.js', 'server/scripts/check-activity-ai.js', 'server/services/localActivity*.js', 'server/services/normalizeCcrcImage.py', 'server/package*.json', 'client/package*.json', '.github/workflows/ubuntu-native.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,9 +28,11 @@ jobs:
         run: |
           bash -n SKAO.sh
           bash -n scripts/setup-recipe-ocr.sh
+          bash -n scripts/setup-ccrc-ocr.sh
           bash -n scripts/activity-ai-check.sh
           bash -n scripts/check-update.sh
           python3 -m py_compile scripts/ubuntu.py
+          python3 -m py_compile server/services/normalizeCcrcImage.py
           python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
       - name: Build the production release as an unprivileged development user
         run: bash SKAO.sh build

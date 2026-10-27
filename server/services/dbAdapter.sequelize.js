@@ -534,3 +534,26 @@ exports.saveChildBillingRecord = async (row, expectedVersion = row?.version - 1)
     return plain(previous ? await previous.update(values, { transaction }) : await entity.create(values, { transaction }));
   });
 };
+
+const statementStorage = require('./ccrcStatementStorage');
+exports.getCcrcStatement = async id => statementStorage.copy(await get('CcrcStatementImport', id));
+exports.getCcrcStatementIdentity = async id => plain(await model('CcrcStatementImport').findByPk(id, {
+  attributes: ['id', 'fingerprint', [literal('"data"->>\'status\''), 'status']],
+  transaction: transactionContext.getStore(),
+}));
+exports.getCcrcStatementByFingerprint = async fingerprint => statementStorage.copy(plain(await model('CcrcStatementImport').findOne({ where: { fingerprint }, transaction: transactionContext.getStore() })));
+exports.listCcrcStatements = async () => list('CcrcStatementImport', { attributes: { exclude: ['content'] }, order: [['id', 'ASC']] });
+exports.saveCcrcStatement = async (row, expectedVersion = row?.version - 1) => {
+  const data = statementStorage.validate(row, expectedVersion);
+  return exports.withAuthLock(async () => {
+    const transaction = transactionContext.getStore(), entity = model('CcrcStatementImport');
+    const previous = await entity.findByPk(row.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if ((previous?.version || 0) !== expectedVersion) throw statementStorage.conflict();
+    const changes = statementStorage.values(row, previous ? plain(previous) : null, data, new Date());
+    if (!previous) {
+      const existing = await entity.findOne({ where: { fingerprint: row.fingerprint }, transaction });
+      if (existing) throw statementStorage.duplicate(existing.id);
+    }
+    return statementStorage.copy(plain(previous ? await previous.update(changes, { transaction }) : await entity.create(changes, { transaction })));
+  });
+};

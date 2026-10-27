@@ -35,6 +35,14 @@ beforeEach(() => {
   vi.mocked(getBillingSummary).mockResolvedValue(summary()); vi.mocked(getBillingChild).mockResolvedValue(detail()); vi.mocked(saveBillingChange).mockResolvedValue({ ...detail(), version: 3 });
 });
 
+test('imported payments link to their retained original statement while manual payments have no invented source', async () => {
+  const value = detail(), payment = { id: 'payment-imported', payer: 'ccrc' as const, amountCents: 10000, date: '2026-10-05', method: 'ccrc', reference: 'SYN-CHECK', allocatedCents: 10000, creditCents: 0, reversed: false, allocations: [], at: '2026-10-05T18:00:00Z', actorId: 'admin' };
+  value.payments = [{ ...payment, source: { statementId: 'source/a', page: 2 } }, { ...payment, id: 'payment-manual' }];
+  vi.mocked(getBillingChild).mockResolvedValue(value); show(); await loaded();
+  expect(screen.getAllByRole('link', { name: 'Open source statement' })).toHaveLength(1);
+  expect(screen.getByRole('link', { name: 'Open source statement' })).toHaveAttribute('href', '/billing/ccrc-statements?statement=source%2Fa'); expect(screen.getByText('· Page 2')).toBeVisible();
+});
+
 test.each(['editor', 'viewer', 'teacher'] as const)('%s cannot load private billing records or controls', role => {
   show(role);
   expect(screen.getByRole('alert')).toHaveTextContent('Administrator access is required');

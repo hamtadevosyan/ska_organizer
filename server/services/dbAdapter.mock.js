@@ -5,7 +5,7 @@ const { amount } = require('./inventoryValidation');
 
 // In-memory mock data store
 const mock = {
-  childBillingRecords: [], payrollRecords: [], rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
+  ccrcStatements: [], childBillingRecords: [], payrollRecords: [], rooms: [], scheduleEntries: [], scheduleWeeks: [], staff: [], inventoryGroups: [], inventoryGroupOperations: [], inventoryItems: [], inventoryMovements: [], purchaseReceipts: [], purchaseBatches: [],
   accounts: [], sessions: [], loginAttempts: [], auditEvents: [],
   clockStations: [], clockStationPairings: [], staffClockPins: [], clockStationAttempts: [],
   childSafetyProfiles: {}, children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
@@ -251,6 +251,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.ccrcStatements = [];
     mock.childBillingRecords = [];
     mock.payrollRecords = [];
     mock.scheduleWeeks = [];
@@ -780,5 +781,30 @@ module.exports.saveChildBillingRecord = async (row, expectedVersion = row?.versi
       createdAt: previous?.createdAt || row.createdAt || mock.nowIso(), updatedAt: row.updatedAt || mock.nowIso() });
     if (index < 0) mock.childBillingRecords.push(saved); else mock.childBillingRecords[index] = saved;
     return structuredClone(saved);
+  });
+};
+
+const statementStorage = require('./ccrcStatementStorage');
+module.exports.getCcrcStatement = async id => statementStorage.copy(mock.ccrcStatements.find(row => row.id === id) || null);
+module.exports.getCcrcStatementIdentity = async id => {
+  const row = mock.ccrcStatements.find(value => value.id === id);
+  return row ? structuredClone({ id: row.id, fingerprint: row.fingerprint, status: row.data.status }) : null;
+};
+module.exports.getCcrcStatementByFingerprint = async fingerprint => statementStorage.copy(mock.ccrcStatements.find(row => row.fingerprint === fingerprint) || null);
+module.exports.listCcrcStatements = async () => mock.ccrcStatements.slice().sort((a, b) => a.id.localeCompare(b.id)).map(row => statementStorage.copy(row, false));
+module.exports.saveCcrcStatement = async (row, expectedVersion = row?.version - 1) => {
+  const data = statementStorage.validate(row, expectedVersion);
+  return withTransaction(async () => {
+    const index = mock.ccrcStatements.findIndex(value => value.id === row.id);
+    const previous = index < 0 ? null : mock.ccrcStatements[index];
+    if ((previous?.version || 0) !== expectedVersion) throw statementStorage.conflict();
+    const changes = statementStorage.values(row, previous, data, mock.nowIso());
+    if (!previous) {
+      const existing = mock.ccrcStatements.find(value => value.fingerprint === row.fingerprint);
+      if (existing) throw statementStorage.duplicate(existing.id);
+    }
+    const saved = { ...(previous || {}), ...changes };
+    if (index < 0) mock.ccrcStatements.push(saved); else mock.ccrcStatements[index] = saved;
+    return statementStorage.copy(saved);
   });
 };
