@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "regeneratedOn": "2026-11-01",
+  "ollama": {
+    "version": "0.40.13",
+    "windowsAmd64": {
+      "url": "https://github.com/ollama/ollama/releases/download/v0.40.13/ollama-windows-amd64.zip",
+      "sha256": "7afa38624fa62ee5d8293422d0ab084c1bb4603134c7f4dafce11a033b57cc19"
+    },
+    "checksumSource": "https://github.com/ollama/ollama/releases/download/v0.40.13/sha256sum.txt"
+  },
+  "caddy": {
+    "version": "2.11.7",
+    "windowsAmd64": {
+      "url": "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_windows_amd64.zip",
+      "sha256": "0a1edc0b799512051c57071ce0e798d3f2cf67dc98171366f1d2b326072e3b06",
+      "executableSha256": "5f93a9bd555f3aac9d33af2756ba14b3519d8cca4ffd55256bdaeab444c9db2a"
+    },
+    "checksumSource": "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_checksums.txt"
+  },
+  "model": {
+    "name": "qwen3:4b-instruct-2507-q4_K_M",
+    "manifestSha256": "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0",
+    "manifestUrl": "https://registry.ollama.ai/v2/library/qwen3/manifests/4b-instruct-2507-q4_K_M"
+  }
+}

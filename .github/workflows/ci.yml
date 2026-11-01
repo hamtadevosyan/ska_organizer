@@ -29,6 +29,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./scripts/tests/pilot-process.tests.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem scripts/local-ai/windows/tests -Filter *.Tests.ps1 | Sort-Object Name | ForEach-Object {
+            & powershell.exe -NoProfile -File $_.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Real proxy-free HTTP helper under Windows PowerShell
+        shell: powershell
+        env:
+          SKAO_TEST_PWSH: powershell.exe
+        run: |
+          python -m unittest discover -s scripts/local-ai/windows/tests -p test_ollama_http.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   test:
     runs-on: ubuntu-latest

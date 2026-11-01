@@ -99,7 +99,7 @@ class ActivityAiDiagnosticTests(unittest.TestCase):
             for name in ('SKAO.sh', 'scripts/activity-ai-check.sh', 'server/scripts/check-activity-ai.js'):
                 shutil.copyfile(REPO / name, repo / name)
             (repo / 'server/config/environment.js').write_text('// synthetic environment only\n')
-            (repo / 'server/services/localActivityAi.js').write_text(body)
+            (repo / 'server/services/localAiStatus.js').write_text(body)
             before = sorted(str(path.relative_to(repo)) for path in repo.rglob('*'))
             result = subprocess.run(['bash', str(repo / 'SKAO.sh'), 'ai-check', *args],
                                     text=True, capture_output=True, timeout=10, cwd='/')

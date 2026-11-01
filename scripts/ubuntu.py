@@ -19,6 +19,7 @@ from pathlib import Path
 import pwd
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -322,6 +323,11 @@ def public_build():
           'Build files were temporary; the deployment host builds its own native dependencies.')
 
 
+def prepare_local_ai(repo):
+    # Offline preparation only: updates remain available while the AI host sleeps.
+    run(['bash', str(repo / 'scripts/local-ai/pi/setup.sh'), '--prepare', '--if-configured'])
+
+
 def public_deploy(args):
     if os.geteuid() == 0:
         raise Failure('Run SKAO.sh as your normal user, without sudo. It requests sudo only for host management.')
@@ -334,6 +340,7 @@ def public_deploy(args):
         run(['git', 'pull', '--ff-only'], cwd=repo)
         # Re-execute so changes to this helper are used after pulling.
         os.execv(sys.executable, [sys.executable, str(Path(__file__)), 'update', '--local'])
+    prepare_local_ai(repo)
     metadata = {'node': node, 'operation': args.command}
     if args.command == 'setup':
         metadata.update(lan_address(args.ip))
@@ -352,12 +359,50 @@ def public_deploy(args):
         root_call('_install', stage)
 
 
+def public_ai_only_state():
+    """Accept only the public CA installed before the first native setup.
+
+    This does not mark a native deployment as owned. Unrelated existing state
+    still requires inspection instead of being claimed by this installer.
+    """
+    try:
+        parent = CONF.parent
+        ai = parent / 'ai'
+        certificate = ai / 'ca.pem'
+        for directory in (parent, ai):
+            metadata = directory.lstat()
+            if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o755:
+                return False
+        if {p.name for p in parent.iterdir()} != {'ai'} or {p.name for p in ai.iterdir()} != {'ca.pem'}:
+            return False
+        descriptor = os.open(certificate, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o644 or not 1 <= metadata.st_size <= 65536:
+                return False
+            raw = os.read(descriptor, 65537)
+            if len(raw) != metadata.st_size:
+                return False
+            data = raw.decode('ascii')
+        finally:
+            os.close(descriptor)
+        if not re.fullmatch(r'\s*-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----\s*', data):
+            return False
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cadata=data)
+        return ssl.PEM_cert_to_DER_cert(data.strip()) in context.get_ca_certs(binary_form=True)
+    except (OSError, ValueError, UnicodeError, ssl.SSLError):
+        return False
+
+
 def check_managed():
     if CONF.exists() and (not (CONF / 'owner').is_file() or (CONF / 'owner').read_text() != MARKER):
         raise Failure('/etc/skao/native is not owned by this installer; refusing to overwrite it.')
     if not CONF.exists():
         for path in [ROOT, HELPER.parent, CONF.parent, *UNITS.glob('skao*')]:
             if path.exists():
+                if path == CONF.parent and public_ai_only_state():
+                    continue
                 raise Failure('An unmanaged SKAO installation exists; inspect it before installing.')
 
 
