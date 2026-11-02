@@ -15,7 +15,7 @@ const focusOptions: [ActivityAiFocus, string][] = [['balanced', 'A little of eve
 // Keep provenance with the saved activity using its existing plain-text description.
 function editableDetails(draft: ActivityAiDraft, sources: ActivityAiSource[]): ActivityDetails {
   const references = sources.filter(source => draft.sourceIds.includes(source.id));
-  const description = 'AI-assisted educational draft. Review safety and suitability before use.\n\n' + draft.description;
+  const description = draft.description + '\n\nAI-assisted educational draft. Review safety and suitability before use.';
   const referenceFormats = [
     (source: ActivityAiSource) => '[' + source.id + '] ' + source.title + ' — ' + source.publisher + '; ' + source.version + '; ' + source.section,
     (source: ActivityAiSource) => '[' + source.id + '] ' + source.version + '; ' + source.section,

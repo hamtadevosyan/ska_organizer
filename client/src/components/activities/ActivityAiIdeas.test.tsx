@@ -44,19 +44,38 @@ test('novel ideas are reviewed, edited and explicitly saved to the library with 
   fireEvent.click(within(card).getByRole('button', { name: 'Review idea 1' }));
   const form = screen.getByRole('form', { name: 'New activity' });
   expect(within(form).getByLabelText('Activity name')).toHaveValue('Autumn color detectives');
-  expect((within(form).getByLabelText('Description') as HTMLTextAreaElement).value).toContain('Planning references:');
+  const description = within(form).getByLabelText('Description') as HTMLTextAreaElement;
+  expect(description.value.startsWith(result.drafts[0].description + '\n\n')).toBe(true);
+  expect(description.value).toContain('\n\nAI-assisted educational draft. Review safety and suitability before use.');
+  expect(description.value).toContain('Planning references:');
+  expect(description.value).toContain('[education-1]'); expect(description.value).toContain('2026-01');
   expect(within(form).getByText('Suggested materials')).toBeVisible();
   expect(within(form).getByText(/Suggestions alone are not included in stock or purchasing/)).toBeVisible();
   fireEvent.change(within(form).getByLabelText('Activity name'), { target: { value: 'Our autumn detectives' } });
+  const reviewedDescription = description.value + '\n\nTeacher note: use the large sorting trays.';
+  fireEvent.change(description, { target: { value: reviewedDescription } });
   fireEvent.click(within(form).getByRole('button', { name: 'Save activity' }));
   await screen.findByText('Activity saved to your library. Choose Generate week to include saved ideas in your plan.');
   expect(saveCalls()[0][1]).toMatchObject({ name: 'Our autumn detectives', roomId: room.id, materials: [], materialsNotes: 'Large leaves and sorting trays.' });
+  expect((saveCalls()[0][1] as ActivityDetails).description).toBe(reviewedDescription);
   expect((saveCalls()[0][1] as ActivityDetails).description).toContain('Synthetic classroom guide');
   expect(callbacks.onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'new-ai-activity', version: 1 }));
   expect(vi.mocked(axios.post).mock.calls.every(([url]) => url.endsWith('/draft') || url.endsWith('/activity'))).toBe(true);
   expect(axios.put).not.toHaveBeenCalled(); expect(axios.delete).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: 'Review idea 1' })).not.toBeInTheDocument();
   expect(screen.getByText('Saved to library')).toBeVisible();
+});
+
+test('an unsourced idea opens with its full instructions and saves the trailing review notice', async () => {
+  vi.mocked(axios.post).mockResolvedValueOnce(response({ ...result, sources: [], drafts: [{ ...result.drafts[0], sourceIds: [] }] }));
+  render(<ActivityAiIdeas {...props()} />); await draft();
+  fireEvent.click(screen.getByRole('button', { name: 'Review idea 1' }));
+  const description = screen.getByLabelText('Description') as HTMLTextAreaElement;
+  const expected = result.drafts[0].description + '\n\nAI-assisted educational draft. Review safety and suitability before use.';
+  expect(description).toHaveValue(expected);
+  fireEvent.click(screen.getByRole('button', { name: 'Save activity' }));
+  await screen.findByText('Activity saved to your library. Choose Generate week to include saved ideas in your plan.');
+  expect((saveCalls()[0][1] as ActivityDetails).description).toBe(expected);
 });
 
 test('unavailable local AI explains the next step and leaves a clean close without making draft or save requests', async () => {
@@ -147,6 +166,11 @@ test('long source metadata keeps complete source IDs, versions and instructions 
   vi.mocked(axios.post).mockResolvedValueOnce(response({ ...result, sources, drafts: [{ ...result.drafts[0], description, sourceIds: sources.map(source => source.id) }] }));
   render(<ActivityAiIdeas {...props()} />); await draft(); fireEvent.click(screen.getByRole('button', { name: 'Review idea 1' }));
   const value = (screen.getByLabelText('Description') as HTMLTextAreaElement).value;
-  expect(value.length).toBeLessThanOrEqual(4000); expect(value).toContain(description); expect(value).toContain('AI-assisted educational draft');
+  expect(value.length).toBeLessThanOrEqual(4000); expect(value.startsWith(description + '\n\n')).toBe(true); expect(value).toContain('AI-assisted educational draft');
   for (const source of sources) { expect(value).toContain(source.id); expect(value).toContain(source.version); }
+  fireEvent.click(screen.getByRole('button', { name: 'Save activity' }));
+  await screen.findByText('Activity saved to your library. Choose Generate week to include saved ideas in your plan.');
+  const saved = (saveCalls()[0][1] as ActivityDetails).description;
+  expect(saved).toBe(value.trim()); expect(saved.startsWith(description)).toBe(true);
+  for (const source of sources) { expect(saved).toContain(source.id); expect(saved).toContain(source.version.trim()); }
 });

@@ -13,6 +13,8 @@ import { api, authenticatedApi } from './auth-helpers';
 let runtime: Server;
 const prompts: Record<string, unknown>[] = [];
 let stoppedRequests = 0;
+const generatedInstructions = 'Invite children to sort large colored shapes. Take turns describing the choices. Adapt the grouping and language to the children; supervise the materials.';
+const draftNotice = 'AI-assisted educational draft. Review safety and suitability before use.';
 test.beforeAll(async () => {
   runtime = createServer(async (request, response) => {
     const send = (body: unknown, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(body)); };
@@ -32,7 +34,7 @@ test.beforeAll(async () => {
     }
     const drafts = Array.from({ length: Number(prompt.activityCount) }, (_, index) => ({
       name: 'Color turn taking ' + prompt.theme + ' ' + (index + 1),
-      description: 'Invite children to sort large colored shapes. Take turns describing the choices. Adapt the grouping and language to the children; supervise the materials.',
+      description: generatedInstructions,
       durationMinutes: prompt.durationMinutes,
       materialsNotes: 'Large colored shapes; review quantities and link available Inventory materials before planning.',
       sourceIds: ['synthetic-turn-taking'],
@@ -103,14 +105,25 @@ for (const width of [320, 390, 1280]) {
     const form = dialog.getByRole('form', { name: 'New activity', exact: true });
     await expect(form.getByLabel('Minimum age (months)', { exact: true })).toHaveValue('24');
     await expect(form.getByLabel('Maximum age (months)', { exact: true })).toHaveValue('60');
+    const description = form.getByLabel('Description', { exact: true });
+    const initialDescription = await description.inputValue();
+    expect(initialDescription.startsWith(generatedInstructions)).toBe(true);
+    expect(initialDescription).toContain('\n\n' + draftNotice + '\n\nPlanning references:');
+    expect(initialDescription).toContain('[synthetic-turn-taking]');
+    expect(initialDescription).toContain('2026-10-synthetic');
+    const reviewedDescription = initialDescription.replace(generatedInstructions,
+      generatedInstructions + '\n\nTeacher review: Use large washable shapes and supervised turns.');
+    await description.fill(reviewedDescription);
     const name = 'Reviewed sorting ' + suffix;
     await form.getByLabel('Activity name', { exact: true }).fill(name);
     await form.getByLabel('Minutes', { exact: true }).fill('25');
     await fits(page, dialog);
+    const saveRequest = page.waitForRequest(request => request.url() === api + '/activity' && request.method() === 'POST');
     await form.getByRole('button', { name: 'Save activity', exact: true }).click();
+    expect((await saveRequest).postDataJSON().description).toBe(reviewedDescription);
     await expect(dialog).toContainText('Activity saved to your library.');
     const saved = (await catalog(http)).find(activity => activity.name === name)!;
-    expect(saved).toMatchObject({ durationMinutes: 25, roomId: room.id, ageMinMonths: 24, ageMaxMonths: 60 });
+    expect(saved).toMatchObject({ description: reviewedDescription, durationMinutes: 25, roomId: room.id, ageMinMonths: 24, ageMaxMonths: 60 });
     expect(await getPlan(http, room)).toEqual(original);
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     if (await dialog.getByRole('button', { name: 'Discard AI ideas', exact: true }).isVisible()) await dialog.getByRole('button', { name: 'Discard AI ideas', exact: true }).click();
@@ -125,7 +138,7 @@ for (const width of [320, 390, 1280]) {
     await page.getByRole('button', { name: 'Save week', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Save week', exact: true })).toBeDisabled();
     const plan = await getPlan(http, room);
-    expect(plan.entries).toHaveLength(1); expect(plan.entries[0].activity).toMatchObject({ id: saved.id, name, durationMinutes: 25 });
+    expect(plan.entries).toHaveLength(1); expect(plan.entries[0].activity).toMatchObject({ id: saved.id, name, description: reviewedDescription, durationMinutes: 25 });
     expect((await data<{ quantity: string }>(await http.get(api + '/inventory/' + stock.id))).quantity).toBe('10');
   });
 }
