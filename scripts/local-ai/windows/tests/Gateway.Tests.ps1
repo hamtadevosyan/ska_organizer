@@ -157,9 +157,10 @@ try {
     [IO.File]::WriteAllText($envPath, 'not a connection file')
     Expect-Refusal { Get-ExistingToken | Out-Null } 'malformed token rejected'
     Assert-Test ($configText -cmatch 'path /api/status /api/tags' -and $configText -cmatch 'path /api/show /api/generate' -and $configText -cmatch 'max_size 65536' -and $configText -cmatch 'header_up -Authorization') 'only intended gateway routes rendered'
-    $key = [Security.Cryptography.RSA]::Create()
+    # .NET Framework exposes this provider's KeySize as read-only.
+    $key = New-Object Security.Cryptography.RSACryptoServiceProvider(2048)
     try {
-        $key.KeySize = 2048
+        $key.PersistKeyInCsp = $false
         $name = New-Object Security.Cryptography.X509Certificates.X500DistinguishedName('CN=SKAO synthetic test CA')
         $request = New-Object Security.Cryptography.X509Certificates.CertificateRequest($name, $key, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
         $request.CertificateExtensions.Add((New-Object Security.Cryptography.X509Certificates.X509BasicConstraintsExtension($true, $false, 0, $true)))
