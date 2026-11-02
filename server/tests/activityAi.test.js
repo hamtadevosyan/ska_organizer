@@ -103,3 +103,15 @@ test('known AI unavailable and busy failures remain specific, bounded and separa
   expect(busy.status).toBe(429); expect(busy.headers['retry-after']).toBe('5');
   expect((await fixture(app).get('/api/rooms')).status).toBe(200);
 });
+
+test('activity format failures explain the problem without exposing rejected model text or diagnostics', async () => {
+  const message = 'The AI stopped before finishing the activity guides. Try fewer ideas. Nothing was saved.';
+  draft.mockRejectedValueOnce(Object.assign(new Error(message), { status: 424, code: 'AI_INVALID_RESPONSE',
+    validationReason: 'OUTPUT_TRUNCATED', retryable: true, response: 'Private rejected text https://user:password@invalid.test',
+    prompt: 'Private synthetic theme', token: 'private-connection-token' }));
+  const response = await fixture(app).post('/api/activity-ai/draft').send(payload);
+  expect(response.status).toBe(424);
+  expect(response.body).toEqual({ error: { code: 'AI_INVALID_RESPONSE', message } });
+  expect(response.headers['cache-control']).toBe('no-store');
+  expect(JSON.stringify(response.body)).not.toMatch(/Private|password|private-connection-token|validationReason|retryable/);
+});

@@ -65,13 +65,15 @@ test('novel activity ideas use only room ages, explicit non-personal choices and
   expect(result).toMatchObject({ model: 'synthetic-local:latest', sources: [known], drafts: [{ name: 'Color story circle', ageMinMonths: 24, ageMaxMonths: 60, roomId: target.id, materials: [], sourceIds: [known.id] }] });
   expect(calls.map(call => call.path)).toEqual(['/api/status', '/api/tags', '/api/show', '/api/generate']);
   const body = calls.at(-1).body;
-  expect(JSON.parse(body.prompt)).toEqual({ task: 'activity_drafts', ageMinMonths: 24, ageMaxMonths: 60, focus: 'language', theme: 'Colors', activityCount: 1, durationMinutes: 20, sources: [known], videoExamples: videos.forModel() });
+  expect(JSON.parse(body.prompt)).toEqual({ task: 'activity_drafts', ageMinMonths: 24, ageMaxMonths: 60, focus: 'language', theme: 'Colors', activityCount: 1, durationMinutes: 20, sources: [known], videoExamples: videos.forModel(), responseSchema: body.format });
   expect(JSON.stringify(body)).not.toContain('Private synthetic child'); expect(JSON.stringify(body)).not.toContain(target.name); expect(JSON.stringify(body)).not.toContain(target.id);
-  expect(body).toMatchObject({ stream: false, keep_alive: 0, think: false, options: { num_predict: 4096, num_ctx: 8192 } });
+  expect(body).toMatchObject({ stream: false, keep_alive: 0, think: false, options: { num_predict: 4096, num_ctx: 8192, temperature: 0 } });
   expect(body).not.toHaveProperty('tools'); expect(body.system).toMatch(/untrusted reference data/);
   expect(body.system).toMatch(/4 to 6 distinct concrete steps/);
   expect(body.format.properties.drafts.items.properties.steps).toMatchObject({ minItems: 4, maxItems: 6 });
   expect(body.format.properties.drafts.items.properties).not.toHaveProperty('description');
+  expect(body.format.properties.drafts.items.properties.sourceIds.items.enum).toEqual([known.id]);
+  expect(body.format.properties.drafts.items.properties.durationMinutes.enum).toEqual(Array.from({ length: 16 }, (_, index) => index + 5));
   const guide = modelDraft(), description = result.drafts[0].description;
   expect(description).toBe('Purpose: ' + guide.purpose + '\n\nPreparation: ' + guide.preparation +
     '\n\nHow to do it:\n' + guide.steps.map((step, index) => (index + 1) + '. ' + step).join('\n') +
@@ -105,6 +107,7 @@ test('disabling video examples leaves the richer guide available without any med
   expect(result.drafts[0].tutorialLinks).toEqual([]);
   const body = calls.at(-1).body;
   expect(JSON.parse(body.prompt).videoExamples).toEqual([]);
+  expect(body.format.properties.drafts.items.properties.sourceIds.maxItems).toBe(0);
   expect(body.format.properties.drafts.items.properties.videoIds.maxItems).toBe(0);
   expect(calls.map(call => call.path)).toEqual(['/api/status', '/api/tags', '/api/show', '/api/generate']);
 });
@@ -136,17 +139,164 @@ test('five complete guides at the supported field bounds fit the saved descripti
   expect(await db.listActivities()).toEqual([]);
 });
 
+test('meaningful short sections and steps are kept without arbitrary character padding', async () => {
+  const brief = modelDraft({ purpose: 'Practice counting.', preparation: 'Set out counters.',
+    steps: ['Show two counters.', 'Count them together.', 'Sort the counters.', 'Count each group.'],
+    conversationPrompts: ['How many?'], adaptations: 'Use fewer counters.', safety: 'Supervise closely.', cleanup: 'Wash hands.' });
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [brief] }) }))); };
+  const result = await service.draft(input(await room()));
+  expect(result.drafts[0].description).toContain('Purpose: Practice counting.');
+  expect(result.drafts[0].description).toContain('\n4. Count each group.');
+  expect(result.drafts[0].description).toContain('\n- How many?');
+  expect(result.drafts[0].description.endsWith('Cleanup: Wash hands.')).toBe(true);
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
+  const rules = calls.at(-1).body.format.properties.drafts.items.properties;
+  for (const key of ['purpose', 'preparation', 'adaptations', 'safety', 'cleanup']) expect(rules[key].minLength).toBe(1);
+  expect(rules.steps.items.minLength).toBe(1); expect(rules.conversationPrompts.items.minLength).toBe(1);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('trimmed Unicode character bounds agree with the supplied JSON schema', async () => {
+  const purpose = 'Count ' + '🟦'.repeat(154);
+  expect(Array.from(purpose)).toHaveLength(160);
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ purpose: '  ' + purpose + '  ',
+      preparation: '  ' + 'P'.repeat(200) + '  ' })] }) }))); };
+  const result = await service.draft(input(await room()));
+  expect(result.drafts[0].description.startsWith('Purpose: ' + purpose + '\n\nPreparation: ' + 'P'.repeat(200))).toBe(true);
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
+});
+
+test('a Unicode name that exceeds the catalog storage limit is never returned as a saveable draft', async () => {
+  const name = 'Sort ' + '🟦'.repeat(95);
+  expect(Array.from(name)).toHaveLength(100);
+  expect(name.length).toBeGreaterThan(100);
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ name })] }) }))); };
+  await expect(service.draft(input(await room()))).rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE', validationReason: 'TEXT_LIMIT' });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test.each([
+  ['missing required details', modelReply({ response: JSON.stringify({ drafts: [(() => { const value = modelDraft(); delete value.cleanup; return value; })()] }) }), 'INVALID_SHAPE'],
+  ['overlong section', modelReply({ response: JSON.stringify({ drafts: [modelDraft({ preparation: 'PrivateModelText-' + 'x'.repeat(201) })] }) }), 'TEXT_LIMIT'],
+  ['duplicate steps', modelReply({ response: JSON.stringify({ drafts: [modelDraft({ steps: [modelDraft().steps[0], ...modelDraft().steps.slice(0, 3)] })] }) }), 'DUPLICATE_STEPS'],
+  ['unknown source', modelReply({ response: JSON.stringify({ drafts: [modelDraft({ sourceIds: ['invented-reference'] })] }) }), 'UNKNOWN_SOURCE'],
+  ['unknown video', modelReply({ response: JSON.stringify({ drafts: [modelDraft({ videoIds: ['invented-tutorial'] })] }) }), 'UNKNOWN_VIDEO'],
+  ['truncated JSON', modelReply({ response: '{"drafts":[', done_reason: 'length' }), 'OUTPUT_TRUNCATED'],
+])('one bounded regeneration repairs %s without replaying rejected model text', async (label, rejected, reason) => {
+  let attempt = 0;
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(++attempt === 1 ? rejected : modelReply())); };
+  const result = await service.draft(input(await room()));
+  expect(result.drafts).toHaveLength(1);
+  const requests = calls.filter(call => call.path === '/api/generate');
+  expect(requests).toHaveLength(2);
+  const original = JSON.parse(requests[0].body.prompt), repaired = JSON.parse(requests[1].body.prompt);
+  expect(original).not.toHaveProperty('correction');
+  expect(repaired).toEqual({ ...original, correction: { reason } });
+  expect(requests[1].body.prompt).not.toContain('PrivateModelText-');
+  expect(requests[1].body.format).toEqual(requests[0].body.format);
+  expect(calls.filter(call => call.path === '/api/status')).toHaveLength(1);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('repeated invalid guides stop after two attempts with a content-free explanation', async () => {
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ preparation: 'PrivateModelText-' + 'x'.repeat(201) })] }) }))); };
+  await expect(service.draft(input(await room()))).rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE', validationReason: 'TEXT_LIMIT',
+    message: 'An AI activity section exceeded its length limit. Nothing was saved.' });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('a repeated token limit has an actionable explanation instead of accepting a partial guide', async () => {
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: '{"drafts":[', done_reason: 'length' }))); };
+  await expect(service.draft(input(await room()))).rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE', validationReason: 'OUTPUT_TRUNCATED',
+    message: 'The AI stopped before finishing the activity guides. Try fewer ideas. Nothing was saved.' });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test.each([
+  ['a URL in instructions', modelReply({ response: JSON.stringify({ drafts: [modelDraft({ preparation: 'PrivateModelText https://user:secret@example.invalid/do-not-load' })] }) }), 'UNSAFE_TEXT'],
+  ['markup in instructions', modelReply({ response: JSON.stringify({ drafts: [modelDraft({ purpose: '<script>PrivateModelText</script>' })] }) }), 'UNSAFE_TEXT'],
+  ['remote response metadata', modelReply({ remote_host: 'https://user:secret@example.invalid/PrivateModelText' }), 'UNVERIFIED_RESPONSE'],
+  ['excessive response text', modelReply({ response: 'PrivateModelText' + 'x'.repeat(65536) }), 'RESPONSE_LIMIT'],
+])('%s is rejected immediately without regeneration or content in the error', async (label, rejected, reason) => {
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(rejected)); };
+  const error = await service.draft(input(await room())).then(() => { throw new Error('Expected failure.'); }, value => value);
+  expect(error).toMatchObject({ code: 'AI_INVALID_RESPONSE', validationReason: reason, retryable: false });
+  expect(error.message).not.toMatch(/PrivateModelText|secret|example\.invalid|<script>/);
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('an inference network failure is not retried', async () => {
+  generate = async (req, res) => { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end('{}'); };
+  await expect(service.draft(input(await room()))).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
+});
+
+test('the API returns only the fixed safe failure explanation, not model text or credentials', async () => {
+  const request = require('./helpers/authenticatedRequest'), app = require('../index');
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ preparation: 'PrivateModelText https://user:secret@example.invalid/do-not-load' })] }) }))); };
+  const response = await request(app).post('/api/activity-ai/draft').send(input(await room()));
+  expect(response.status).toBe(424);
+  expect(response.body).toEqual({ error: { code: 'AI_INVALID_RESPONSE',
+    message: 'The AI included unsupported links or markup in its instructions. Nothing was saved.' } });
+  expect(JSON.stringify(response.body)).not.toMatch(/PrivateModelText|secret|example\.invalid|retryable|validationReason/);
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('the repair attempt keeps the original deadline and busy guard', async () => {
+  let attempt = 0, repairStarted;
+  const waiting = new Promise(resolve => { repairStarted = resolve; });
+  const timers = jest.spyOn(global, 'setTimeout');
+  generate = async (req, res) => {
+    if (++attempt === 1) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(modelReply({ response: '{' }))); }
+    else repairStarted();
+  };
+  const target = await room(), pending = service.draft(input(target));
+  await waiting;
+  await expect(service.draft(input(target))).rejects.toMatchObject({ code: 'AI_BUSY' });
+  await expect(pending).rejects.toMatchObject({ code: 'AI_TIMEOUT' });
+  expect(timers.mock.calls.filter(([, duration]) => duration === 1000)).toHaveLength(1);
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+});
+
+test('cancelling a repair aborts it and releases capacity without another attempt', async () => {
+  let attempt = 0, repairStarted;
+  const waiting = new Promise(resolve => { repairStarted = resolve; });
+  generate = async (req, res) => {
+    if (++attempt === 1) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(modelReply({ response: '{' }))); }
+    else repairStarted();
+  };
+  const controller = new AbortController(), target = await room();
+  const pending = service.draft(input(target), { signal: controller.signal });
+  await waiting; controller.abort();
+  await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(modelReply())); };
+  expect((await service.draft(input(target))).drafts).toHaveLength(1);
+});
+
 const incompleteGuide = field => {
   const draft = modelDraft(); delete draft[field]; return draft;
 };
 test.each([
   ['only three steps', modelDraft({ steps: modelDraft().steps.slice(0, 3) })],
   ['more than six steps', modelDraft({ steps: Array.from({ length: 7 }, (_, index) => 'Step ' + index + ': adults help children notice shapes.') })],
-  ['a short step', modelDraft({ steps: [...modelDraft().steps.slice(0, 3), 'Play.'] })],
+  ['a blank step', modelDraft({ steps: [...modelDraft().steps.slice(0, 3), '  \n  '] })],
   ['duplicate steps after trimming and case folding', modelDraft({ steps: [...modelDraft().steps.slice(0, 3), '  ' + modelDraft().steps[0].toUpperCase() + '  '] })],
   ['a URL inside a step', modelDraft({ steps: [...modelDraft().steps.slice(0, 3), 'Visit https://external.invalid to continue this activity.'] })],
   ['no conversation prompts', modelDraft({ conversationPrompts: [] })],
-  ['a too-short purpose', modelDraft({ purpose: 'Play.' })],
+  ['a blank purpose', modelDraft({ purpose: '  \n  ' })],
   ['a missing safety section', incompleteGuide('safety')],
   ['a missing cleanup section', incompleteGuide('cleanup')],
   ['a missing video selection', incompleteGuide('videoIds')],
@@ -264,6 +414,7 @@ test('timeout releases the single-request limit and normal local drafting can re
   const pending = service.draft(input(target)); await waiting;
   await expect(service.draft(input(target))).rejects.toMatchObject({ status: 429, code: 'AI_BUSY', retryAfter: 5 });
   await expect(pending).rejects.toMatchObject({ status: 424, code: 'AI_TIMEOUT' });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
   generate = async (req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(modelReply())); };
   expect((await service.draft(input(target))).drafts).toHaveLength(1);
 });
