@@ -39,7 +39,7 @@ class UpdateCheckSelectionTests(unittest.TestCase):
                      'Static PWA privacy checks', 'Browser runner tests',
                      'Browser tests (isolated test servers)', 'PWA browser privacy checks (production build)'):
             self.assertIn(step, result.stdout)
-        for name in ('localActivityAi.test.js', 'localActivityKnowledge.test.js', 'activityAi.test.js',
+        for name in ('localActivityAi.test.js', 'activityVideoExamples.test.js', 'localActivityKnowledge.test.js', 'activityAi.test.js',
                      'activityTutorials.test.js', 'activityPlanner.postgres.test.js',
                      'activityPlannerGeneration.postgres.test.js', 'workAccess.test.js',
                      'ActivityAiIdeas.test.tsx', 'ActivityAiPlanner.test.tsx', 'Activities.test.tsx', 'ActivityComposer.test.tsx',
@@ -77,7 +77,7 @@ class UpdateCheckSelectionTests(unittest.TestCase):
         result = self.run_check('--ai', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         section = result.stdout.split('PostgreSQL tests (separate test database)', 1)[1].split('Client component tests', 1)[0]
-        for name in ('tests/localActivityAi.test.js', 'tests/localActivityKnowledge.test.js',
+        for name in ('tests/localActivityAi.test.js', 'tests/activityVideoExamples.test.js', 'tests/localActivityKnowledge.test.js',
                      'tests/activityAi.test.js', 'tests/activityPlannerGeneration.postgres.test.js',
                      'tests/activityTutorials.test.js', 'tests/activityPlanner.test.js', 'tests/activityPlanner.postgres.test.js',
                      'tests/authenticatedFixture.test.js', 'tests/recipePhoto.test.js',

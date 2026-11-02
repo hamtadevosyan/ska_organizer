@@ -18,6 +18,8 @@ const props = () => ({ room, onSaved: vi.fn(), onCancel: vi.fn(), onDirtyChange:
 const draftCalls = () => vi.mocked(axios.post).mock.calls.filter(([url]) => url.endsWith('/draft'));
 const saveCalls = () => vi.mocked(axios.post).mock.calls.filter(([url]) => url.endsWith('/activity'));
 const create = () => fireEvent.click(screen.getByRole('button', { name: 'Create AI ideas' }));
+const createMore = () => fireEvent.click(screen.getByRole('button', { name: 'Create more AI ideas' }));
+const ideas = (...names: string[]): ActivityAiResult => ({ ...result, drafts: names.map(name => ({ ...result.drafts[0], name })) });
 async function ready() { await waitFor(() => expect(screen.getByRole('button', { name: 'Create AI ideas' })).toBeEnabled()); }
 async function draft() { await ready(); create(); return screen.findByRole('article', { name: 'AI idea 1' }); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
@@ -40,7 +42,7 @@ test('novel ideas are reviewed, edited and explicitly saved to the library with 
   await ready(); fireEvent.change(screen.getByLabelText('Theme (optional)'), { target: { value: 'Autumn colors' } }); create();
   const card = await screen.findByRole('article', { name: 'AI idea 1' });
   expect(card).toHaveTextContent('Autumn color detectives'); expect(saveCalls()).toHaveLength(0); expect(callbacks.onSaved).not.toHaveBeenCalled();
-  expect(draftCalls()[0][1]).toEqual({ roomId: room.id, focus: 'balanced', theme: 'Autumn colors', activityCount: 3, durationMinutes: 20, includeVideos: true });
+  expect(draftCalls()[0][1]).toEqual({ roomId: room.id, focus: 'balanced', theme: 'Autumn colors', activityCount: 3, durationMinutes: 20, includeVideos: true, avoidNames: [] });
   fireEvent.click(within(card).getByRole('button', { name: 'Review idea 1' }));
   const form = screen.getByRole('form', { name: 'New activity' });
   expect(within(form).getByLabelText('Activity name')).toHaveValue('Autumn color detectives');
@@ -64,6 +66,73 @@ test('novel ideas are reviewed, edited and explicitly saved to the library with 
   expect(axios.put).not.toHaveBeenCalled(); expect(axios.delete).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: 'Review idea 1' })).not.toBeInTheDocument();
   expect(screen.getByText('Saved to library')).toBeVisible();
+});
+
+test('create more remembers successful suggestions across theme and focus changes without reading library records', async () => {
+  vi.mocked(axios.post).mockResolvedValueOnce(response(ideas('Rhythm parade', 'Leaf printing')))
+    .mockResolvedValueOnce(response(ideas('Puppet story')));
+  render(<ActivityAiIdeas {...props()} />); await draft();
+  expect(draftCalls()[0][1]).toMatchObject({ avoidNames: [] });
+  fireEvent.change(screen.getByLabelText('Theme (optional)'), { target: { value: 'Thanksgiving' } });
+  fireEvent.change(screen.getByLabelText('Development focus'), { target: { value: 'creative' } });
+  createMore(); await screen.findByText('Puppet story', { exact: true });
+  expect(draftCalls()[1][1]).toMatchObject({ theme: 'Thanksgiving', focus: 'creative', avoidNames: ['Rhythm parade', 'Leaf printing'] });
+  createMore(); await waitFor(() => expect(draftCalls()).toHaveLength(3));
+  expect(draftCalls()[2][1]).toMatchObject({ avoidNames: ['Rhythm parade', 'Leaf printing', 'Puppet story'] });
+  expect(draftCalls()[0][1]).toMatchObject({ avoidNames: [] }); // Past requests keep their own snapshot.
+  expect(vi.mocked(axios.get).mock.calls.map(([url]) => url)).toEqual([expect.stringMatching(/\/status$/)]);
+  expect(saveCalls()).toHaveLength(0);
+});
+
+test('recent suggestion names are trimmed and deduplicated without losing their latest spelling', async () => {
+  vi.mocked(axios.post).mockResolvedValueOnce(response(ideas('  Rhythm parade  ', 'Leaf printing')))
+    .mockResolvedValueOnce(response(ideas('RHYTHM PARADE', 'Puppet story')));
+  render(<ActivityAiIdeas {...props()} />); await draft();
+  createMore(); await screen.findByText('Puppet story', { exact: true });
+  createMore(); await waitFor(() => expect(draftCalls()).toHaveLength(3));
+  expect(draftCalls()[2][1]).toMatchObject({ avoidNames: ['Leaf printing', 'RHYTHM PARADE', 'Puppet story'] });
+});
+
+test('only the twenty most recent successful suggestion names are retained', async () => {
+  for (let batch = 0; batch < 5; batch++) {
+    vi.mocked(axios.post).mockResolvedValueOnce(response(ideas(...Array.from({ length: 5 }, (_, index) => 'Idea ' + (batch * 5 + index)))));
+  }
+  render(<ActivityAiIdeas {...props()} />); await draft();
+  for (let batch = 1; batch < 5; batch++) {
+    createMore(); await screen.findByText('Idea ' + (batch * 5), { exact: true });
+  }
+  createMore(); await waitFor(() => expect(draftCalls()).toHaveLength(6));
+  expect(draftCalls()[5][1]).toMatchObject({ avoidNames: Array.from({ length: 20 }, (_, index) => 'Idea ' + (index + 5)) });
+});
+
+test('failed requests keep the last successful history without adding rejected suggestions', async () => {
+  vi.mocked(axios.post).mockResolvedValueOnce(response(ideas('Rhythm parade')))
+    .mockRejectedValueOnce(new Error('Synthetic unavailable generation'));
+  render(<ActivityAiIdeas {...props()} />); await draft();
+  createMore(); await screen.findByRole('alert');
+  createMore(); await waitFor(() => expect(draftCalls()).toHaveLength(3));
+  expect(draftCalls()[2][1]).toMatchObject({ avoidNames: ['Rhythm parade'] });
+});
+
+test('cancelled and stale responses never enter history or replace a newer request', async () => {
+  const late = deferred<ReturnType<typeof response>>(), fresh = deferred<ReturnType<typeof response>>();
+  vi.mocked(axios.post).mockResolvedValueOnce(response(ideas('Rhythm parade')))
+    .mockReturnValueOnce(late.promise).mockReturnValueOnce(fresh.promise);
+  render(<ActivityAiIdeas {...props()} />); await draft();
+  createMore(); fireEvent.click(screen.getByRole('button', { name: 'Stop AI generation' }));
+  createMore();
+  await act(async () => late.resolve(response(ideas('Abandoned newspaper city'))));
+  expect(screen.queryByText('Abandoned newspaper city')).not.toBeInTheDocument();
+  await act(async () => fresh.resolve(response(ideas('Puppet story'))));
+  await screen.findByText('Puppet story', { exact: true });
+  createMore(); await waitFor(() => expect(draftCalls()).toHaveLength(4));
+  expect(draftCalls()[3][1]).toMatchObject({ avoidNames: ['Rhythm parade', 'Puppet story'] });
+});
+
+test('closing and reopening the ideas dialog starts a fresh temporary history', async () => {
+  const first = render(<ActivityAiIdeas {...props()} />); await draft(); first.unmount();
+  render(<ActivityAiIdeas {...props()} />); await draft();
+  expect(draftCalls()[1][1]).toMatchObject({ avoidNames: [] });
 });
 
 test('an unsourced idea opens with its full instructions and saves the trailing review notice', async () => {

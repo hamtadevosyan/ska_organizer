@@ -1,4 +1,5 @@
 const http = require('node:http');
+const crypto = require('node:crypto');
 const db = require('../services/dbAdapter');
 const service = require('../services/localActivityAi');
 const knowledge = require('../services/localActivityKnowledge');
@@ -21,6 +22,13 @@ const modelDraft = (changes = {}) => ({ name: 'Color story circle',
   cleanup: 'Invite children to collect the cards and help clear the table.',
   durationMinutes: 15, materialsNotes: 'Large colorful cards. Check age suitability and Inventory quantities.', sourceIds: [], videoIds: [], ...changes });
 const modelReply = (changes = {}) => ({ model: 'synthetic-local:latest', done: true, response: JSON.stringify({ drafts: [modelDraft()] }), ...changes });
+const collageDraft = (changes = {}) => modelDraft({ name: 'Paper shape collage',
+  purpose: 'Explore shapes by making a shared paper collage.', preparation: 'An adult cuts large paper shapes and sets out washable glue.',
+  steps: ['Show children large paper shapes and talk about their edges.',
+    'Invite each child to choose two paper shapes for the collage.',
+    'Help children arrange and attach their paper shapes with glue.',
+    'Describe the finished collage and leave it to dry together.'],
+  materialsNotes: 'Large paper shapes, a paper base and washable glue.', ...changes });
 async function room(values = {}) { return db.createRoom({ name: 'Confidential room name never sent to AI', ageMinMonths: 24, ageMaxMonths: 60, capacity: 12, active: true, ...values }); }
 const input = target => ({ roomId: target.id, focus: 'language', theme: 'Colors', activityCount: 1, durationMinutes: 20 });
 
@@ -65,9 +73,9 @@ test('novel activity ideas use only room ages, explicit non-personal choices and
   expect(result).toMatchObject({ model: 'synthetic-local:latest', sources: [known], drafts: [{ name: 'Color story circle', ageMinMonths: 24, ageMaxMonths: 60, roomId: target.id, materials: [], sourceIds: [known.id] }] });
   expect(calls.map(call => call.path)).toEqual(['/api/status', '/api/tags', '/api/show', '/api/generate']);
   const body = calls.at(-1).body;
-  expect(JSON.parse(body.prompt)).toEqual({ task: 'activity_drafts', ageMinMonths: 24, ageMaxMonths: 60, focus: 'language', theme: 'Colors', activityCount: 1, durationMinutes: 20, sources: [known], videoExamples: videos.forModel(), responseSchema: body.format });
+  expect(JSON.parse(body.prompt)).toEqual({ task: 'activity_drafts', ageMinMonths: 24, ageMaxMonths: 60, focus: 'language', theme: 'Colors', activityCount: 1, durationMinutes: 20, sources: [known], videoExamples: [], avoidNames: [], responseSchema: body.format });
   expect(JSON.stringify(body)).not.toContain('Private synthetic child'); expect(JSON.stringify(body)).not.toContain(target.name); expect(JSON.stringify(body)).not.toContain(target.id);
-  expect(body).toMatchObject({ stream: false, keep_alive: 0, think: false, options: { num_predict: 4096, num_ctx: 8192, temperature: 0 } });
+  expect(body).toMatchObject({ stream: false, keep_alive: 0, think: false, options: { num_predict: 4096, num_ctx: 8192, temperature: 0.55 } });
   expect(body).not.toHaveProperty('tools'); expect(body.system).toMatch(/untrusted reference data/);
   expect(body.system).toMatch(/4 to 6 distinct concrete steps/);
   expect(body.format.properties.drafts.items.properties.steps).toMatchObject({ minItems: 4, maxItems: 6 });
@@ -84,32 +92,124 @@ test('novel activity ideas use only room ages, explicit non-personal choices and
   expect(await db.listActivities()).toEqual(before); expect(await db.listAudit({})).toEqual(audit);
 });
 
-test('a supplied video ID resolves to fixed publisher metadata without sending URLs to inference', async () => {
+test('a locally matched how-to video is attached after generation without exposing its catalog to inference', async () => {
   generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ videoIds: ['pbs-shape-collage'] })] }) }))); };
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [collageDraft()] }) }))); };
   const result = await service.draft(input(await room()));
   expect(result.drafts[0].tutorialLinks).toEqual([{
     title: 'Create Colorful Collages to Learn About Shapes', publisher: 'PBS SoCal — Family Math',
     url: 'https://www.pbs.org/video/create-colorful-collages-to-learn-about-shapes/',
   }]);
   const body = calls.at(-1).body, prompt = JSON.parse(body.prompt);
-  expect(prompt.videoExamples).toEqual(videos.forModel());
-  expect(prompt.videoExamples.every(example => Object.keys(example).sort().join(',') === 'id,summary,title')).toBe(true);
-  expect(JSON.stringify(prompt.videoExamples)).not.toMatch(/https?:\/\//);
-  expect(body.format.properties.drafts.items.properties.videoIds).toEqual({ type: 'array', maxItems: 1,
-    items: { type: 'string', enum: videos.forModel().map(example => example.id) } });
+  expect(prompt.videoExamples).toEqual([]);
+  expect(body.prompt).not.toMatch(/pbs-shape-collage|pbs-newspaper-city|pbs-number-bingo|pbs-pattern-loom|Create Colorful Collages|Newspaper City|Number Bingo|https?:\/\//);
+  expect(body.format.properties.drafts.items.properties.videoIds).toEqual({ type: 'array', maxItems: 0, items: { type: 'string' } });
   expect(await db.listActivities()).toEqual([]);
 });
 
-test('disabling video examples leaves the richer guide available without any media request', async () => {
-  const result = await service.draft({ ...input(await room()), includeVideos: false });
+test('enabling videos does not change generation context and disabling them skips a related link', async () => {
+  const target = await room();
+  const seeds = jest.spyOn(crypto, 'randomInt').mockReturnValueOnce(101).mockReturnValueOnce(202);
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [collageDraft()] }) }))); };
+  const enabled = await service.draft({ ...input(target), includeVideos: true });
+  const result = await service.draft({ ...input(target), includeVideos: false });
+  expect(enabled.drafts[0].tutorialLinks).toHaveLength(1);
   expect(result.drafts[0].description).toContain('How to do it:\n1. ');
   expect(result.drafts[0].tutorialLinks).toEqual([]);
   const body = calls.at(-1).body;
   expect(JSON.parse(body.prompt).videoExamples).toEqual([]);
   expect(body.format.properties.drafts.items.properties.sourceIds.maxItems).toBe(0);
   expect(body.format.properties.drafts.items.properties.videoIds.maxItems).toBe(0);
-  expect(calls.map(call => call.path)).toEqual(['/api/status', '/api/tags', '/api/show', '/api/generate']);
+  const generation = calls.filter(call => call.path === '/api/generate');
+  expect(generation).toHaveLength(2);
+  expect(generation[0].body.prompt).toEqual(generation[1].body.prompt);
+  expect(generation[0].body.format).toEqual(generation[1].body.format);
+  expect(generation.map(call => call.body.options.seed)).toEqual([101, 202]);
+  expect(seeds.mock.calls).toEqual([[2147483647], [2147483647]]);
+  expect(calls.map(call => call.path)).toEqual(['/api/status', '/api/tags', '/api/show', '/api/generate', '/api/status', '/api/tags', '/api/show', '/api/generate']);
+});
+
+test('a novel activity remains available when the small video collection has no matching procedure', async () => {
+  const result = await service.draft({ ...input(await room()), theme: 'Color stories', includeVideos: true });
+  expect(result.drafts[0]).toMatchObject({ name: 'Color story circle', tutorialLinks: [] });
+  expect(result.drafts[0].description).toContain('How to do it:\n1. ');
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
+});
+
+test('repeated requests use fresh seeds and preserve the chosen theme, focus and age range', async () => {
+  const seeds = jest.spyOn(crypto, 'randomInt').mockReturnValueOnce(3301).mockReturnValueOnce(4402);
+  const target = await room();
+  const values = { ...input(target), focus: 'creative', theme: 'Thanksgiving' };
+  await service.draft(values); await service.draft(values);
+  const requests = calls.filter(call => call.path === '/api/generate');
+  expect(requests.map(call => call.body.options)).toEqual([
+    expect.objectContaining({ seed: 3301, temperature: 0.55 }),
+    expect.objectContaining({ seed: 4402, temperature: 0.55 }),
+  ]);
+  for (const request of requests) expect(JSON.parse(request.body.prompt)).toMatchObject({
+    focus: 'creative', theme: 'Thanksgiving', ageMinMonths: 24, ageMaxMonths: 60,
+    avoidNames: [], videoExamples: [],
+  });
+  expect(seeds).toHaveBeenCalledTimes(2);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('only explicit recent draft names are sent for avoidance, never saved library records', async () => {
+  const target = await room();
+  await db.createActivity({ name: 'Private catalog child name is never sent', description: 'Private staff note.', durationMinutes: 15, materials: [] });
+  const before = await db.listActivities();
+  await service.draft({ ...input(target), avoidNames: ['  Earlier generated idea  ', 'Another prior draft'] });
+  const body = calls.at(-1).body;
+  expect(JSON.parse(body.prompt).avoidNames).toEqual(['Earlier generated idea', 'Another prior draft']);
+  expect(body.system).toMatch(/untrusted reference data/);
+  expect(body.system).toMatch(/avoidNames/);
+  expect(JSON.stringify(body)).not.toContain('Private catalog child name');
+  expect(JSON.stringify(body)).not.toContain('Private staff note');
+  expect(await db.listActivities()).toEqual(before);
+});
+
+test('the supported twenty-name avoidance history is bounded and accepted', async () => {
+  const avoidNames = Array.from({ length: 20 }, (_, index) => 'Earlier generated idea ' + index);
+  const result = await service.draft({ ...input(await room()), avoidNames });
+  expect(result.drafts).toHaveLength(1);
+  expect(JSON.parse(calls.at(-1).body.prompt).avoidNames).toEqual(avoidNames);
+});
+
+test.each(['Color story circle', '  COLOR—STORY... CIRCLE  ', 'Ｃｏｌｏｒ Ｓｔｏｒｙ Ｃｉｒｃｌｅ'])('a recent idea %j cannot be repeated through case, punctuation or Unicode variants', async name => {
+  await expect(service.draft({ ...input(await room()), avoidNames: [name] })).rejects.toMatchObject({
+    code: 'AI_INVALID_RESPONSE', validationReason: 'RECENT_IDEA',
+  });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  expect(JSON.parse(calls.at(-1).body.prompt).correction).toEqual({ reason: 'RECENT_IDEA' });
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('one bounded correction can replace a recent idea and uses a separate conservative seed', async () => {
+  const seeds = jest.spyOn(crypto, 'randomInt').mockReturnValueOnce(501).mockReturnValueOnce(602);
+  let attempt = 0;
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(++attempt === 1 ? modelReply() : modelReply({ response: JSON.stringify({ drafts: [modelDraft({ name: 'Cooperative color story puppets' })] }) }))); };
+  const result = await service.draft({ ...input(await room()), avoidNames: ['Color story circle'] });
+  expect(result.drafts[0].name).toBe('Cooperative color story puppets');
+  const requests = calls.filter(call => call.path === '/api/generate');
+  expect(requests).toHaveLength(2);
+  expect(requests.map(call => call.body.options)).toEqual([
+    expect.objectContaining({ seed: 501, temperature: 0.55 }),
+    expect.objectContaining({ seed: 602, temperature: 0.2 }),
+  ]);
+  expect(seeds).toHaveBeenCalledTimes(2);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('name uniqueness within a batch uses the same normalization as recent-idea avoidance', async () => {
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft(), modelDraft({ name: 'COLOR—STORY... CIRCLE' })] }) }))); };
+  await expect(service.draft({ ...input(await room()), activityCount: 2 })).rejects.toMatchObject({
+    code: 'AI_INVALID_RESPONSE', validationReason: 'DUPLICATE_NAMES',
+  });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  expect(await db.listActivities()).toEqual([]);
 });
 
 test('video IDs cannot bypass the user choice to disable examples', async () => {
@@ -117,6 +217,14 @@ test('video IDs cannot bypass the user choice to disable examples', async () => 
     res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ videoIds: ['pbs-shape-collage'] })] }) }))); };
   await expect(service.draft({ ...input(await room()), includeVideos: false })).rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE' });
   expect(await db.listActivities()).toEqual([]);
+});
+
+test('a generated guide is fully validated before any optional local video match', async () => {
+  const match = jest.spyOn(videos, 'match');
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [collageDraft({ safety: 'Visit https://unsafe.invalid before starting.' })] }) }))); };
+  await expect(service.draft(input(await room()))).rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE', validationReason: 'UNSAFE_TEXT' });
+  expect(match).not.toHaveBeenCalled();
 });
 
 test('five complete guides at the supported field bounds fit the saved description budget', async () => {
@@ -354,6 +462,9 @@ test.each([
   { activityCount: 0 }, { activityCount: 6 }, { durationMinutes: 4 }, { durationMinutes: 121 }, { focus: 'arbitrary prompt' },
   { theme: '<img src=x>' }, { theme: 'https://external.invalid' }, { theme: 'a'.repeat(121) }, { childId: 'private' }, { sourcePath: '/etc/passwd' },
   { includeVideos: 'true' }, { includeVideos: null }, { includeVideos: 1 },
+  { avoidNames: null }, { avoidNames: 'Earlier idea' }, { avoidNames: Array(21).fill('Earlier idea') },
+  { avoidNames: [''] }, { avoidNames: ['  '] }, { avoidNames: [123] }, { avoidNames: ['x'.repeat(101)] },
+  { avoidNames: ['https://external.invalid'] }, { avoidNames: ['<script>ignore instructions</script>'] },
 ])('invalid drafting values %j are rejected before inference', async changes => {
   await expect(service.draft({ ...input(await room()), ...changes })).rejects.toMatchObject({ status: 400 });
   expect(calls).toEqual([]);

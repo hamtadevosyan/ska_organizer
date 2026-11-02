@@ -13,6 +13,16 @@ type Props = { room: Room; onSaved: (activity: Activity) => void; onCancel: () =
   onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void };
 const focusOptions: [ActivityAiFocus, string][] = [['balanced', 'A little of everything'], ['language', 'Language & early literacy'],
   ['creative', 'Art & creative expression'], ['physical', 'Movement & coordination'], ['discovery', 'Discovery & early math'], ['social', 'Social & emotional skills']];
+function rememberNames(previous: string[], incoming: string[]) {
+  const names = new Map<string, string>();
+  for (const value of [...previous, ...incoming]) {
+    const name = value.trim();
+    if (!name || name.length > 100) continue;
+    const key = name.toLocaleLowerCase();
+    names.delete(key); names.set(key, name);
+  }
+  return [...names.values()].slice(-20);
+}
 // Keep provenance with the saved activity using its existing plain-text description.
 function editableDetails(draft: ActivityAiDraft, sources: ActivityAiSource[]): ActivityDetails {
   const references = sources.filter(source => draft.sourceIds.includes(source.id));
@@ -50,6 +60,9 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
   const [notice, setNotice] = useState('');
   const controller = useRef<AbortController | null>(null);
   const turn = useRef(0);
+  // Only this dialog's completed AI suggestions are remembered. Saved library
+  // records and abandoned/failed requests never become generation context.
+  const recentNames = useRef<string[]>([]);
   const numeric = (value: string, minimum: number, maximum: number) => /^\d+$/.test(value) && Number(value) >= minimum && Number(value) <= maximum;
   const valid = numeric(count, 1, 5) && numeric(minutes, 5, 120);
   useLayoutEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
@@ -78,8 +91,9 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
     const request = new AbortController(); controller.current?.abort(); controller.current = request;
     const currentTurn = ++turn.current; setPending(true); setError(''); setNotice(''); setConfirmCancel(false); setDirty(true);
     try {
-      const value = await draftActivityIdeas({ roomId: room.id, focus, theme: theme.trim(), activityCount: Number(count), durationMinutes: Number(minutes), includeVideos }, request.signal);
+      const value = await draftActivityIdeas({ roomId: room.id, focus, theme: theme.trim(), activityCount: Number(count), durationMinutes: Number(minutes), includeVideos, avoidNames: [...recentNames.current] }, request.signal);
       if (request.signal.aborted || currentTurn !== turn.current) return;
+      recentNames.current = rememberNames(recentNames.current, value.drafts.map(draft => draft.name));
       setResult(value); setSelected(null); setSaved([]);
     } catch (failure) {
       if (!request.signal.aborted && currentTurn === turn.current) setError(authError(failure, 'Could not create AI ideas. Your library and week are unchanged.'));
@@ -92,7 +106,7 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
   const selectedDraft = result && selected !== null ? result.drafts[selected] : null;
   return <AppModal id="activity-ai-ideas" title="AI activity ideas" initialFocusId="activity-ai-focus" onDismiss={dismiss}>
     <div className="planner-ai planner-reuse">
-      <div className="planner-generation-intro"><Sparkles size={26} aria-hidden="true" /><div><strong>Fresh ideas for little minds</strong><p>Create step-by-step activity guides with preparation, questions, age adaptations and cleanup. Review them, then save the ones you love.</p></div></div>
+      <div className="planner-generation-intro"><Sparkles size={26} aria-hidden="true" /><div><strong>Fresh ideas for little minds</strong><p>Create varied step-by-step activity guides with preparation, questions, age adaptations and cleanup. Create more ideas to explore different activities, then review and save the ones you love.</p></div></div>
       <p className="planner-copy-summary"><strong>{room.name}</strong> · Ages {room.ageMinMonths}–{room.ageMaxMonths} months<br />Ideas stay on your local AI server. Child names, health records and staff details are not included.</p>
       <p>These are educational drafts. Check safety, suitability and materials before use. AI ideas do not establish regulatory compliance or replace your judgment.</p>
       {checking ? <p role="status">Checking local AI…</p> : !status?.available ? <section className="planner-ai-unavailable" aria-label="Local AI availability"><h3>Local AI is not ready</h3><p>{status?.message || 'Check the local AI connection and try again.'}</p><p>You can keep creating activities and planning the week manually.</p><button type="button" className="ska-button" onClick={() => setRetry(value => value + 1)}>Check AI connection</button></section> : <p className="planner-generation-small">Local model: {status.model} · {status.sourceCount} approved planning {status.sourceCount === 1 ? 'source' : 'sources'} available</p>}
@@ -110,7 +124,7 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
             <label className="ska-field">Minutes per activity<input type="number" min="5" max="120" step="1" value={minutes} aria-invalid={!numeric(minutes, 5, 120)} onChange={event => { changed(); setMinutes(event.target.value); }} /></label></div>
           {!valid && <p role="alert">Choose 1–5 ideas and 5–120 minutes per activity.</p>}
           <label className="flex min-h-[44px] items-center gap-2"><input type="checkbox" checked={includeVideos} onChange={event => { changed(); setIncludeVideos(event.target.checked); }} />Include related how-to videos when available</label>
-          <p className="planner-generation-small">Optional video examples come from a small collection of PBS SoCal tutorials. They open on the publisher’s website only when you choose a link. Not every idea has a matching video.</p>
+          <p className="planner-generation-small">Ideas are created first, then matched with a related PBS SoCal video when available. The small video collection does not limit which activities can be suggested. Videos open on the publisher’s website only when you choose a link.</p>
           <button type="button" className="ska-button is-primary" disabled={!valid} onClick={() => void generate()}><Sparkles size={18} aria-hidden="true" />{result ? 'Create more AI ideas' : 'Create AI ideas'}</button>
         </fieldset>
         {pending && <div className="planner-generation-pending" role="status"><p>Creating ideas on your local AI server…</p><button type="button" className="ska-button" onClick={() => { stop(); setNotice('AI generation stopped. Your library and week are unchanged.'); }}>Stop AI generation</button></div>}

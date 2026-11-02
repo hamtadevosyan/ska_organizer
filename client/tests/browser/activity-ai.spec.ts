@@ -49,14 +49,19 @@ test.beforeAll(async () => {
       response.once('close', () => { stoppedRequests++; });
       return; // The test must cancel the request; no timeout sleeps are needed.
     }
-    const drafts = Array.from({ length: Number(prompt.activityCount) }, (_, index) => ({
-      name: 'Shape collage ' + prompt.theme + ' ' + (index + 1),
-      ...generatedGuide,
-      durationMinutes: prompt.durationMinutes,
-      materialsNotes: 'Large colored shapes; review quantities and link available Inventory materials before planning.',
-      sourceIds: ['synthetic-turn-taking'],
-      videoIds: Array.isArray(prompt.videoExamples) && prompt.videoExamples.some(value => value.id === 'pbs-shape-collage') ? ['pbs-shape-collage'] : [],
-    }));
+    const avoided = new Set(Array.isArray(prompt.avoidNames) ? prompt.avoidNames : []);
+    let next = 1;
+    const drafts = Array.from({ length: Number(prompt.activityCount) }, () => {
+      let name: string;
+      do { name = 'Shape collage ' + prompt.theme + ' ' + next++; } while (avoided.has(name));
+      avoided.add(name);
+      return { name, ...generatedGuide,
+        durationMinutes: prompt.durationMinutes,
+        materialsNotes: 'Large colored shapes; review quantities and link available Inventory materials before planning.',
+        sourceIds: Array.isArray(prompt.sources) && prompt.sources.some(value => value.id === 'synthetic-turn-taking') ? ['synthetic-turn-taking'] : [],
+        videoIds: [],
+      };
+    });
     return send({ model: 'browser-local:latest', done: true, response: JSON.stringify({ drafts }) });
   });
   await new Promise<void>((resolve, reject) => { runtime.once('error', reject); runtime.listen(11439, '127.0.0.1', resolve); });
@@ -202,6 +207,44 @@ test('video examples can be disabled while full activity instructions remain ava
   const idea = dialog.getByRole('article', { name: 'AI idea 1', exact: true });
   await expect(idea).toContainText(generatedGuide.steps[3]);
   await expect(idea.getByRole('link')).toHaveCount(0);
+});
+
+test('create more sends recent suggestion names and shows a different batch without reading private library titles', async ({ page }) => {
+  test.setTimeout(60000); await page.setViewportSize({ width: 390, height: 900 });
+  const { http, room, suffix } = await setup(page);
+  const privateTitle = 'Private library title ' + suffix;
+  await data<Activity>(await http.post(api + '/activity', { data: { name: privateTitle, description: 'Synthetic private catalog instructions.',
+    durationMinutes: 20, ageMinMonths: 24, ageMaxMonths: 60, roomId: room.id, materials: [] } }), 201);
+  const before = await catalog(http), original = await getPlan(http, room);
+  const dialog = await open(page);
+  await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Fresh collage ' + suffix);
+  const firstDraft = page.waitForResponse(response => response.url() === api + '/activity-ai/draft' && response.request().method() === 'POST');
+  await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+  const first = await data<{ drafts: Activity[] }>(await firstDraft);
+  const firstNames = first.drafts.map(value => value.name);
+  await expect(dialog.getByRole('article', { name: 'AI idea 1', exact: true })).toContainText(firstNames[0]);
+  expect(prompts.at(-1)?.avoidNames).toEqual([]);
+  expect(prompts.at(-1)?.videoExamples).toEqual([]);
+
+  const requested = page.waitForRequest(request => request.url() === api + '/activity-ai/draft' && request.method() === 'POST');
+  const secondDraft = page.waitForResponse(response => response.url() === api + '/activity-ai/draft' && response.request().method() === 'POST');
+  await dialog.getByRole('button', { name: 'Create more AI ideas', exact: true }).click();
+  expect((await requested).postDataJSON()).toMatchObject({ avoidNames: firstNames });
+  const second = await data<{ drafts: Activity[] }>(await secondDraft);
+  const secondNames = second.drafts.map(value => value.name);
+  expect(secondNames.every(name => !firstNames.includes(name))).toBe(true);
+  const idea = dialog.getByRole('article', { name: 'AI idea 1', exact: true });
+  await expect(idea).toContainText(secondNames[0]);
+  await expect(idea).toContainText(generatedGuide.steps[3]);
+  await expect(idea.getByRole('link', { name: new RegExp(tutorial.title) })).toHaveAttribute('href', tutorial.url);
+  const prompt = prompts.at(-1)!;
+  expect(prompt.avoidNames).toEqual(firstNames);
+  expect(JSON.stringify(prompt)).not.toContain(privateTitle);
+  expect(JSON.stringify(prompt)).not.toContain(room.name);
+  expect(JSON.stringify(prompt)).not.toContain(room.id);
+  expect(await catalog(http)).toEqual(before);
+  expect(await getPlan(http, room)).toEqual(original);
+  await fits(page, dialog);
 });
 
 test('an unavailable local engine leaves the manual planner usable and a cancelled request returns no ideas', async ({ page }) => {

@@ -1,6 +1,6 @@
 // Fixed publisher pages checked on 2026-11-02. These are optional demonstrations,
-// not age approvals or regulatory references. The model receives IDs and brief
-// descriptions only; URLs are resolved here and are never invented by inference.
+// not age approvals or regulatory references. Match only AFTER an independent
+// activity has been generated; a tiny video collection must not limit its ideas.
 // Keep this small collection reviewed when adding or replacing a publisher page.
 const examples = [
   {
@@ -29,16 +29,22 @@ const examples = [
   },
 ];
 
-function forModel() {
-  return examples.map(({ id, title, summary }) => ({ id, title, summary }));
+function match(guide) {
+  // Use the core procedure and materials, not incidental questions/safety notes.
+  // This deliberately misses ambiguous examples rather than forcing a video.
+  const content = [guide.name, guide.purpose, guide.preparation, ...(guide.steps || []), guide.materialsNotes]
+    .filter(value => typeof value === 'string').join(' ').normalize('NFKC').toLowerCase();
+  const rules = {
+    'pbs-shape-collage': () => /\bcollages?\b/.test(content) && /\bshapes?\b/.test(content) &&
+      /\bpaper\b/.test(content) && /\b(glue|gluing|stick|sticking|attach\w*)\b/.test(content),
+    'pbs-newspaper-city': () => /\bnewspaper\b/.test(content) && /\b(build\w*|construct\w*|structures?|towers?|city|town)\b/.test(content),
+    'pbs-number-bingo': () => /\bbingo\b/.test(content) && /\b(numbers?|numerals?|count\w*)\b/.test(content),
+    'pbs-pattern-loom': () => /\b(weav\w*|loom)\b/.test(content) && /\b(patterns?|threads?|yarn)\b/.test(content),
+  };
+  const example = examples.find(value => rules[value.id]());
+  if (!example) return [];
+  const { title, publisher, url } = example;
+  return [{ title, publisher, url }];
 }
 
-function resolve(ids, available) {
-  if (!Array.isArray(ids) || ids.length > 1 || ids.some(id => typeof id !== 'string' || !available.some(example => example.id === id))) throw new Error('Unknown video example.');
-  return ids.map(id => {
-    const { title, publisher, url } = examples.find(example => example.id === id);
-    return { title, publisher, url };
-  });
-}
-
-module.exports = { forModel, resolve };
+module.exports = { match };
