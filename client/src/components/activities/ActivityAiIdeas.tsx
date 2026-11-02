@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BookOpen, Sparkles } from 'lucide-react';
 import AppModal from '../AppModal';
 import { ActivityForm } from './ActivityForm';
+import { ActivityTutorialLinks } from './ActivityTutorialLinks';
 import { authError } from '../../auth/transport';
 import { activityAiStatus, draftActivityIdeas } from '../../api/activityAi';
 import type { ActivityAiDraft, ActivityAiFocus, ActivityAiResult, ActivityAiSource, ActivityAiStatus } from '../../api/activityAi';
@@ -27,7 +28,7 @@ function editableDetails(draft: ActivityAiDraft, sources: ActivityAiSource[]): A
   const note = notes.find(value => description.length + value.length <= 4000) || notes[notes.length - 1];
   return { name: draft.name, description: description + note,
     durationMinutes: draft.durationMinutes, ageMinMonths: draft.ageMinMonths, ageMaxMonths: draft.ageMaxMonths,
-    roomId: draft.roomId, materials: draft.materials, materialsNotes: draft.materialsNotes || '', materialsLinks: [] };
+    roomId: draft.roomId, materials: draft.materials, materialsNotes: draft.materialsNotes || '', materialsLinks: [], tutorialLinks: draft.tutorialLinks || [] };
 }
 export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusyChange }: Props) {
   const [status, setStatus] = useState<ActivityAiStatus | null>(null);
@@ -37,6 +38,7 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
   const [theme, setTheme] = useState('');
   const [count, setCount] = useState('3');
   const [minutes, setMinutes] = useState('20');
+  const [includeVideos, setIncludeVideos] = useState(true);
   const [result, setResult] = useState<ActivityAiResult | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [saved, setSaved] = useState<number[]>([]);
@@ -76,7 +78,7 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
     const request = new AbortController(); controller.current?.abort(); controller.current = request;
     const currentTurn = ++turn.current; setPending(true); setError(''); setNotice(''); setConfirmCancel(false); setDirty(true);
     try {
-      const value = await draftActivityIdeas({ roomId: room.id, focus, theme: theme.trim(), activityCount: Number(count), durationMinutes: Number(minutes) }, request.signal);
+      const value = await draftActivityIdeas({ roomId: room.id, focus, theme: theme.trim(), activityCount: Number(count), durationMinutes: Number(minutes), includeVideos }, request.signal);
       if (request.signal.aborted || currentTurn !== turn.current) return;
       setResult(value); setSelected(null); setSaved([]);
     } catch (failure) {
@@ -90,7 +92,7 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
   const selectedDraft = result && selected !== null ? result.drafts[selected] : null;
   return <AppModal id="activity-ai-ideas" title="AI activity ideas" initialFocusId="activity-ai-focus" onDismiss={dismiss}>
     <div className="planner-ai planner-reuse">
-      <div className="planner-generation-intro"><Sparkles size={26} aria-hidden="true" /><div><strong>Fresh ideas for little minds</strong><p>Create new activity ideas, review them, then save the ones you love.</p></div></div>
+      <div className="planner-generation-intro"><Sparkles size={26} aria-hidden="true" /><div><strong>Fresh ideas for little minds</strong><p>Create step-by-step activity guides with preparation, questions, age adaptations and cleanup. Review them, then save the ones you love.</p></div></div>
       <p className="planner-copy-summary"><strong>{room.name}</strong> · Ages {room.ageMinMonths}–{room.ageMaxMonths} months<br />Ideas stay on your local AI server. Child names, health records and staff details are not included.</p>
       <p>These are educational drafts. Check safety, suitability and materials before use. AI ideas do not establish regulatory compliance or replace your judgment.</p>
       {checking ? <p role="status">Checking local AI…</p> : !status?.available ? <section className="planner-ai-unavailable" aria-label="Local AI availability"><h3>Local AI is not ready</h3><p>{status?.message || 'Check the local AI connection and try again.'}</p><p>You can keep creating activities and planning the week manually.</p><button type="button" className="ska-button" onClick={() => setRetry(value => value + 1)}>Check AI connection</button></section> : <p className="planner-generation-small">Local model: {status.model} · {status.sourceCount} approved planning {status.sourceCount === 1 ? 'source' : 'sources'} available</p>}
@@ -107,6 +109,8 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
           <div className="planner-generation-times"><label className="ska-field">Number of ideas<input type="number" min="1" max="5" step="1" value={count} aria-invalid={!numeric(count, 1, 5)} onChange={event => { changed(); setCount(event.target.value); }} /></label>
             <label className="ska-field">Minutes per activity<input type="number" min="5" max="120" step="1" value={minutes} aria-invalid={!numeric(minutes, 5, 120)} onChange={event => { changed(); setMinutes(event.target.value); }} /></label></div>
           {!valid && <p role="alert">Choose 1–5 ideas and 5–120 minutes per activity.</p>}
+          <label className="flex min-h-[44px] items-center gap-2"><input type="checkbox" checked={includeVideos} onChange={event => { changed(); setIncludeVideos(event.target.checked); }} />Include related how-to videos when available</label>
+          <p className="planner-generation-small">Optional video examples come from a small collection of PBS SoCal tutorials. They open on the publisher’s website only when you choose a link. Not every idea has a matching video.</p>
           <button type="button" className="ska-button is-primary" disabled={!valid} onClick={() => void generate()}><Sparkles size={18} aria-hidden="true" />{result ? 'Create more AI ideas' : 'Create AI ideas'}</button>
         </fieldset>
         {pending && <div className="planner-generation-pending" role="status"><p>Creating ideas on your local AI server…</p><button type="button" className="ska-button" onClick={() => { stop(); setNotice('AI generation stopped. Your library and week are unchanged.'); }}>Stop AI generation</button></div>}
@@ -115,6 +119,8 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
           {result.drafts.map((draft, index) => <article key={index} className="planner-ai-card" aria-label={'AI idea ' + (index + 1)}>
             <span className="planner-ai-number">Idea {index + 1}</span><h3>{draft.name}</h3><p>{draft.durationMinutes} minutes · Ages {draft.ageMinMonths}–{draft.ageMaxMonths} months</p><p className="planner-ai-text">{draft.description}</p>
             {!!draft.materialsNotes && <p className="planner-ai-text"><strong>Suggested materials:</strong> {draft.materialsNotes}</p>}
+            <ActivityTutorialLinks links={draft.tutorialLinks} />
+            {!draft.tutorialLinks?.length && <p className="planner-generation-small">No related how-to video was selected for this idea.</p>}
             <p className="planner-generation-small">{draft.sourceIds.length ? 'Planning references: ' + draft.sourceIds.join(', ') : 'No source references were supplied for this idea.'}</p>
             {saved.includes(index) ? <p role="status" className="planner-save-state is-saved">Saved to library</p> : <button type="button" className="ska-button" disabled={pending} onClick={() => { setSelected(index); setConfirmCancel(false); setNotice(''); }}>Review idea {index + 1}</button>}
           </article>)}

@@ -440,7 +440,7 @@ module.exports = {
 
   createActivity: async (payload) => {
     const rec = {
-      version: 1, durationMinutes: null, ageMinMonths: null, ageMaxMonths: null, materials: [],
+      version: 1, durationMinutes: null, ageMinMonths: null, ageMaxMonths: null, materials: [], tutorialLinks: [],
       ...payload,
       id: payload.id || mock.uuid(),
       name: payload.name,

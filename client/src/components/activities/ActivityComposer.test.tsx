@@ -255,3 +255,44 @@ test('a new activity keeps old-material actions out of its form', async () => {
   expect(screen.queryByRole('region', { name: 'Old material notes and links' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Clear old material notes and links' })).not.toBeInTheDocument();
 });
+
+const tutorial = { title: 'Paper shape collage', publisher: 'Synthetic teaching source', url: 'https://example.com/videos/shape-collage' };
+test('a reviewed AI activity saves video links separately from suggested materials', async () => {
+  const initialDetails = { ...art, description: 'Purpose: explore shapes.\n\nHow to do it:\n1. Arrange large paper shapes.\n2. Make a collage.',
+    tutorialLinks: [tutorial], materialsNotes: 'Large paper shapes and washable glue.' };
+  render(<ActivityForm activity={null} initialDetails={initialDetails} onSaved={vi.fn()} onClose={vi.fn()} onBusyChange={vi.fn()} />);
+  expect(screen.getByRole('link', { name: 'Paper shape collage (opens in a new tab)' })).toHaveAttribute('href', tutorial.url);
+  expect(screen.getByLabelText('Description')).toHaveValue(initialDetails.description);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save activity' })));
+  expect(saveActivity).toHaveBeenCalledExactlyOnceWith(null, expect.objectContaining({
+    tutorialLinks: [tutorial], materialsNotes: initialDetails.materialsNotes, materialsLinks: [], materials: [],
+  }));
+});
+
+test('ordinary edits preserve videos and clearing old material notes does not remove them', async () => {
+  const activity = { ...oldMaterials, tutorialLinks: [tutorial] };
+  render(<ActivityForm activity={activity} onSaved={vi.fn()} onClose={vi.fn()} onBusyChange={vi.fn()} />);
+  fireEvent.click(screen.getByText('More details'));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear old material notes and links' }));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save activity' })));
+  expect(saveActivity).toHaveBeenCalledExactlyOnceWith(activity, expect.objectContaining({
+    tutorialLinks: [tutorial], materialsNotes: '', materialsLinks: [], materials: oldMaterials.materials,
+  }));
+});
+
+test('removing a video changes only the draft until saved and keeps material hints', async () => {
+  const activity = { ...oldMaterials, tutorialLinks: [tutorial] };
+  const onDirtyChange = vi.fn();
+  render(<ActivityForm activity={activity} onSaved={vi.fn()} onClose={vi.fn()} onBusyChange={vi.fn()} onDirtyChange={onDirtyChange} />);
+  fireEvent.click(screen.getByText('More details'));
+  fireEvent.click(screen.getByRole('button', { name: 'Remove video: Paper shape collage' }));
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  expect(screen.queryByRole('region', { name: 'Related how-to videos' })).not.toBeInTheDocument();
+  expect(saveActivity).not.toHaveBeenCalled();
+  expect(activity.tutorialLinks).toEqual([tutorial]);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save activity' })));
+  expect(saveActivity).toHaveBeenCalledExactlyOnceWith(activity, expect.objectContaining({ tutorialLinks: [] }));
+  const [, details] = vi.mocked(saveActivity).mock.calls[0];
+  expect(details).not.toHaveProperty('materialsNotes');
+  expect(details).not.toHaveProperty('materialsLinks');
+});

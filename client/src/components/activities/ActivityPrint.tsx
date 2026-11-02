@@ -1,5 +1,6 @@
 import { dayLabel, materialUnitLabel, orderedEntries, timeRange } from '../../api/activities';
 import type { Entry } from '../../api/activities';
+import { ActivityTutorialLinks } from './ActivityTutorialLinks';
 
 export function ActivityPrint({ roomName, weekStart, dates, entries, draft }: { roomName: string; weekStart: string; dates: string[]; entries: Entry[]; draft: boolean }) {
   const ordered = orderedEntries(entries);
@@ -15,6 +16,7 @@ export function ActivityPrint({ roomName, weekStart, dates, entries, draft }: { 
           <td className="w-1/5 border p-2 align-top">{timeRange(entry)}</td>
           <td className="border p-2 align-top"><strong>{entry.activity?.name || 'Activity not chosen'}</strong><p className="whitespace-pre-wrap">{entry.activity?.description}</p>
             {!!entry.activity?.materials?.length && <p className="mt-2">Materials: {entry.activity.materials.map((material) => `${material.name}: ${material.quantity} ${materialUnitLabel(material.unit)}`).join('; ')}</p>}
+            <ActivityTutorialLinks links={entry.activity?.tutorialLinks} />
           </td>
         </tr>) : <tr><th scope="row" className="border p-2">{dayLabel(date)}<br />{date}</th><td colSpan={2} className="border p-2">Nothing scheduled</td></tr>}</tbody>;
       })}

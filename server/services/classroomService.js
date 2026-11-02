@@ -57,7 +57,8 @@ exports.activities = (token, query = {}) => {
       const saved = row.activitySnapshot;
       const name = saved?.name ?? (await db.getActivityById(row.activityId))?.name ?? 'Unavailable activity';
       entries.push({ id: row.id, date: row.date, startTime: row.startTime ?? null, endTime: row.endTime ?? null,
-        timeBlock: row.timeBlock ?? null, activity: { name, description: saved?.description ?? '', durationMinutes: saved?.durationMinutes ?? null } });
+        timeBlock: row.timeBlock ?? null, activity: { name, description: saved?.description ?? '', durationMinutes: saved?.durationMinutes ?? null,
+          tutorialLinks: Array.isArray(saved?.tutorialLinks) ? saved.tutorialLinks.map(({ title, publisher, url }) => ({ title, publisher, url })) : [] } });
     }
     entries.sort((a, b) => (a.date + ':' + (a.startTime || a.timeBlock || '') + ':' + a.id).localeCompare(b.date + ':' + (b.startTime || b.timeBlock || '') + ':' + b.id));
     return { ...scope, weekStart, hasPlan: !!header, version: header?.version ?? 0, savedAt: header?.savedAt ?? null, entries };

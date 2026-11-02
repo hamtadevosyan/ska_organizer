@@ -40,8 +40,10 @@ class UpdateCheckSelectionTests(unittest.TestCase):
                      'Browser tests (isolated test servers)', 'PWA browser privacy checks (production build)'):
             self.assertIn(step, result.stdout)
         for name in ('localActivityAi.test.js', 'localActivityKnowledge.test.js', 'activityAi.test.js',
+                     'activityTutorials.test.js', 'activityPlanner.postgres.test.js',
                      'activityPlannerGeneration.postgres.test.js', 'workAccess.test.js',
                      'ActivityAiIdeas.test.tsx', 'ActivityAiPlanner.test.tsx', 'Activities.test.tsx', 'ActivityComposer.test.tsx',
+                     'ActivityTutorialLinks.test.tsx', 'ActivityTutorialViews.test.tsx', 'Classroom.test.tsx',
                      'WorkAccessGate.test.tsx', 'activity-ai.spec.ts', 'activity-generation.spec.ts',
                      'core-screens.spec.ts'):
             self.assertIn(name, result.stdout)
@@ -77,6 +79,7 @@ class UpdateCheckSelectionTests(unittest.TestCase):
         section = result.stdout.split('PostgreSQL tests (separate test database)', 1)[1].split('Client component tests', 1)[0]
         for name in ('tests/localActivityAi.test.js', 'tests/localActivityKnowledge.test.js',
                      'tests/activityAi.test.js', 'tests/activityPlannerGeneration.postgres.test.js',
+                     'tests/activityTutorials.test.js', 'tests/activityPlanner.test.js', 'tests/activityPlanner.postgres.test.js',
                      'tests/authenticatedFixture.test.js', 'tests/recipePhoto.test.js',
                      'tests/classroomAccess.test.js', 'tests/authentication.test.js'):
             self.assertIn(name, section)

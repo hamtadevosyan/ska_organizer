@@ -5,6 +5,7 @@ import { dayLabel, materialOptions, materialUnitLabel, saveActivity, suitable } 
 import type { Activity, ActivityDetails, Material } from '../../api/activities';
 import type { Room } from '../../api/rooms';
 import type { InventoryItem } from '../../api/inventory';
+import { ActivityTutorialLinks } from './ActivityTutorialLinks';
 
 type Props = { activity: Activity | null; initialDetails?: ActivityDetails; room?: Room; scheduleDate?: string; nameInputRef?: Ref<HTMLInputElement>;
   submitLabel?: string; helpText?: string; disabled?: boolean;
@@ -23,6 +24,7 @@ export function ActivityForm({ activity, initialDetails, room, scheduleDate, nam
   const [minAge, setMinAge] = useState(String(initial ? initial.ageMinMonths ?? '' : roomHasAges ? room.ageMinMonths : ''));
   const [maxAge, setMaxAge] = useState(String(initial ? initial.ageMaxMonths ?? '' : roomHasAges ? room.ageMaxMonths : ''));
   const [materials, setMaterials] = useState<Material[]>(initial?.materials || []);
+  const [tutorialLinks, setTutorialLinks] = useState(initial?.tutorialLinks || []);
   const [clearOldMaterials, setClearOldMaterials] = useState(false);
   const hasOldMaterials = !!(activity?.materialsNotes?.trim() || activity?.materialsLinks?.length);
   const suggestedMaterials = !activity && initialDetails?.materialsNotes?.trim();
@@ -87,7 +89,7 @@ export function ActivityForm({ activity, initialDetails, room, scheduleDate, nam
     if (itemId) { setDetailsOpen(true); setFields({ material: 'Click Add material for the selected item, or clear the selection before saving.' }); setError('Click Add material for the selected item, or clear the selection before saving.'); return; }
     const details: ActivityDetails = { name: name.trim(), durationMinutes: Number(duration), description: description.trim(),
       ageMinMonths: minAge === '' ? null : Number(minAge), ageMaxMonths: maxAge === '' ? null : Number(maxAge),
-      materials, roomId: initial?.roomId || null,
+      materials, tutorialLinks, roomId: initial?.roomId || null,
       ...(!activity && initialDetails ? { materialsNotes: initialDetails.materialsNotes || '', materialsLinks: [] } : {}),
       ...(clearOldMaterials ? { materialsNotes: '', materialsLinks: [] } : {}) };
     if (scheduleDate && room && !suitable(details, room)) {
@@ -112,7 +114,8 @@ export function ActivityForm({ activity, initialDetails, room, scheduleDate, nam
       </div>
       <details open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold text-violet-800">More details</summary>
         <div className="mt-4 space-y-4">
-          <div><label htmlFor={formId + '-description'} className="block">Description</label><textarea {...fieldProps('description')} rows={3} maxLength={4000} value={description} onChange={(e) => setDescription(e.target.value)} className={input} />{fieldError('description')}</div>
+          <div><label htmlFor={formId + '-description'} className="block">Description</label><textarea {...fieldProps('description')} rows={8} maxLength={4000} value={description} onChange={(e) => setDescription(e.target.value)} className={input} />{fieldError('description')}</div>
+          <ActivityTutorialLinks links={tutorialLinks} onRemove={index => { setTutorialLinks(values => values.filter((_, position) => position !== index)); setChanged(true); setConfirmCancel(false); }} />
           <div className="grid gap-4 sm:grid-cols-2">
             <div><label htmlFor={formId + '-minAge'}>Minimum age (months)</label><input {...fieldProps('minAge')} type="number" min="0" max="215" step="1" value={minAge} onChange={(e) => setMinAge(e.target.value)} className={input} />{fieldError('minAge')}</div>
             <div><label htmlFor={formId + '-maxAge'}>Maximum age (months)</label><input {...fieldProps('maxAge')} type="number" min="1" max="216" step="1" value={maxAge} onChange={(e) => setMaxAge(e.target.value)} className={input} />{fieldError('maxAge')}</div>

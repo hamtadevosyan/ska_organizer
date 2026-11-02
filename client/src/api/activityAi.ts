@@ -7,7 +7,7 @@ export type ActivityAiSource = { id: string; title: string; publisher: string; v
 export type ActivityAiDraft = ActivityDetails & { sourceIds: string[] };
 export type ActivityAiResult = { model: string; generatedAt: string; drafts: ActivityAiDraft[]; sources: ActivityAiSource[]; warnings: string[] };
 export type ActivityAiStatus = { enabled: boolean; available: boolean; model: string | null; sourceCount: number; message: string; code?: string };
-export type ActivityAiRequest = { roomId: string; focus: ActivityAiFocus; theme: string; activityCount: number; durationMinutes: number };
+export type ActivityAiRequest = { roomId: string; focus: ActivityAiFocus; theme: string; activityCount: number; durationMinutes: number; includeVideos?: boolean };
 export const activityAiUrl = API_BASE_URL + '/api/activity-ai';
 export async function activityAiStatus(signal: AbortSignal) {
   return (await axios.get<{ data: ActivityAiStatus }>(activityAiUrl + '/status', { signal })).data.data;

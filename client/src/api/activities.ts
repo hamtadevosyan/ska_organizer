@@ -4,9 +4,10 @@ import type { Room } from './rooms';
 import type { InventoryItem, InventoryList } from './inventory';
 
 export type Material = { itemId: string; name?: string; location?: string; quantity: string; unit: string; reusable: boolean };
+export type TutorialLink = { title: string; publisher: string; url: string };
 export type Activity = { id: string; name: string; description: string; durationMinutes: number | null;
   ageMinMonths: number | null; ageMaxMonths: number | null; roomId: string | null; materials: Material[]; version: number;
-  materialsNotes?: string | null; materialsLinks?: string[] | null };
+  materialsNotes?: string | null; materialsLinks?: string[] | null; tutorialLinks?: TutorialLink[] | null };
 export type ActivityDetails = Omit<Activity, 'id' | 'version'>;
 export type CopySource = { roomId: string; weekStart: string; version: number; entryId: string };
 export type Entry = { id: string; date: string; startTime: string | null; endTime: string | null;

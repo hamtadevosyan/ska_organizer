@@ -30,6 +30,7 @@ const migrations = [
   { name: '028-clock-stations', ...require('./migrations/028-clock-stations') },
   { name: '029-child-billing', ...require('./migrations/029-child-billing') },
   { name: '030-ccrc-statements', ...require('./migrations/030-ccrc-statements') },
+  { name: '031-activity-tutorial-links', ...require('./migrations/031-activity-tutorial-links') },
 ];
 
 const appliedMigrations = (sequelize, schema, transaction) =>

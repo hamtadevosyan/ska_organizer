@@ -40,7 +40,7 @@ test('novel ideas are reviewed, edited and explicitly saved to the library with 
   await ready(); fireEvent.change(screen.getByLabelText('Theme (optional)'), { target: { value: 'Autumn colors' } }); create();
   const card = await screen.findByRole('article', { name: 'AI idea 1' });
   expect(card).toHaveTextContent('Autumn color detectives'); expect(saveCalls()).toHaveLength(0); expect(callbacks.onSaved).not.toHaveBeenCalled();
-  expect(draftCalls()[0][1]).toEqual({ roomId: room.id, focus: 'balanced', theme: 'Autumn colors', activityCount: 3, durationMinutes: 20 });
+  expect(draftCalls()[0][1]).toEqual({ roomId: room.id, focus: 'balanced', theme: 'Autumn colors', activityCount: 3, durationMinutes: 20, includeVideos: true });
   fireEvent.click(within(card).getByRole('button', { name: 'Review idea 1' }));
   const form = screen.getByRole('form', { name: 'New activity' });
   expect(within(form).getByLabelText('Activity name')).toHaveValue('Autumn color detectives');
@@ -76,6 +76,29 @@ test('an unsourced idea opens with its full instructions and saves the trailing 
   fireEvent.click(screen.getByRole('button', { name: 'Save activity' }));
   await screen.findByText('Activity saved to your library. Choose Generate week to include saved ideas in your plan.');
   expect((saveCalls()[0][1] as ActivityDetails).description).toBe(expected);
+});
+
+test('related how-to videos are previewed, reviewed and saved separately from materials', async () => {
+  const video = { title: 'Shape collage demonstration', publisher: 'Synthetic publisher', url: 'https://example.org/shape-collage' };
+  vi.mocked(axios.post).mockResolvedValueOnce(response({ ...result, drafts: [{ ...result.drafts[0], tutorialLinks: [video] }] }));
+  render(<ActivityAiIdeas {...props()} />);
+  const card = await draft();
+  expect(within(card).getByRole('link', { name: /Shape collage demonstration/ })).toHaveAttribute('href', video.url);
+  fireEvent.click(within(card).getByRole('button', { name: 'Review idea 1' }));
+  const form = screen.getByRole('form', { name: 'New activity' });
+  expect(within(form).getByRole('link', { name: /Shape collage demonstration/ })).toBeVisible();
+  fireEvent.click(within(form).getByRole('button', { name: 'Save activity' }));
+  await waitFor(() => expect(saveCalls()).toHaveLength(1));
+  expect(saveCalls()[0][1]).toMatchObject({ tutorialLinks: [video], materialsLinks: [], materials: [] });
+});
+
+test('video examples can be disabled without disabling complete activity guides', async () => {
+  render(<ActivityAiIdeas {...props()} />); await ready();
+  const choice = screen.getByRole('checkbox', { name: 'Include related how-to videos when available' });
+  expect(choice).toBeChecked(); fireEvent.click(choice); create();
+  await screen.findByRole('article', { name: 'AI idea 1' });
+  expect(draftCalls()[0][1]).toMatchObject({ includeVideos: false });
+  expect(screen.getByText('No related how-to video was selected for this idea.')).toBeVisible();
 });
 
 test('unavailable local AI explains the next step and leaves a clean close without making draft or save requests', async () => {

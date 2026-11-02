@@ -117,7 +117,19 @@ test('activities without a saved week header do not expose orphan entries', asyn
 test('legacy activities without snapshots fall back to a linked name without its current description', async () => {
   const own = await room(); await schedule(own, { snapshot: false }); await viewer(own);
   expect((await get('/activities?weekStart=' + weekStart)).entries[0].activity)
-    .toEqual({ name: 'Current catalog name', description: '', durationMinutes: null });
+    .toEqual({ name: 'Current catalog name', description: '', durationMinutes: null, tutorialLinks: [] });
+});
+
+test('classroom how-to examples come only from the saved class snapshot and expose allowed fields', async () => {
+  const own = await room(); const [entry] = await schedule(own);
+  const video = { title: 'Saved how-to example', publisher: 'Synthetic publisher', url: 'https://example.org/saved-video' };
+  entry.activitySnapshot.tutorialLinks = [{ ...video, privateField: 'PRIVATE VIDEO METADATA' }];
+  await db.saveScheduleEntries(own.id, weekStart, [entry]);
+  await db.updateActivity(entry.activityId, { tutorialLinks: [{ title: 'PRIVATE CURRENT VIDEO', publisher: 'PRIVATE', url: 'https://example.org/private' }] });
+  await viewer(own);
+  const data = await get('/activities?weekStart=' + weekStart);
+  expect(data.entries[0].activity.tutorialLinks).toEqual([video]);
+  expect(JSON.stringify(data)).not.toContain('PRIVATE');
 });
 
 test('saved meals expose shared facility menu names only, in fixed day and slot order', async () => {

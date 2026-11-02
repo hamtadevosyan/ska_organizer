@@ -8,6 +8,7 @@ import type { Room } from '../../api/rooms';
 import { assessReuse, copyDayEntries, copyWeekEntries, countOverlaps } from './planReuse';
 import type { CopyResult } from './planReuse';
 import { PlanActionPreview } from './PlanActionPreview';
+import { ActivityTutorialLinks } from './ActivityTutorialLinks';
 
 type Props = { scope: 'day' | 'week'; destination: ActivityPlan; entries: Entry[]; room: Room; rooms: Room[]; catalog: Activity[];
   initialDate: string; onApply: (entries: Entry[]) => void; onCancel: () => void };
@@ -89,8 +90,8 @@ export function ActivityReuse({ scope, destination, entries, room, rooms, catalo
               <label className="planner-reuse-check"><input type="checkbox" checked={include} aria-label={'Include ' + check.name + ' on ' + dateName(entry.date) + ' activity ' + (index + 1)} onChange={event => { invalidate(); setExcluded(values => event.target.checked ? values.filter(id => id !== entry.id) : [...values, entry.id]); }} /><strong>{check.name}</strong></label>
               <p>{dateName(entry.date)} · {timeRange(entry)}</p>
               {check.message && <p className={'planner-entry-note' + (check.blocked && !replacements[entry.id] ? ' is-warning' : '')}>{check.message}</p>}
-              <details><summary>Saved instructions &amp; materials</summary><p>{entry.activity?.description || 'No instructions listed.'}</p>
-                <ul>{entry.activity?.materials.map(material => <li key={material.itemId}>{material.name || 'Inventory item'} — {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</li>)}</ul></details>
+              <details><summary>Saved instructions &amp; materials</summary><p className="whitespace-pre-wrap break-words">{entry.activity?.description || 'No instructions listed.'}</p>
+                <ul>{entry.activity?.materials.map(material => <li key={material.itemId}>{material.name || 'Inventory item'} — {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</li>)}</ul><ActivityTutorialLinks links={entry.activity?.tutorialLinks} /></details>
               <label className="ska-field">Replacement for activity {index + 1}<select disabled={!include} value={replacements[entry.id] || ''} onChange={event => { invalidate(); setReplacements(values => ({ ...values, [entry.id]: event.target.value })); }}>
                 <option value="">Keep saved activity</option>{choices.map(activity => <option key={activity.id} value={activity.id}>{activity.name} (current library version)</option>)}</select></label>
               {include && replacements[entry.id] && <p className="planner-entry-note">This copy will use the chosen activity’s current instructions and materials. Its saved time stays the same.</p>}
