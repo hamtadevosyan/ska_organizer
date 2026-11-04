@@ -43,7 +43,10 @@ test('cancelled and unmounted requests cannot restore an answer', async () => {
   let resolve!: (value: AssistantSummary) => void;
   vi.mocked(assistantSummary).mockReturnValue(new Promise(done => { resolve = done; }));
   const mounted = view(); await screen.findByText('Local AI is ready.'); fireEvent.click(screen.getByRole('button', { name: 'Summarize' }));
+  expect(screen.getByText('Creating your summary…')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Pause animation' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByText('Creating your summary…')).not.toBeInTheDocument();
   await act(async () => resolve(result)); expect(screen.queryByText(result.summary)).not.toBeInTheDocument();
   mounted.unmount(); expect(vi.mocked(assistantSummary).mock.calls[0][1].aborted).toBe(true);
 });

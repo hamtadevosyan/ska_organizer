@@ -42,9 +42,9 @@ class UpdateCheckSelectionTests(unittest.TestCase):
         for name in ('localActivityAi.test.js', 'activityVideoExamples.test.js', 'localActivityKnowledge.test.js', 'activityAi.test.js',
                      'activityTutorials.test.js', 'activityMedia.test.js', 'activityMediaTransport.test.js', 'activityMedia.postgres.test.js', 'activityPlanner.postgres.test.js',
                      'activityPlannerGeneration.postgres.test.js', 'workAccess.test.js',
-                     'ActivityAiIdeas.test.tsx', 'ActivityAiPlanner.test.tsx', 'Activities.test.tsx', 'ActivityComposer.test.tsx',
+                     'LoadingScene.test.tsx', 'ActivityAiIdeas.test.tsx', 'ActivityAiPlanner.test.tsx', 'Activities.test.tsx', 'ActivityComposer.test.tsx',
                      'ActivityTutorialLinks.test.tsx', 'ActivityImages.test.tsx', 'ActivityTutorialViews.test.tsx', 'Classroom.test.tsx',
-                     'WorkAccessGate.test.tsx', 'activity-ai.spec.ts', 'activity-images.spec.ts', 'activity-generation.spec.ts',
+                     'WorkAccessGate.test.tsx', 'activity-ai.spec.ts', 'activity-images.spec.ts', 'loading-animation.spec.ts', 'activity-generation.spec.ts',
                      'core-screens.spec.ts'):
             self.assertIn(name, result.stdout)
         for name in ('recipePhotoOcr.test.js', 'tests/payroll.test.js', 'tests/browser/payroll.spec.ts'):

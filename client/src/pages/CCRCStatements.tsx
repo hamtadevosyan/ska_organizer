@@ -6,6 +6,7 @@ import axios from 'axios';
 import { useAuth } from '../auth/context';
 import { authError, onSessionExpired, onWorkAccessRequired } from '../auth/transport';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
+import { LoadingScene } from '../components/LoadingScene';
 import { billingMoney, billingRequestId } from '../api/billing';
 import { readDocumentFile, validateDocumentFile } from '../api/childDocuments';
 import type { DocumentFile } from '../api/childDocuments';
@@ -90,13 +91,13 @@ function StatementWorkspace() {
     {error && <p role="alert">{error}</p>}
     <section className="billing-panel"><div className="billing-card-head"><h2>{selected ? 'Saved statements' : 'Import CCRC statement'}</h2><button disabled={loading || working} onClick={() => void refresh()}><RefreshCw size={17} aria-hidden="true" />Refresh statements</button></div>
       <label>Statement<select value={selected} disabled={working || !!pending} onChange={event => choose(event.target.value)}><option value="">Upload a new statement</option>{items.map(item => <option key={item.id} value={item.id}>{item.statementReference || item.filename} · {item.status}</option>)}</select></label>
-      {loading && <p role="status">Loading saved statements…</p>}
+      {loading && <LoadingScene compact label="Loading saved statements…" />}
     </section>
     {!selected ? <section className="billing-panel" aria-label="Upload CCRC statement"><h2>1. Choose the original</h2><p>PDF, JPG or PNG, up to 5 MB. Text PDFs and scanned pages are read on this server. Nothing is sent to an external OCR service.</p><div className="billing-grid"><label><Upload size={18} aria-hidden="true" />Choose statement file<input type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" disabled={busy || !!pending} onChange={event => picked(event.target.files?.[0])} /></label><label><Camera size={18} aria-hidden="true" />Take statement photo<input type="file" accept="image/jpeg,image/png" capture="environment" disabled={busy || !!pending} onChange={event => picked(event.target.files?.[0])} /></label></div>
       {file && <p>Selected: <strong>{file.name}</strong></p>}
       <p className="billing-note">The first step creates a private draft. Payments are recorded only after you check all pages, amounts and children and confirm registration.</p>
       {pending && !busy ? <button className="billing-primary" onClick={() => void readAndUpload(pending)}>Retry same upload</button> : <button className="billing-primary" disabled={!file || busy} onClick={() => void readAndUpload()}>{busy ? 'Reading statement…' : 'Read statement'}</button>}
-      {busy && <button type="button" onClick={() => { upload.current?.abort(); setError('Reading stopped. Check saved statements or retry this same upload before choosing another file.'); }}>Stop reading</button>}{busy && <p role="status">Reading the statement locally. Scanned pages can take a little longer. No payments are being registered.</p>}
+      {busy && <button type="button" onClick={() => { upload.current?.abort(); setError('Reading stopped. Check saved statements or retry this same upload before choosing another file.'); }}>Stop reading</button>}{busy && <LoadingScene label="Reading the statement locally. Scanned pages can take a little longer. No payments are being registered." />}
     </section> : <StatementEditor key={selected} id={selected} onWork={onWork} onChange={() => void refresh()} />}
   </div>;
 }
@@ -158,7 +159,7 @@ function StatementEditor({ id, onWork, onChange }: { id: string; onWork: (dirty:
   }
   function save(event: FormEvent) { event.preventDefault(); if (data && draft) void mutate({ kind: 'review', body: { version: data.version, requestId: billingRequestId(), review: statementReviewPayload(draft) } }); }
   if (!alive.current) return null;
-  if (!data || !draft) return <section className="billing-panel">{error && <p role="alert">{error}</p>}{loading && <p role="status">Loading private statement…</p>}<button disabled={loading} onClick={() => void refresh()}>Retry statement</button></section>;
+  if (!data || !draft) return <section className="billing-panel">{error && <p role="alert">{error}</p>}{loading && <LoadingScene compact label="Loading private statement…" />}<button disabled={loading} onClick={() => void refresh()}>Retry statement</button></section>;
   const readOnly = data.status !== 'draft', disabled = busy || !!pending || loading || readOnly;
   const pages = Number(draft.pageCount) >= 1 && Number(draft.pageCount) <= 12 ? Array.from({ length: Number(draft.pageCount) }, (_, index) => index + 1) : [];
   const issues = statementReviewIssues(draft, data), included = statementIncludedCents(draft), includedCount = draft.lines.filter(line => line.action === 'payment').length;

@@ -169,3 +169,5 @@ If the earlier media setup stopped at this check, replace the downloaded
 command again. Existing keys, certificates, model files, configuration and tasks
 are reused. The source package includes a correction-only patch for checkouts
 that already received the original media integration.
+
+Activity and picture generation now show a [little thinker loading animation](loading-animation.md). Pause animation keeps the job running; Cancel picture generation stops it. The picture progress bar uses actual completed steps.

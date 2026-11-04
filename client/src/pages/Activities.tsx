@@ -1,3 +1,4 @@
+import { LoadingScene } from '../components/LoadingScene';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { CalendarDays, CheckCircle2, Copy, Library, Plus, Printer, Sparkles, Undo2 } from 'lucide-react';
 import { useAuth } from '../auth/context';
@@ -83,7 +84,7 @@ export default function Activities() {
         <div className="planner-save-actions">{editable && <button disabled={!ready || locked || focusedForm || incomplete || (!planner.dirty && !!planner.plan?.savedAt)} onClick={() => void planner.save()} className="ska-button is-primary"><CheckCircle2 size={18} aria-hidden="true" />{planner.saving ? 'Saving…' : 'Save week'}</button>}
           <button disabled={!ready || planner.saving || focusedForm || !planner.entries.length || incomplete || picturePrint.busy} onClick={() => void picturePrint.print()} className="ska-button"><Printer size={18} aria-hidden="true" />{picturePrint.busy ? 'Preparing pictures…' : 'Print'}</button></div>
       </section>
-      {picturePrint.busy && <p role="status">Preparing step pictures for printing… <button type="button" className="ska-button" onClick={picturePrint.cancel}>Cancel print preparation</button></p>}
+      {picturePrint.busy && <div><LoadingScene compact label="Preparing step pictures for printing…" /><button type="button" className="ska-button" onClick={picturePrint.cancel}>Cancel print preparation</button></div>}
       {picturePrint.error && <p role="alert" className="ska-alert is-error">{picturePrint.error}</p>}
       {(rooms.error || planner.catalogError || planner.error) && <div className="planner-errors">
         {rooms.error && <p role="alert" className="ska-alert is-error">{rooms.error} <button className="ska-button" onClick={() => void rooms.refresh()}>Retry rooms</button></p>}
@@ -91,8 +92,8 @@ export default function Activities() {
         {planner.error && <p role="alert" className="ska-alert is-error">{planner.error} <button className="ska-button" disabled={planner.saving || focusedForm} onClick={() => { planner.reloadWeek(); void rooms.refresh(); }}>Reload week</button></p>}
       </div>}
       {planner.notice && <p role="status" className="planner-notice">{planner.notice}</p>}
-      {rooms.loading ? <p role="status" className="ska-loading">Loading rooms…</p> : !planner.roomId && <p className="planner-welcome">{rooms.rooms.length ? 'Choose a room to begin.' : 'No rooms yet. Add a room in Rooms & Classes first.'}</p>}
-      {planner.busy && <p role="status" className="ska-loading">Loading week…</p>}
+      {rooms.loading ? <LoadingScene compact label="Loading rooms…" /> : !planner.roomId && <p className="planner-welcome">{rooms.rooms.length ? 'Choose a room to begin.' : 'No rooms yet. Add a room in Rooms & Classes first.'}</p>}
+      {planner.busy && <LoadingScene compact label="Loading week…" />}
       {ready && <>
         <div className="planner-status-row"><p className={'planner-save-state ' + (planner.dirty ? 'is-draft' : 'is-saved')}><CheckCircle2 size={16} aria-hidden="true" />{planner.dirty ? 'Unsaved changes' : planner.plan?.savedAt ? 'Saved week' : 'No schedule saved yet'}</p>
           <button className="ska-link" disabled={planner.saving || focusedForm} onClick={() => { planner.reloadWeek(); void rooms.refresh(); }}>Reload week</button></div>

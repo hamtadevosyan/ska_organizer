@@ -75,6 +75,24 @@ test('upload preserves exact original bytes, creates only a draft and keeps retr
   const first = vi.mocked(uploadCcrcStatement).mock.calls[0]; fireEvent.click(screen.getByRole('button', { name: 'Retry same upload' })); await loaded();
   expect(vi.mocked(uploadCcrcStatement).mock.calls[1].slice(0, 2)).toEqual(first.slice(0, 2));
 });
+test('the statement reading scene keeps cancellation available and never registers a payment', async () => {
+  vi.mocked(uploadCcrcStatement).mockImplementationOnce((_file, _requestId, signal) => new Promise((_resolve, reject) => {
+    signal?.addEventListener('abort', () => reject(new DOMException('Stopped', 'AbortError')), { once: true });
+  }));
+  show('admin', '/billing/ccrc-statements');
+  const file = new File(['synthetic'], filePayload.name, { type: filePayload.contentType });
+  fireEvent.change(screen.getByLabelText('Choose statement file'), { target: { files: [file] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Read statement' }));
+  await waitFor(() => expect(uploadCcrcStatement).toHaveBeenCalledOnce());
+  expect(screen.getByText('Reading the statement locally. Scanned pages can take a little longer. No payments are being registered.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Pause animation' })).toBeEnabled();
+  const signal = vi.mocked(uploadCcrcStatement).mock.calls[0][2];
+  fireEvent.click(screen.getByRole('button', { name: 'Stop reading' }));
+  await screen.findByRole('button', { name: 'Retry same upload' });
+  expect(signal?.aborted).toBe(true);
+  expect(screen.queryByText('Reading the statement locally. Scanned pages can take a little longer. No payments are being registered.')).not.toBeInTheDocument();
+  expect(postCcrcStatement).not.toHaveBeenCalled();
+});
 test('a valid original followed by an invalid choice cannot upload the previous hidden file', async () => {
   show('admin', '/billing/ccrc-statements');
   fireEvent.change(screen.getByLabelText('Choose statement file'), { target: { files: [new File(['valid'], 'original.pdf', { type: 'application/pdf' })] } });

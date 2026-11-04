@@ -93,7 +93,7 @@ if "$ai_only"; then
   server_tests+=(-- --runTestsByPath tests/authenticatedFixture.test.js tests/recipePhoto.test.js tests/classroomAccess.test.js tests/localActivityAi.test.js tests/activityVideoExamples.test.js tests/localAiRuntime.test.js tests/organizerAssistant.test.js tests/localActivityKnowledge.test.js tests/activityAi.test.js tests/activityMedia.test.js tests/activityMediaTransport.test.js tests/activityTutorials.test.js tests/activityPlannerGeneration.test.js tests/activityPlanner.test.js tests/authentication.test.js tests/workAccess.test.js)
   postgres_tests+=(-- --runTestsByPath tests/authenticatedFixture.test.js tests/recipePhoto.test.js tests/classroomAccess.test.js tests/authentication.test.js tests/localActivityAi.test.js tests/activityVideoExamples.test.js tests/localAiRuntime.test.js tests/organizerAssistant.test.js tests/localActivityKnowledge.test.js tests/activityAi.test.js tests/activityMedia.test.js tests/activityMediaTransport.test.js tests/activityTutorials.test.js tests/activityPlanner.test.js tests/activityPlanner.postgres.test.js tests/activityMedia.postgres.test.js tests/activityPlannerGeneration.test.js tests/activityPlannerGeneration.postgres.test.js tests/workAccess.test.js)
   client_tests+=(-- src/pages/OrganizerAssistant.test.tsx src/router/index.test.tsx src/components/activities/ActivityAiIdeas.test.tsx src/pages/ActivityAiPlanner.test.tsx src/pages/Activities.test.tsx src/components/activities/ActivityComposer.test.tsx src/components/activities/ActivityGenerate.test.tsx src/components/activities/ActivityTutorialLinks.test.tsx src/components/activities/ActivityImages.test.tsx src/components/activities/ActivityTutorialViews.test.tsx src/pages/Classroom.test.tsx src/auth/WorkAccessGate.test.tsx src/auth/transport.test.ts)
-  browser_tests+=(-- tests/browser/organizer-assistant.spec.ts tests/browser/activity-ai.spec.ts tests/browser/activity-images.spec.ts tests/browser/activity-generation.spec.ts tests/browser/core-screens.spec.ts)
+  browser_tests+=(-- tests/browser/organizer-assistant.spec.ts tests/browser/activity-ai.spec.ts tests/browser/activity-images.spec.ts tests/browser/loading-animation.spec.ts tests/browser/activity-generation.spec.ts tests/browser/core-screens.spec.ts)
 fi
 
 if "$billing_only"; then
@@ -108,6 +108,11 @@ if "$ccrc_only"; then
   postgres_tests+=(-- --runTestsByPath tests/ccrcStatements.test.js tests/ccrcStatementStorage.test.js tests/ccrcStatements.postgres.test.js tests/billing.test.js tests/billingMath.test.js tests/billingPersistence.postgres.test.js tests/workAccess.test.js)
   client_tests+=(-- src/pages/CCRCStatements.test.tsx src/pages/CCRCStatements.navigation.test.tsx src/api/ccrcStatements.test.ts src/components/billing/ccrcStatementReview.test.ts src/pages/Billing.test.tsx src/components/billing/BillingAlerts.test.tsx src/router/index.test.tsx src/auth/WorkAccessGate.test.tsx)
   browser_tests+=(-- tests/browser/ccrc-statements.spec.ts tests/browser/billing.spec.ts)
+fi
+
+# Every focused UI check also exercises the shared pending-state accessibility.
+if ((selected_modes > 0)); then
+  client_tests+=(src/components/LoadingScene.test.tsx)
 fi
 
 current_step='Preflight'

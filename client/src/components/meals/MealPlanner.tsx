@@ -17,6 +17,7 @@ import { MEAL_TYPES, dateOfDay } from './weeklyPlan';
 import type { Meal, MealType, ShoppingItem } from './weeklyPlan';
 import { useWeeklyPlan } from './useWeeklyPlan';
 import { AttendanceHeadcount } from './AttendanceHeadcount';
+import { LoadingScene } from '../LoadingScene';
 
 type MessageType = 'success' | 'error' | 'info';
 
@@ -181,8 +182,8 @@ const MealPlanner = ({ active = true, onEditRecipe, onOpenMealSetup, canWrite = 
         </button>
         <p className="text-xs text-gray-500">Choose any date; the plan starts on that week’s Monday.</p>
       </section>
-      {(actionLoading === 'generate' || actionLoading === 'import') && <div role="status" className="print:hidden rounded-xl border bg-white p-4 text-sm">
-        <p>Generating a menu. Your previous menu stays unchanged until generation finishes.</p>
+      {(actionLoading === 'generate' || actionLoading === 'import') && <div className="print:hidden">
+        <LoadingScene label="Generating a menu. Your previous menu stays unchanged until generation finishes." />
         <button type="button" onClick={() => planner.cancelGeneration()} className="mt-2 font-semibold text-emerald-700 underline">Cancel generation</button>
       </div>}
       {(entry.generationError || entry.generationIssues.length > 0) && <div role={entry.generationError ? 'alert' : 'status'}

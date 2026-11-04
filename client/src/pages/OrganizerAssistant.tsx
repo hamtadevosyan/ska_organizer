@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
+import { LoadingScene } from '../components/LoadingScene';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/context';
 import { authError, onSessionExpired, onWorkAccessRequired } from '../auth/transport';
@@ -53,7 +54,7 @@ export default function OrganizerAssistant() {
     <header><div className="flex items-center gap-2 text-blue-700"><Sparkles aria-hidden="true" /><h1 className="text-2xl font-bold">Local AI assistant</h1></div>
       <p className="mt-2 text-slate-600">Summarize the records you can access. Summaries are not saved; your records stay unchanged.</p></header>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-800">{error}</p>}
-    {!options && !error && <p role="status">Checking your AI connection…</p>}
+    {!options && !error && <LoadingScene compact label="Checking your AI connection…" />}
     {options && loadedKey === identity && <>
       <p role="status" className="rounded-xl bg-blue-50 p-4 text-blue-900">{options.status.message}</p>
       <section aria-label="Choose a summary" className="grid min-w-0 gap-4 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
@@ -65,6 +66,7 @@ export default function OrganizerAssistant() {
         {task === 'week' && <label className="grid gap-1 font-medium">Week starting Monday<input className="min-h-12 w-full min-w-0 rounded-lg border p-2" type="date" value={week} onChange={event => { changed(); setWeek(event.target.value); }} /></label>}
         <p className="text-sm text-slate-600">Only room settings, counts and schedule times are used. Names, health information and payroll records are excluded.</p>
         <button type="button" className="min-h-12 rounded-xl bg-blue-700 px-4 py-3 font-semibold text-white disabled:opacity-50" disabled={busy || !options.status.available || (task !== 'inventory' && !roomId) || (task === 'week' && !week)} onClick={() => void summarize()}>{busy ? 'Preparing summary…' : 'Summarize'}</button>
+        {busy && <LoadingScene label="Creating your summary…" detail="A little thinking time. You can cancel while you wait." />}
         {busy && <button type="button" className="min-h-12 rounded-xl border p-3" onClick={cancel}>Cancel</button>}
       </section>
     </>}

@@ -1,3 +1,4 @@
+import { LoadingScene } from '../LoadingScene';
 import { useContext, useEffect, useRef, useState } from 'react';
 import type { Illustration } from '../../api/activities';
 import { readActivityImage } from '../../api/activityImages';
@@ -53,7 +54,7 @@ export function ActivityIllustrations({ images, classroom = false, initiallyOpen
       <button type="button" className="ska-button print:hidden" onClick={() => setOpen(value => !value)}>{open ? 'Hide step pictures' : 'Show step pictures'}</button></div>
     <p className="text-sm">AI illustrations. An adult must check that each picture matches the instructions before use.</p>
     {open && allowed && <>
-      {loading && <p role="status">Loading step pictures…</p>}
+      {loading && <LoadingScene compact label="Loading step pictures…" />}
       {error && <p role="alert">{error} <button type="button" className="underline print:hidden" onClick={() => setRetry(value => value + 1)}>Retry pictures</button></p>}
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">{pictures.map(picture => <figure key={picture.id} className="min-w-0 break-inside-avoid rounded-lg bg-white p-2">
         {(resolvedSources?.[picture.id] || sourceScope === currentScope && sources[picture.id]) && <img src={resolvedSources?.[picture.id] || sources[picture.id]} alt={'Step ' + picture.step + ': ' + picture.caption} width={picture.width} height={picture.height}

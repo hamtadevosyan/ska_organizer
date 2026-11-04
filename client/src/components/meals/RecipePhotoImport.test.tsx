@@ -57,6 +57,8 @@ test('failed reading can retry the same file and cancelling aborts a pending req
   let resolve: (value: unknown) => void = () => {};
   vi.mocked(axios.post).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
   select(); await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('status')).toHaveTextContent('Reading your recipe… This can take up to 30 seconds.');
+  expect(screen.getByRole('button', { name: 'Pause animation' })).toBeEnabled();
   expect(screen.getByRole('button', { name: 'Upload recipe image' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Cancel photo import' }));
   fireEvent.click(screen.getByRole('button', { name: 'Keep editing photo' }));

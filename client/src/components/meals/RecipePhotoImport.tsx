@@ -1,3 +1,4 @@
+import { LoadingScene } from '../LoadingScene';
 import { useEffect, useId, useRef, useState } from 'react';
 import axios from 'axios';
 import { Camera, ImagePlus } from 'lucide-react';
@@ -88,7 +89,7 @@ export default function RecipePhotoImport({ disabled, onCancel, onReady }: Props
     </div>}
     <input ref={camera} type="file" accept="image/*" capture="environment" aria-label="Recipe camera image" hidden onChange={event => { void read(event.target.files?.[0]); event.target.value = ''; }} />
     <input ref={upload} type="file" accept="image/*" aria-label="Recipe image file" hidden onChange={event => { void read(event.target.files?.[0]); event.target.value = ''; }} />
-    {busy && <p role="status" className="rounded-xl bg-violet-50 p-3">Reading your recipe… This can take up to 30 seconds.</p>}
+    {busy && <LoadingScene label="Reading your recipe… This can take up to 30 seconds." />}
     {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</p>}
     {image && <details><summary className="min-h-11 cursor-pointer py-3 font-semibold">View recipe photo</summary><img src={`data:image/png;base64,${image}`} alt="Recipe selected for text review" className="max-h-96 max-w-full rounded-xl object-contain" /></details>}
     {review && <fieldset disabled={busy || disabled} className="min-w-0 space-y-4">

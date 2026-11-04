@@ -206,7 +206,12 @@ test('stopping generation aborts the request and ignores a late response', async
   const pending = deferred<ReturnType<typeof response>>(); vi.mocked(axios.post).mockReturnValueOnce(pending.promise);
   const callbacks = props(); render(<ActivityAiIdeas {...callbacks} />); await ready(); create();
   const signal = draftCalls()[0][2]!.signal!;
-  fireEvent.click(screen.getByRole('button', { name: 'Stop AI generation' })); expect(signal.aborted).toBe(true);
+  expect(screen.getByText('Creating ideas on your local AI server…')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Pause animation' }));
+  expect(screen.getByRole('button', { name: 'Resume animation' })).toBeEnabled();
+  expect(signal.aborted).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Stop AI generation' }));
+  expect(screen.queryByRole('button', { name: 'Resume animation' })).not.toBeInTheDocument(); expect(signal.aborted).toBe(true);
   await act(async () => pending.resolve(response(result)));
   expect(screen.queryByRole('article', { name: 'AI idea 1' })).not.toBeInTheDocument(); expect(callbacks.onSaved).not.toHaveBeenCalled();
   expect(screen.getByText('AI generation stopped. Your library and week are unchanged.')).toBeVisible();

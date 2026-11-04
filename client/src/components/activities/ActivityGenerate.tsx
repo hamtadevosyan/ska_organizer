@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import AppModal from '../AppModal';
+import { LoadingScene } from '../LoadingScene';
 import { authError } from '../../auth/transport';
 import { inventoryRequestId } from '../../api/inventory';
 import { activityPlanUrl, clockTime, dayLabel, entryPayload, entryProblem, orderedEntries, suitable, timeMinutes, timeRange, weekDates, materialUnitLabel } from '../../api/activities';
@@ -141,7 +142,7 @@ export function ActivityGenerate({ plan, entries, room, catalog, onApply, onCanc
       <p className="planner-generation-small">Repeated activities are off by default. Missing materials are flagged for your review; stock is never used or reserved.</p>
       <p className="planner-generation-small">Materials are checked for this room only. Other rooms may also need the same reusable supplies.</p>
       {error && <p role="alert" className="ska-alert is-error">{error}</p>}
-      {pending ? <div role="status" className="planner-generation-pending"><p>Finding activities and checking this week…</p><button type="button" className="ska-button" onClick={stopRequest}>Stop generation</button></div>
+      {pending ? <div className="planner-generation-pending"><LoadingScene label="Finding activities and checking this week…" detail="Making room for learning, play and a little discovery." /><button type="button" className="ska-button" onClick={stopRequest}>Stop generation</button></div>
         : !candidate && <><button type="button" className="ska-button is-primary" disabled={!!settingsProblem || !choices.length || (replaceIds.length > 0 && !replaceConsent) || context !== initialContext.current} onClick={() => void generate(false)}><Sparkles size={18} aria-hidden="true" />Preview generated week</button>{settingsProblem && <p role="alert">{settingsProblem}</p>}</>}
       {candidate && <section className="planner-generation-review" aria-label="Generated week preview"><h3>Make it your week</h3>
         <p>{previewEntries.length} suggested activities. {candidate.replacedIds.length ? candidate.replacedIds.length + ' selected existing activities will be replaced.' : 'Existing activities stay in your week.'} Edit a suggestion or select just the slots you want to try again.</p>
