@@ -105,6 +105,25 @@ try {
     function Get-NetFirewallInterfaceTypeFilter { [CmdletBinding()]param([Parameter(ValueFromPipeline = $true)]$InputObject) process { $script:InterfaceType } }
     function Get-NetFirewallSecurityFilter { [CmdletBinding()]param([Parameter(ValueFromPipeline = $true)]$InputObject) process { $script:Security } }
     Assert-SkaoActivityMediaRawRule -Name 'synthetic' -Port '11435'; $script:Checks++
+# Windows reports unrestricted package filters as null on the AI laptop.
+$script:App.Package = $null
+Assert-SkaoActivityMediaRawRule -Name 'synthetic' -Port '11435'
+Assert-MediaTrue $true 'native null package filter accepted'
+$script:Port.LocalPort = '8188'
+Assert-SkaoActivityMediaRawRule -Name 'synthetic' -Port '8188'
+Assert-MediaTrue $true 'native null package accepted for second raw image port'
+$script:Port.LocalPort = '11435'
+
+foreach ($invalidPackage in @('', ' ', 'S-1-15-2-12345', 'S-1-0-0', 'S-1-15-2-1', 0, $false, @('Any'), @('Any', 'other'), [pscustomobject]@{ Value = 'Any' })) {
+    $script:App.Package = $invalidPackage
+    Assert-MediaThrows { Assert-SkaoActivityMediaRawRule -Name 'synthetic' -Port '11435' } 'AI_MEDIA_FIREWALL:*' 'malformed or restricted package filter refused'
+}
+$script:App = [pscustomobject]@{ Program = $script:App.Program }
+Assert-MediaThrows { Assert-SkaoActivityMediaRawRule -Name 'synthetic' -Port '11435' } 'AI_MEDIA_FIREWALL:*' 'missing package property refused'
+$script:App | Add-Member NoteProperty Package 'Any'
+Assert-SkaoActivityMediaRawRule -Name 'synthetic' -Port '11435'
+Assert-MediaTrue $true 'literal Any package filter remains accepted'
+
     foreach ($field in @(
         @('Rule','Enabled','False'), @('Rule','Action','Allow'), @('Rule','Profile','Private'), @('Rule','Direction','Outbound'),
         @('Address','LocalAddress','127.0.0.1'), @('Address','RemoteAddress','LocalSubnet'),

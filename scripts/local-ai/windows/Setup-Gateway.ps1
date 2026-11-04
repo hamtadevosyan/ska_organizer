@@ -27,6 +27,16 @@ function Stop-Skao([string]$Message) {
     throw $errorObject
 }
 
+function Test-SkaoUnrestrictedPackage {
+    param($Application)
+    if ($null -eq $Application) { return $false }
+    $package = $Application.PSObject.Properties['Package']
+    if ($null -eq $package) { return $false }
+    # MS-FASP FW_RULE: a null package condition applies to all processes.
+    # Require the property to exist; do not normalize missing or malformed data.
+    return ($null -eq $package.Value -or ($package.Value -is [string] -and $package.Value -eq 'Any'))
+}
+
 function Assert-SkaoRawFirewall {
     param([string]$RuleName = 'SKAO-Ollama-Block-Remote', [string]$RawPort = '11434')
     $profiles = @(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop)
@@ -66,7 +76,7 @@ function Assert-SkaoRawFirewall {
     if ([string]$addresses[0].LocalAddress -ne 'Any' -or [string]$addresses[0].RemoteAddress -ne 'Any' -or
         [string]$ports[0].Protocol -notin @('TCP', '6') -or [string]$ports[0].LocalPort -ne $RawPort -or
         [string]$ports[0].RemotePort -ne 'Any' -or [string]$applications[0].Program -ne 'Any' -or
-        [string]$applications[0].Package -ne 'Any' -or [string]$services[0].Service -ne 'Any' -or
+        !(Test-SkaoUnrestrictedPackage -Application $applications[0]) -or [string]$services[0].Service -ne 'Any' -or
         [string]$interfaces[0].InterfaceAlias -ne 'Any' -or [string]$interfaceTypes[0].InterfaceType -ne 'Any') {
         Stop-Skao 'The dedicated raw Ollama firewall rule has an unexpected address, port, application, service or interface restriction.'
     }
@@ -414,7 +424,7 @@ function Assert-GatewayFirewall($Settings) {
         [string]$addresses[0].RemoteAddress -cne $Settings.PiIp -or
         [string]$ports[0].LocalPort -ne '8443' -or [string]$ports[0].RemotePort -ne 'Any' -or
         [string]$ports[0].Protocol -notin @('TCP', '6') -or
-        [string]$apps[0].Program -ine $aiBinary -or [string]$apps[0].Package -ne 'Any' -or
+        [string]$apps[0].Program -ine $aiBinary -or !(Test-SkaoUnrestrictedPackage -Application $apps[0]) -or
         [string]$services[0].Service -ne 'Any' -or [string]$interfaces[0].InterfaceAlias -ne 'Any' -or
         [string]$types[0].InterfaceType -ne 'Any' -or
         [string]$security[0].Authentication -ne 'NotRequired' -or

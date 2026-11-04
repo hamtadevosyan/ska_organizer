@@ -268,6 +268,16 @@ function Assert-SkaoActivityMediaTask {
     }
 }
 
+function Test-SkaoActivityMediaUnrestrictedPackage {
+    param($Application)
+    if ($null -eq $Application) { return $false }
+    $package = $Application.PSObject.Properties['Package']
+    if ($null -eq $package) { return $false }
+    # MS-FASP FW_RULE: a null package condition applies to all processes.
+    # Require the property to exist; do not normalize missing or malformed data.
+    return ($null -eq $package.Value -or ($package.Value -is [string] -and $package.Value -eq 'Any'))
+}
+
 function Assert-SkaoActivityMediaRawRule {
     param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][string]$Port)
     $rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -Name $Name -ErrorAction Stop)
@@ -286,7 +296,7 @@ function Assert-SkaoActivityMediaRawRule {
         $interfaces.Count -ne 1 -or $types.Count -ne 1 -or $security.Count -ne 1 -or
         [string]$addresses[0].LocalAddress -ne 'Any' -or [string]$addresses[0].RemoteAddress -ne 'Any' -or
         [string]$ports[0].Protocol -notin @('TCP', '6') -or [string]$ports[0].LocalPort -ne $Port -or
-        [string]$ports[0].RemotePort -ne 'Any' -or [string]$apps[0].Program -ne 'Any' -or [string]$apps[0].Package -ne 'Any' -or
+        [string]$ports[0].RemotePort -ne 'Any' -or [string]$apps[0].Program -ne 'Any' -or !(Test-SkaoActivityMediaUnrestrictedPackage -Application $apps[0]) -or
         [string]$services[0].Service -ne 'Any' -or [string]$interfaces[0].InterfaceAlias -ne 'Any' -or
         [string]$types[0].InterfaceType -ne 'Any' -or [string]$security[0].Authentication -ne 'NotRequired' -or
         [string]$security[0].Encryption -ne 'NotRequired' -or [string]$security[0].OverrideBlockRules -ne 'False' -or

@@ -153,3 +153,19 @@ configuration and small-screen layout. Native Windows task/firewall deployment
 and P3200 generation must still be verified on the laptop. The PostgreSQL suites
 include migration and BLOB persistence checks and run against a separate test
 database in the normal update workflow.
+
+### Windows null package compatibility correction
+
+The media installer now accepts an explicitly present `Package: null` returned
+by the Windows firewall provider, as well as the existing scalar `Any` value.
+Microsoft's [FW_RULE specification](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fasp/8c008258-166d-46d4-9090-f2ffaa01be4b)
+defines a null package condition as applying to all processes. This corrects the
+validator; it does not require changing the working firewall rules. Package
+SIDs, missing properties and malformed values are still rejected. The correction
+covers the Ollama block, gateway allow rule and both image-port blocks.
+
+If the earlier media setup stopped at this check, replace the downloaded
+`Setup-SKAO-ActivityMedia.ps1` with the corrected version and run the same setup
+command again. Existing keys, certificates, model files, configuration and tasks
+are reused. The source package includes a correction-only patch for checkouts
+that already received the original media integration.

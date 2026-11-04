@@ -1,4 +1,10 @@
 #Requires -Version 5.1
+# Native NetSecurity enums serialize as numbers, but validation sees their names.
+enum SkaoFirewallFixtureEnabled { False = 0; True = 1 }
+enum SkaoFirewallFixtureDirection { Inbound = 1; Outbound = 2 }
+enum SkaoFirewallFixtureAction { Allow = 2; Block = 4 }
+enum SkaoFirewallFixtureAny { Any = 0 }
+enum SkaoFirewallFixtureAuthentication { NotRequired = 0 }
 $ErrorActionPreference = 'Stop'
 $oldLocal = $env:LOCALAPPDATA
 $oldRoot = $env:SystemRoot
@@ -69,6 +75,20 @@ function Get-NetFirewallInterfaceTypeFilter { [CmdletBinding()]param([Parameter(
 function Get-NetFirewallSecurityFilter { [CmdletBinding()]param([Parameter(ValueFromPipeline = $true)]$InputObject) process { $script:security } }
 Assert-GatewayFirewall $settings
 Assert-Test $true 'exact manual gateway firewall rule accepted'
+# Windows reports unrestricted package filters as null on the AI laptop.
+$script:application.Package = $null
+Assert-GatewayFirewall $settings
+Assert-Test $true 'native null package filter accepted'
+foreach ($invalidPackage in @('', ' ', 'S-1-15-2-12345', 'S-1-0-0', 'S-1-15-2-1', 0, $false, @('Any'), @('Any', 'other'), [pscustomobject]@{ Value = 'Any' })) {
+    $script:application.Package = $invalidPackage
+    Expect-Refusal { Assert-GatewayFirewall $settings } 'malformed or restricted package filter refused'
+}
+$script:application = [pscustomobject]@{ Program = $script:application.Program }
+Expect-Refusal { Assert-GatewayFirewall $settings } 'missing package property refused'
+$script:application | Add-Member NoteProperty Package 'Any'
+Assert-GatewayFirewall $settings
+Assert-Test $true 'literal Any package filter remains accepted'
+
 $fields = @(
     @('rule', 'Enabled', 'False'), @('rule', 'Action', 'Block'), @('rule', 'Direction', 'Outbound'), @('rule', 'Profile', 'Any'),
     @('address', 'LocalAddress', 'Any'), @('address', 'RemoteAddress', 'LocalSubnet'),
@@ -94,6 +114,38 @@ $script:profiles = @('Domain', 'Private', 'Public') | ForEach-Object { [pscustom
 function Get-NetFirewallProfile { [CmdletBinding()]param($PolicyStore, $Name) $script:profiles }
 Assert-SkaoRawFirewall
 Assert-Test $true 'dedicated all-profile raw port block accepted'
+# Windows reports unrestricted package filters as null on the AI laptop.
+$script:application.Package = $null
+Assert-SkaoRawFirewall
+Assert-Test $true 'native null package filter accepted'
+foreach ($invalidPackage in @('', ' ', 'S-1-15-2-12345', 'S-1-0-0', 'S-1-15-2-1', 0, $false, @('Any'), @('Any', 'other'), [pscustomobject]@{ Value = 'Any' })) {
+    $script:application.Package = $invalidPackage
+    Expect-Refusal { Assert-SkaoRawFirewall } 'malformed or restricted package filter refused'
+}
+$script:application = [pscustomobject]@{ Program = $script:application.Program }
+Expect-Refusal { Assert-SkaoRawFirewall } 'missing package property refused'
+$script:application | Add-Member NoteProperty Package 'Any'
+Assert-SkaoRawFirewall
+Assert-Test $true 'literal Any package filter remains accepted'
+$oldNativeRule = $script:rule
+$script:rule = [pscustomobject]@{ Enabled = [SkaoFirewallFixtureEnabled]::True;
+    Direction = [SkaoFirewallFixtureDirection]::Inbound; Action = [SkaoFirewallFixtureAction]::Block;
+    Profile = [SkaoFirewallFixtureAny]::Any }
+$script:application.Package = $null
+$script:interfaceType.InterfaceType = [SkaoFirewallFixtureAny]::Any
+$script:security.Authentication = [SkaoFirewallFixtureAuthentication]::NotRequired
+$script:security.Encryption = [SkaoFirewallFixtureAuthentication]::NotRequired
+$script:security.OverrideBlockRules = $false
+$nativeJson = $script:rule | ConvertTo-Json | ConvertFrom-Json
+Assert-Test ($nativeJson.Enabled -eq 1 -and $nativeJson.Direction -eq 1 -and $nativeJson.Action -eq 4 -and $nativeJson.Profile -eq 0) 'fixture matches reported native enum JSON values'
+Assert-SkaoRawFirewall
+Assert-Test $true 'reported null package and native enum values pass together'
+$script:rule = $oldNativeRule; $script:application.Package = 'Any'
+$script:interfaceType.InterfaceType = 'Any'
+$script:security.Authentication = 'NotRequired'; $script:security.Encryption = 'NotRequired'
+$script:security.OverrideBlockRules = 'False'
+
+
 $rawFields = @(
     @('rule', 'Enabled', 'False'), @('rule', 'Action', 'Allow'), @('rule', 'Direction', 'Outbound'), @('rule', 'Profile', 'Private'),
     @('address', 'LocalAddress', '192.168.1.10'), @('address', 'RemoteAddress', 'LocalSubnet'),
