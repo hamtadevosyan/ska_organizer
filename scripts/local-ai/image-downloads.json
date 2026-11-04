@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "comfy": {
+    "version": "v0.43.0",
+    "assetName": "ComfyUI_windows_portable_nvidia_cu126.7z",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.43.0/ComfyUI_windows_portable_nvidia_cu126.7z",
+    "sha256": "691dcb5295e73594c6530ff7f3fca8dbe7dfb45114b951328c5dd3df0fff6c6b",
+    "sizeBytes": 1930972692
+  },
+  "model": {
+    "fileName": "v1-5-pruned-emaonly.safetensors",
+    "revision": "f03de327dd89b501a01da37fc5240cf4fdba85a1",
+    "url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/f03de327dd89b501a01da37fc5240cf4fdba85a1/v1-5-pruned-emaonly.safetensors",
+    "sha256": "6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+    "sizeBytes": 4265146304
+  },
+  "comparison": {
+    "fileName": "sd_xl_base_1.0.safetensors",
+    "revision": "462165984030d82259a11f4367a4eed129e94a7b",
+    "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_base_1.0.safetensors",
+    "sha256": "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+    "sizeBytes": 6938078334
+  },
+  "guidance": {
+    "fileName": "control-lora-canny-rank128.safetensors",
+    "revision": "75590eb0e7868d3d0f1581b5126d487b33c7fdb4",
+    "url": "https://huggingface.co/stabilityai/control-lora/resolve/75590eb0e7868d3d0f1581b5126d487b33c7fdb4/control-LoRAs-rank128/control-lora-canny-rank128.safetensors",
+    "sha256": "56389dbb245ca44de91d662529bd4298abc55ce2318f60bc19454fb72ff68247",
+    "sizeBytes": 395733680
+  },
+  "extractor": {
+    "version": "26.05",
+    "assetName": "7zr.exe",
+    "url": "https://github.com/ip7z/7zip/releases/download/26.05/7zr.exe",
+    "sha256": "9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7",
+    "sizeBytes": 602624
+  }
+}
