@@ -80,7 +80,9 @@ test('create more remembers successful suggestions across theme and focus change
   createMore(); await waitFor(() => expect(draftCalls()).toHaveLength(3));
   expect(draftCalls()[2][1]).toMatchObject({ avoidNames: ['Rhythm parade', 'Leaf printing', 'Puppet story'] });
   expect(draftCalls()[0][1]).toMatchObject({ avoidNames: [] }); // Past requests keep their own snapshot.
-  expect(vi.mocked(axios.get).mock.calls.map(([url]) => url)).toEqual([expect.stringMatching(/\/status$/)]);
+  expect(vi.mocked(axios.get).mock.calls.map(([url]) => url)).toEqual([
+    expect.stringMatching(/\/activity-ai\/status$/), expect.stringMatching(/\/activity-ai\/images\/status$/),
+  ]);
   expect(saveCalls()).toHaveLength(0);
 });
 
@@ -163,7 +165,7 @@ test('related how-to videos are previewed, reviewed and saved separately from ma
 
 test('video examples can be disabled without disabling complete activity guides', async () => {
   render(<ActivityAiIdeas {...props()} />); await ready();
-  const choice = screen.getByRole('checkbox', { name: 'Include related how-to videos when available' });
+  const choice = screen.getByRole('checkbox', { name: 'Include how-to video links' });
   expect(choice).toBeChecked(); fireEvent.click(choice); create();
   await screen.findByRole('article', { name: 'AI idea 1' });
   expect(draftCalls()[0][1]).toMatchObject({ includeVideos: false });
@@ -184,7 +186,7 @@ test('the retry button rechecks a previously unavailable connection', async () =
   vi.mocked(axios.get).mockResolvedValueOnce(response({ enabled: true, available: false, model: 'local-model', sourceCount: 1, message: 'Start the local runtime.' }));
   render(<ActivityAiIdeas {...props()} />); await screen.findByText('Start the local runtime.');
   fireEvent.click(screen.getByRole('button', { name: 'Check AI connection' })); await ready();
-  expect(axios.get).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(axios.get).mock.calls.filter(([url]) => url.endsWith('/activity-ai/status'))).toHaveLength(2);
 });
 
 test('counts and durations are bounded before sending a request', async () => {

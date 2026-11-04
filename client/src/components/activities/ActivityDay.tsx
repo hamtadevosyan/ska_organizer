@@ -3,6 +3,7 @@ import { dayLabel, entryProblem, legacyLabel, materialUnitLabel, suitable, timeR
 import type { Activity, Entry } from '../../api/activities';
 import type { Room } from '../../api/rooms';
 import { ActivityTutorialLinks } from './ActivityTutorialLinks';
+import { ActivityIllustrations } from './ActivityIllustrations';
 
 type Props = { date: string; entries: Entry[]; catalog: Activity[]; room?: Room; disabledReason: string; editable: boolean;
   editEntry: (entry: Entry, trigger: HTMLButtonElement) => void; moveEntry: (entry: Entry) => void; moveDisabled?: boolean; removeEntry: (id: string) => void; chooseActivity: (id: string, activityId: string, updateOnly?: boolean) => void };
@@ -29,10 +30,10 @@ export function ActivityDay({ date, entries, catalog, room, disabledReason, edit
         {entryProblem(entry) && <p className="planner-entry-note is-warning">{entryProblem(entry)}</p>}
         {overlaps && <p className="planner-entry-note">Runs at the same time as another activity.</p>}
         {entry.activity && room && !suitable(entry.activity, room) && <p className="planner-entry-note is-warning">This saved activity does not match the room’s current ages or assignment. Its saved copy is kept.</p>}
-        {(entry.activity?.description || !!entry.activity?.materials.length || !!entry.activity?.tutorialLinks?.length) && <details className="planner-instructions"><summary><BookOpen size={16} aria-hidden="true" />Instructions &amp; materials</summary>
+        {(entry.activity?.description || !!entry.activity?.materials.length || !!entry.activity?.tutorialLinks?.length || !!entry.activity?.illustrations?.length) && <details className="planner-instructions"><summary><BookOpen size={16} aria-hidden="true" />Instructions &amp; materials</summary>
           {entry.activity.description && <p>{entry.activity.description}</p>}
           {!!entry.activity.materials.length && <ul>{entry.activity.materials.map(material => <li key={material.itemId}>{material.name || 'Inventory item'} — {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</li>)}</ul>}
-          <ActivityTutorialLinks links={entry.activity.tutorialLinks} />
+          <ActivityTutorialLinks links={entry.activity.tutorialLinks} /><ActivityIllustrations images={entry.activity.illustrations} />
         </details>}
         {entry.activity && latest && latest.version !== entry.activity.version && <div className="planner-version"><p>A newer library version is available. This entry keeps its saved copy.</p>
           {editable && <button className="ska-button" disabled={locked || !room || !suitable(latest, room)} onClick={() => chooseActivity(entry.id, latest.id, true)}>Use updated activity</button>}</div>}

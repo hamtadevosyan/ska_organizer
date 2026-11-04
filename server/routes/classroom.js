@@ -15,6 +15,10 @@ router.use((req, res, next) => {
   if (!['GET', 'HEAD'].includes(req.method)) return next(auth.problem('Class information is read-only.', 403, 'CLASSROOM_READ_ONLY'));
   next();
 });
+router.get('/activity-images/:id', async (req, res, next) => {
+  try { require('./documentContent')(res, await require('../services/activityMedia').classroomContent(req.sessionToken, req.params.id)); }
+  catch (error) { next(error); }
+});
 for (const [path, method] of [['/', 'overview'], ['/children', 'children'], ['/activities', 'activities'], ['/meals', 'meals']]) {
   router.get(path, async (req, res, next) => {
     try { res.json({ data: await classroom[method](req.sessionToken, req.query) }); }

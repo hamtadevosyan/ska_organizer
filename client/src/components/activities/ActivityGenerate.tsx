@@ -10,6 +10,7 @@ import type { Room } from '../../api/rooms';
 import { countOverlaps } from './planReuse';
 import { PlanActionPreview } from './PlanActionPreview';
 import { ActivityTutorialLinks } from './ActivityTutorialLinks';
+import { ActivityIllustrations } from './ActivityIllustrations';
 
 type Props = { plan: ActivityPlan; entries: Entry[]; room: Room; catalog: Activity[]; onApply: (entries: Entry[]) => void;
   onCancel: () => void; onDirtyChange: (dirty: boolean) => void };
@@ -155,7 +156,7 @@ export function ActivityGenerate({ plan, entries, room, catalog, onApply, onCanc
             <div className="planner-generation-times"><label className="ska-field">Suggested start {index + 1}<input type="time" value={entry.startTime || ''} aria-invalid={!!entryProblem(entry)} onChange={event => editEntry(entry.id, 'startTime', event.target.value)} /></label>
               <label className="ska-field">Suggested end {index + 1}<input type="time" value={endValue(entry.endTime || '')} aria-invalid={!!entryProblem(entry)} onChange={event => editEntry(entry.id, 'endTime', event.target.value)} /></label></div>
             {entryProblem(entry) && <p role="alert">{entryProblem(entry)}</p>}
-            <details><summary>Instructions and materials</summary><p className="whitespace-pre-wrap break-words">{entry.activity?.description || 'No instructions listed.'}</p><ul>{entry.activity?.materials.map(material => <li key={material.itemId}>{material.name || 'Inventory item'} · {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</li>)}</ul><ActivityTutorialLinks links={entry.activity?.tutorialLinks} /></details>
+            <details><summary>Instructions and materials</summary><p className="whitespace-pre-wrap break-words">{entry.activity?.description || 'No instructions listed.'}</p><ul>{entry.activity?.materials.map(material => <li key={material.itemId}>{material.name || 'Inventory item'} · {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</li>)}</ul><ActivityTutorialLinks links={entry.activity?.tutorialLinks} /><ActivityIllustrations images={entry.activity?.illustrations} /></details>
             {slotId && <label className="planner-reuse-check"><input type="checkbox" aria-label={'Try another activity for suggestion ' + (index + 1)} checked={selectedSlots.includes(slotId)} onChange={event => selectSlot(slotId, event.target.checked)} />Try another activity for this slot</label>}</fieldset>;
         })}
         {candidate.unfilledSlots.length > 0 && <div className="planner-generation-unfilled"><h3>Slots that need your choice</h3>{candidate.unfilledSlots.map(slot => <label key={slot.id} className="planner-reuse-check"><input type="checkbox" disabled={pending} checked={selectedSlots.includes(slot.id)} aria-label={'Retry ' + dayLabel(slot.date) + ' at ' + slot.startTime} onChange={event => selectSlot(slot.id, event.target.checked)} /><span><strong>{dayLabel(slot.date)} · {slot.startTime}–{slot.endTime}</strong><br />{slot.reason}</span></label>)}<p>You can use the filled suggestions now and add more activities later.</p></div>}

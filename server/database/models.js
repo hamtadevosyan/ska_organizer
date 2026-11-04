@@ -261,6 +261,17 @@ module.exports = (sequelize) => {
     actorUsername: { type: DataTypes.STRING(64), allowNull: false }, occurredAt: { type: DataTypes.DATE, allowNull: false },
   }, { timestamps: false });
   const Activity = require('../models/activity')(sequelize, DataTypes);
+  // Immutable illustration pixels live in normal PostgreSQL backups. A preview
+  // becomes permanently retained when attached to an activity/saved snapshot.
+  const ActivityMedia = sequelize.define('ActivityMedia', {
+    id: id(), ownerAccountId: { type: DataTypes.STRING, allowNull: false },
+    fingerprint: { type: DataTypes.STRING(64), allowNull: false }, step: { type: DataTypes.INTEGER, allowNull: false },
+    caption: { type: DataTypes.STRING(500), allowNull: false }, width: { type: DataTypes.INTEGER, allowNull: false },
+    height: { type: DataTypes.INTEGER, allowNull: false }, contentType: { type: DataTypes.STRING(32), allowNull: false },
+    byteLength: { type: DataTypes.INTEGER, allowNull: false }, sha256: { type: DataTypes.STRING(64), allowNull: false },
+    content: { type: DataTypes.BLOB, allowNull: false }, claimed: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    createdAt: { type: DataTypes.DATE, allowNull: false }, expiresAt: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: 'ActivityMedia', timestamps: false });
   const ScheduleEntry = require('../models/scheduleEntry')(sequelize, DataTypes);
   const ScheduleWeek = sequelize.define('ScheduleWeek', {
     roomId: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
@@ -332,5 +343,5 @@ module.exports = (sequelize) => {
   return { CcrcStatementImport, ChildBillingRecord, PayrollRecord, Meal, Ingredient, MealIngredient, ConfirmedMenu, WeeklyPlan, PurchasingList, ShelfCheck, Child, Attendance, Activity,
     Account, Session, LoginAttempt, AuditEvent, Room, ScheduleEntry, ScheduleWeek, AttendanceCorrection, StaffMember, InventoryGroup, InventoryItem, InventoryMovement, PurchaseReceipt, PurchaseBatch, InventoryGroupOperation,
     ChildSafetyProfile, ChildDocument, ChildDocumentRevision, StaffDocument, StaffDocumentRevision, StaffDocumentSettings, RegistrationForm, RegistrationFormRevision,
-    ClockStation, ClockStationPairing, StaffClockPin, ClockStationAttempt };
+    ClockStation, ClockStationPairing, StaffClockPin, ClockStationAttempt, ActivityMedia };
 };

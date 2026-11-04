@@ -121,7 +121,7 @@ function draftsFrom(response, values, room, sources) {
     seen.add(nameKey(name));
     return { name, description, durationMinutes: value.durationMinutes,
       ageMinMonths: room.ageMinMonths, ageMaxMonths: room.ageMaxMonths, roomId: room.id, materials: [],
-      materialsNotes, sourceIds: value.sourceIds, tutorialLinks: values.includeVideos ? videos.match(value) : [] };
+      materialsNotes, sourceIds: value.sourceIds, visualSteps: value.steps.map(step => step.trim()), tutorialLinks: values.includeVideos ? videos.match(value) : [] };
   });
 }
 

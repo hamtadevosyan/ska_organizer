@@ -41,6 +41,9 @@ without installing services or configuring certificates, DNS or a database.
 From the repository root, `bash SKAO.sh setup` builds the app and configures
 trusted HTTPS, local DNS, boot startup, certificate renewal and a sleep inhibitor.
 
+AI activity ideas support optional private step pictures and clearly labeled video links.
+See [activity pictures and video setup](docs/activity-media.md) to enable the existing Windows AI laptop and use them in Organizer.
+
 The meal planner now saves and reopens separate calendar weeks with headcounts,
 stock and historical recipe quantities. See [Saved weekly menus](docs/saved-weekly-menus.md)
 for the dated API, historical snapshots and usage instructions.

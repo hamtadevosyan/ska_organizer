@@ -3,6 +3,7 @@
 param(
     [switch]$Check,
     [switch]$TestGeneration,
+    [switch]$ActivityImages,
     [switch]$TransferToPi,
     [string]$PiUser,
     [string]$LaptopIp,
@@ -25,7 +26,7 @@ function Invoke-SkaoSetupChild {
 
 function Invoke-SkaoCompleteSetup {
     param([string]$Directory, [switch]$Check, [switch]$TestGeneration,
-          [switch]$TransferToPi, [string]$PiUser, [string]$LaptopIp,
+          [switch]$ActivityImages, [switch]$TransferToPi, [string]$PiUser, [string]$LaptopIp,
           [string]$PiIp, [string]$ArchivePath)
     if ($Check -and ($TestGeneration -or $TransferToPi -or $ArchivePath)) {
         throw 'AI_ARGUMENTS: -Check cannot install, transfer or generate.'
@@ -41,6 +42,16 @@ function Invoke-SkaoCompleteSetup {
     if ($LaptopIp) { $gateway.LaptopIp = $LaptopIp }
     if ($PiIp) { $gateway.PiIp = $PiIp }
     Invoke-SkaoSetupChild -Script (Join-Path $Directory 'Setup-Gateway.ps1') -Options $gateway
+    if ($ActivityImages) {
+        $imageScript = Join-Path $Directory 'Setup-ActivityImages.ps1'
+        if (!$Check) { Invoke-SkaoSetupChild -Script $imageScript -Options @{} }
+        $images = @{ CompareSDXL = $true }
+        if ($Check) { $images.Check = $true }
+        Invoke-SkaoSetupChild -Script $imageScript -Options $images
+        $media = @{}
+        if ($Check) { $media.Check = $true }
+        Invoke-SkaoSetupChild -Script (Join-Path $Directory 'Setup-ActivityMedia.ps1') -Options $media
+    }
     if ($TransferToPi) {
         $transfer = @{}
         if ($PiUser) { $transfer.PiUser = $PiUser }
@@ -51,7 +62,7 @@ function Invoke-SkaoCompleteSetup {
 
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        Invoke-SkaoCompleteSetup -Directory $PSScriptRoot -Check:$Check -TestGeneration:$TestGeneration -TransferToPi:$TransferToPi -PiUser $PiUser -LaptopIp $LaptopIp -PiIp $PiIp -ArchivePath $ArchivePath
+        Invoke-SkaoCompleteSetup -Directory $PSScriptRoot -Check:$Check -TestGeneration:$TestGeneration -ActivityImages:$ActivityImages -TransferToPi:$TransferToPi -PiUser $PiUser -LaptopIp $LaptopIp -PiIp $PiIp -ArchivePath $ArchivePath
         $global:LASTEXITCODE = 0
     }
     catch {

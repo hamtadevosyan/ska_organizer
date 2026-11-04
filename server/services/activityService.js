@@ -4,7 +4,7 @@ const { validateWeekStart, problem } = require('./planValidation');
 const validation = require('./activityValidation');
 const { fieldError } = require('./catalogValidation');
 
-async function values(payload, previous) {
+async function values(payload, previous, options = {}) {
   const result = validation.activity(payload, previous);
   if (result.roomId !== null && result.roomId !== previous?.roomId) await rooms.requireRoom(result.roomId, { active: true });
   result.materials = await Promise.all(result.materials.map(async (material) => {
@@ -16,6 +16,9 @@ async function values(payload, previous) {
     if (item.unit !== material.unit) throw fieldError('materials', 'The material unit changed. Choose the inventory item again and review its quantity.', 409);
     return { ...material, name: item.name, location: item.location };
   }));
+  result.illustrations = await require('./activityMedia').resolveIllustrations(result.illustrations, {
+    account: options.account, previous, name: result.name, description: result.description,
+  });
   return result;
 }
 exports.listActivities = (opts = {}) => {
@@ -24,12 +27,17 @@ exports.listActivities = (opts = {}) => {
   return db.listActivities(opts);
 };
 exports.getById = (id) => db.getActivityById(id);
-exports.createActivity = (payload) => db.withRoomLock(() => db.withInventoryLock(async () =>
-  db.createActivity(await values(payload))));
-exports.updateActivity = (id, changes) => db.withRoomLock(() => db.withInventoryLock(async () => {
+exports.createActivity = (payload, options) => db.withRoomLock(() => db.withInventoryLock(async () => {
+  const created = await db.createActivity(await values(payload, undefined, options));
+  await db.claimActivityMedia(created.illustrations.map(image => image.id));
+  return created;
+}));
+exports.updateActivity = (id, changes, options) => db.withRoomLock(() => db.withInventoryLock(async () => {
   const previous = await db.getActivityById(id);
   if (!previous) return null;
-  return db.updateActivity(id, await values(changes, previous));
+  const saved = await db.updateActivity(id, await values(changes, previous, options));
+  await db.claimActivityMedia(saved.illustrations.map(image => image.id));
+  return saved;
 }));
 exports.deleteActivity = (id) => db.withRoomLock(async () => {
   if (await db.activityInSchedule(id)) throw problem('This activity is used in a saved schedule and cannot be deleted.', 409);

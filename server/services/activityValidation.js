@@ -2,7 +2,7 @@ const { problem } = require('./planValidation');
 const { fieldError } = require('./catalogValidation');
 const { amount, decimal } = require('./inventoryValidation');
 
-const fields = ['name', 'description', 'durationMinutes', 'ageMinMonths', 'ageMaxMonths', 'materials', 'roomId', 'tutorialLinks'];
+const fields = ['name', 'description', 'durationMinutes', 'ageMinMonths', 'ageMaxMonths', 'materials', 'roomId', 'tutorialLinks', 'illustrations'];
 const legacy = ['startTime', 'endTime', 'category', 'repeatWindowWeeks', 'type', 'location', 'ageMin', 'ageMax',
   'energyLevel', 'estimatedCost', 'materialsLinks', 'materialsNotes'];
 function object(value, allowed) {
@@ -22,22 +22,33 @@ function tutorialLinks(value) {
   if (!Array.isArray(value) || value.length > 3) throw invalid();
   const seen = new Set();
   return value.map((link) => {
-    if (!link || typeof link !== 'object' || Array.isArray(link) || Object.keys(link).sort().join(',') !== 'publisher,title,url') throw invalid();
+    if (!link || typeof link !== 'object' || Array.isArray(link)) throw invalid();
+    const search = Object.hasOwn(link, 'kind');
+    if (Object.keys(link).sort().join(',') !== (search ? 'kind,publisher,title,url' : 'publisher,title,url') ||
+        (search && link.kind !== 'search')) throw invalid();
     for (const [field, limit] of [['title', 150], ['publisher', 100]]) {
       if (typeof link[field] !== 'string' || !link[field].trim() || link[field].length > limit || /[\u0000-\u001f\u007f]|<[^>]*>/.test(link[field])) throw invalid();
     }
     if (typeof link.url !== 'string' || link.url.length > 500 || !link.url.startsWith('https://') || /[\u0000-\u0020\u007f\\<>\"]/.test(link.url)) throw invalid();
     let url;
     try { url = new URL(link.url); } catch { throw invalid(); }
-    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.href.length > 500 || seen.has(url.href)) throw invalid();
+    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw invalid();
+    if (search) {
+      const entries = [...url.searchParams.entries()];
+      if (url.origin !== 'https://www.youtube.com' || url.pathname !== '/results' || link.url.includes('#') ||
+          entries.length !== 1 || entries[0][0] !== 'search_query' || !entries[0][1].trim() ||
+          /[\u0000-\u001f\u007f]/.test(entries[0][1])) throw invalid();
+      url.search = new URLSearchParams({ search_query: entries[0][1].trim() }).toString();
+    }
+    if (url.href.length > 500 || seen.has(url.href)) throw invalid();
     seen.add(url.href);
-    return { title: link.title.trim(), publisher: link.publisher.trim(), url: url.href };
+    return { title: link.title.trim(), publisher: link.publisher.trim(), url: url.href, ...(search ? { kind: 'search' } : {}) };
   });
 }
 function activity(payload, previous) {
   object(payload, [...fields, ...legacy, ...(previous ? ['version'] : [])]);
   if (previous) version(payload.version, previous.version);
-  const value = { description: '', roomId: null, ageMinMonths: null, ageMaxMonths: null, materials: [], tutorialLinks: [], ...previous, ...payload };
+  const value = { description: '', roomId: null, ageMinMonths: null, ageMaxMonths: null, materials: [], tutorialLinks: [], illustrations: [], ...previous, ...payload };
   if (typeof value.name !== 'string' || !value.name.trim() || value.name.trim().length > 100) throw fieldError('name', 'Enter an activity name of up to 100 characters.');
   value.name = value.name.trim();
   if (typeof value.description !== 'string' || value.description.length > 4000) throw fieldError('description', 'Keep the description within 4,000 characters.');
@@ -65,6 +76,14 @@ function activity(payload, previous) {
   if ('estimatedCost' in payload && (typeof payload.estimatedCost !== 'number' || !Number.isFinite(payload.estimatedCost) || payload.estimatedCost < 0)) throw fieldError('estimatedCost', 'Enter a non-negative cost.');
   if ('materialsLinks' in payload && (!Array.isArray(payload.materialsLinks) || payload.materialsLinks.length > 30 || payload.materialsLinks.some((link) => typeof link !== 'string' || !/^https?:\/\//.test(link) || link.length > 2000))) throw fieldError('materialsLinks', 'Supply up to 30 web links.');
   value.tutorialLinks = tutorialLinks(value.tutorialLinks);
+  if (!Array.isArray(value.illustrations) || value.illustrations.length > 6) throw fieldError('illustrations', 'Choose up to six generated illustrations.');
+  const imageIds = new Set();
+  value.illustrations = value.illustrations.map(image => {
+    if (!image || typeof image !== 'object' || Array.isArray(image)) throw fieldError('illustrations', 'Choose a generated illustration.');
+    if (Object.hasOwn(payload, 'illustrations')) object(image, ['id']);
+    if (typeof image.id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(image.id) || imageIds.has(image.id)) throw fieldError('illustrations', 'Choose different generated illustrations.');
+    imageIds.add(image.id); return { id: image.id };
+  });
   for (const field of ['startTime', 'endTime']) if (field in payload && payload[field] !== null && (typeof payload[field] !== 'string' || !Number.isFinite(Date.parse(payload[field])))) throw fieldError(field, 'Supply a valid timestamp.');
   if (!Array.isArray(value.materials) || value.materials.length > 30) throw fieldError('materials', 'Add up to 30 materials.');
   const seen = new Set();
@@ -83,7 +102,7 @@ function activity(payload, previous) {
 }
 // Preserve unquantified material hints as well as linked materials. Purchasing
 // must surface these for review instead of treating an empty list as no demand.
-const snapshot = (activity) => activity && Object.fromEntries(['id', ...fields, 'materialsNotes', 'materialsLinks', 'version'].map((key) => [key, activity[key] ?? (key === 'tutorialLinks' ? [] : null)]));
+const snapshot = (activity) => activity && Object.fromEntries(['id', ...fields, 'materialsNotes', 'materialsLinks', 'version'].map((key) => [key, activity[key] ?? (['tutorialLinks', 'illustrations'].includes(key) ? [] : null)]));
 function suitable(activity, room) {
   return (!activity.roomId || activity.roomId === room.id) && (activity.ageMinMonths === null || activity.ageMinMonths === undefined ||
     (room.ageMinMonths !== null && room.ageMaxMonths !== null && room.ageMinMonths >= activity.ageMinMonths && room.ageMaxMonths <= activity.ageMaxMonths));

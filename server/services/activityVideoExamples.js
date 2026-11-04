@@ -29,6 +29,20 @@ const examples = [
   },
 ];
 
+function search(guide) {
+  // A search is an explicit fallback, not a selected or reviewed video. Keep
+  // the query to the generated activity name; never append its full context.
+  const name = Array.from((typeof guide.name === 'string' ? guide.name : '')
+    .normalize('NFKC').replace(/[\u0000-\u001f\u007f\s]+/gu, ' ').trim());
+  const url = new URL('https://www.youtube.com/results');
+  do {
+    url.searchParams.set('search_query', [name.join('').trim(), 'preschool activity how to'].filter(Boolean).join(' '));
+    if (url.href.length <= 500) return [{ title: 'Search YouTube for how-to videos', publisher: 'YouTube', url: url.href, kind: 'search' }];
+    name.pop();
+  } while (name.length);
+  return [];
+}
+
 function match(guide) {
   // Use the core procedure and materials, not incidental questions/safety notes.
   // This deliberately misses ambiguous examples rather than forcing a video.
@@ -42,7 +56,7 @@ function match(guide) {
     'pbs-pattern-loom': () => /\b(weav\w*|loom)\b/.test(content) && /\b(patterns?|threads?|yarn)\b/.test(content),
   };
   const example = examples.find(value => rules[value.id]());
-  if (!example) return [];
+  if (!example) return search(guide);
   const { title, publisher, url } = example;
   return [{ title, publisher, url }];
 }

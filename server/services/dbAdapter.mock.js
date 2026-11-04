@@ -11,7 +11,7 @@ const mock = {
   childSafetyProfiles: {}, children: [], childDocuments: [], childDocumentRevisions: [], registrationForms: [], registrationFormRevisions: [],
   staffDocuments: [], staffDocumentRevisions: [], staffDocumentSettings: null,
   attendance: [], attendanceCorrections: [],
-  activities: [],
+  activities: [], activityMedia: [],
   meals: [
     { id: "meal-1", name: "Oatmeal", type: "breakfast", description: "" },
     { id: "meal-2", name: "Banana", type: "snack", description: "" },
@@ -251,6 +251,7 @@ module.exports = {
   // RESET (for tests)
   // ------------------------------------------------------
   reset: () => {
+    mock.activityMedia = [];
     mock.ccrcStatements = [];
     mock.childBillingRecords = [];
     mock.payrollRecords = [];
@@ -440,7 +441,7 @@ module.exports = {
 
   createActivity: async (payload) => {
     const rec = {
-      version: 1, durationMinutes: null, ageMinMonths: null, ageMaxMonths: null, materials: [], tutorialLinks: [],
+      version: 1, durationMinutes: null, ageMinMonths: null, ageMaxMonths: null, materials: [], tutorialLinks: [], illustrations: [],
       ...payload,
       id: payload.id || mock.uuid(),
       name: payload.name,
@@ -467,6 +468,34 @@ module.exports = {
     mock.activities.splice(idx, 1);
     return true;
   },
+  createActivityMedia: async values => {
+    if (mock.activityMedia.some(row => row.id === values.id)) throw new Error('Duplicate illustration.');
+    mock.activityMedia.push({ ...structuredClone(values), content: Buffer.from(values.content) });
+    const { content, ...metadata } = mock.activityMedia[mock.activityMedia.length - 1];
+    return structuredClone(metadata);
+  },
+  getActivityMedia: async id => {
+    const row = mock.activityMedia.find(value => value.id === id);
+    if (!row) return null;
+    const { content, ...metadata } = row; return structuredClone(metadata);
+  },
+  getActivityMediaContent: async id => {
+    const row = mock.activityMedia.find(value => value.id === id);
+    return row ? { ...structuredClone(row), content: Buffer.from(row.content) } : null;
+  },
+  claimActivityMedia: async ids => { for (const row of mock.activityMedia) if (ids.includes(row.id)) row.claimed = true; },
+  deleteExpiredActivityMedia: async now => {
+    const before = mock.activityMedia.length;
+    mock.activityMedia = mock.activityMedia.filter(row => row.claimed || new Date(row.expiresAt).getTime() > new Date(now).getTime());
+    return before - mock.activityMedia.length;
+  },
+  activityMediaUsage: async ownerAccountId => {
+    const rows = mock.activityMedia.filter(row => !row.claimed && (!ownerAccountId || row.ownerAccountId === ownerAccountId));
+    return { count: rows.length, bytes: rows.reduce((sum, row) => sum + row.byteLength, 0) };
+  },
+  activityMediaAttached: async id => mock.activities.some(row => row.illustrations?.some(image => image.id === id)) ||
+    mock.scheduleEntries.some(row => row.activitySnapshot?.illustrations?.some(image => image.id === id)),
+  activityMediaInRoom: async (id, roomId) => mock.scheduleEntries.some(row => row.roomId === roomId && row.activitySnapshot?.illustrations?.some(image => image.id === id)),
 
   // ------------------------------------------------------
   // MEALS

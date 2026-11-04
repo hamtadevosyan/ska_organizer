@@ -456,6 +456,24 @@ exports.listActivities = ({ q, roomId } = {}) => list('Activity', {
 exports.getActivityById = (id) => get('Activity', id);
 exports.createActivity = (payload) => create('Activity', { ...payload, id: payload.id || randomUUID() });
 exports.updateActivity = (id, changes) => update('Activity', id, changes);
+const activityMediaColumns = ['id', 'ownerAccountId', 'fingerprint', 'step', 'caption', 'width', 'height',
+  'contentType', 'byteLength', 'sha256', 'claimed', 'createdAt', 'expiresAt'];
+exports.createActivityMedia = values => transact(async transaction => {
+  await model('ActivityMedia').create(values, { transaction });
+  return exports.getActivityMedia(values.id);
+});
+exports.getActivityMedia = async id => (await list('ActivityMedia', { where: { id }, attributes: activityMediaColumns, limit: 1 }))[0] || null;
+exports.getActivityMediaContent = id => get('ActivityMedia', id);
+exports.claimActivityMedia = ids => ids.length ? transact(transaction => model('ActivityMedia').update({ claimed: true }, { where: { id: ids }, transaction })) : Promise.resolve();
+exports.deleteExpiredActivityMedia = now => transact(transaction => model('ActivityMedia').destroy({ where: { claimed: false, expiresAt: { [Op.lte]: now } }, transaction }));
+exports.activityMediaUsage = async ownerAccountId => {
+  const rows = await list('ActivityMedia', { where: { claimed: false, ...(ownerAccountId ? { ownerAccountId } : {}) }, attributes: ['byteLength'] });
+  return { count: rows.length, bytes: rows.reduce((sum, row) => sum + row.byteLength, 0) };
+};
+exports.activityMediaAttached = async id => (await model('Activity').count({ where: { illustrations: { [Op.contains]: [{ id }] } }, transaction: transactionContext.getStore() })) > 0 ||
+  (await model('ScheduleEntry').count({ where: { activitySnapshot: { [Op.contains]: { illustrations: [{ id }] } } }, transaction: transactionContext.getStore() })) > 0;
+exports.activityMediaInRoom = async (id, roomId) => (await model('ScheduleEntry').count({ where: { roomId,
+  activitySnapshot: { [Op.contains]: { illustrations: [{ id }] } } }, transaction: transactionContext.getStore() })) > 0;
 exports.deleteActivity = (id) => remove('Activity', id);
 
 exports.listAccounts = () => list('Account', { order: [['username', 'ASC']] });

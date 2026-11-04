@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([switch]$Check, [string]$LaptopIp, [string]$PiIp, [string]$ArchivePath)
+param([switch]$Check, [switch]$ActivityImages, [string]$LaptopIp, [string]$PiIp, [string]$ArchivePath)
 
 $ErrorActionPreference = 'Stop'
 $aiTaskName = 'SKAO AI Gateway'
@@ -28,6 +28,7 @@ function Stop-Skao([string]$Message) {
 }
 
 function Assert-SkaoRawFirewall {
+    param([string]$RuleName = 'SKAO-Ollama-Block-Remote', [string]$RawPort = '11434')
     $profiles = @(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop)
     if ($profiles.Count -ne 3) { Stop-Skao 'The three Windows firewall profiles could not be verified.' }
     foreach ($name in @('Domain', 'Private', 'Public')) {
@@ -43,7 +44,7 @@ function Assert-SkaoRawFirewall {
             Stop-Skao 'A Windows firewall profile excludes network interfaces. Raw-port isolation cannot be confirmed.'
         }
     }
-    $rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -Name 'SKAO-Ollama-Block-Remote' -ErrorAction Stop)
+    $rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -Name $RuleName -ErrorAction Stop)
     if ($rules.Count -ne 1) { Stop-Skao 'The dedicated raw Ollama firewall rule could not be verified.' }
     $rule = $rules[0]
     if ([string]$rule.Enabled -ne 'True' -or [string]$rule.Direction -ne 'Inbound' -or
@@ -63,7 +64,7 @@ function Assert-SkaoRawFirewall {
         Stop-Skao 'The dedicated raw Ollama rule filters could not be verified.'
     }
     if ([string]$addresses[0].LocalAddress -ne 'Any' -or [string]$addresses[0].RemoteAddress -ne 'Any' -or
-        [string]$ports[0].Protocol -notin @('TCP', '6') -or [string]$ports[0].LocalPort -ne '11434' -or
+        [string]$ports[0].Protocol -notin @('TCP', '6') -or [string]$ports[0].LocalPort -ne $RawPort -or
         [string]$ports[0].RemotePort -ne 'Any' -or [string]$applications[0].Program -ne 'Any' -or
         [string]$applications[0].Package -ne 'Any' -or [string]$services[0].Service -ne 'Any' -or
         [string]$interfaces[0].InterfaceAlias -ne 'Any' -or [string]$interfaceTypes[0].InterfaceType -ne 'Any') {
@@ -123,7 +124,8 @@ function Invoke-SkaoGatewayCurl {
     param(
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$CaFile,
-        [ValidateRange(0.05, 10)][double]$TimeoutSeconds = 2
+        [ValidateRange(0.05, 10)][double]$TimeoutSeconds = 2,
+        [switch]$IncludeProfile
     )
     $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
     if (!(Test-Path -LiteralPath $curl -PathType Leaf)) { Stop-Skao 'The Windows curl executable was not found.' }
@@ -132,7 +134,10 @@ function Invoke-SkaoGatewayCurl {
     try {
         $ErrorActionPreference = 'Continue'
         $global:LASTEXITCODE = 0
-        $lines = @(& $curl -q --noproxy '*' --silent --show-error --connect-timeout $limit --max-time $limit --ssl-revoke-best-effort --cacert $CaFile --output NUL --write-out '%{http_code}' $Url 2>&1)
+        $arguments = @('-q', '--noproxy', '*', '--silent', '--show-error', '--connect-timeout', $limit,
+            '--max-time', $limit, '--ssl-revoke-best-effort', '--cacert', $CaFile, '--output', 'NUL', '--write-out', '%{http_code}')
+        if ($IncludeProfile) { $arguments += @('--dump-header', '-') }
+        $lines = @(& $curl @arguments $Url 2>&1)
         $nativeExitCode = $LASTEXITCODE
     }
     finally { $ErrorActionPreference = $previousPreference }
@@ -143,7 +148,8 @@ function Wait-SkaoGatewayHttps {
     param(
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$CaFile,
-        [ValidateRange(1, 60)][int]$TimeoutSeconds = 30
+        [ValidateRange(1, 60)][int]$TimeoutSeconds = 30,
+        [ValidateSet('', 'activity-images-v1')][string]$ExpectedProfile = ''
     )
     $lastResponse = $null
     $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -153,10 +159,17 @@ function Wait-SkaoGatewayHttps {
             if (Test-Path -LiteralPath $CaFile -PathType Leaf) {
                 $limit = [Math]::Min(2.0, $remaining)
                 if ($limit -lt 0.05) { break }
-                $response = Invoke-SkaoGatewayCurl -Url $Url -CaFile $CaFile -TimeoutSeconds $limit
+                $curlOptions = @{ Url = $Url; CaFile = $CaFile; TimeoutSeconds = $limit }
+                if ($ExpectedProfile) { $curlOptions.IncludeProfile = $true }
+                $response = Invoke-SkaoGatewayCurl @curlOptions
                 $lastResponse = $response
+                $responseLines = @($response.Lines | ForEach-Object { ([string]$_).Trim() })
+                $responseStatuses = @($responseLines | Where-Object { $_ -cmatch '^\d{3}$' })
+                $profileConfirmed = !$ExpectedProfile -or @($responseLines | Where-Object {
+                    $_ -imatch ('^X-SKAO-Gateway-Profile:\s*' + [regex]::Escape($ExpectedProfile) + '\s*$')
+                }).Count -eq 1
                 if ($null -ne $response.ExitCode -and $response.ExitCode -eq 0 -and
-                    (($response.Lines -join '').Trim()) -ceq '403') { return }
+                    $responseStatuses.Count -gt 0 -and $responseStatuses[$responseStatuses.Count - 1] -ceq '403' -and $profileConfirmed) { return }
             }
             $remaining = $TimeoutSeconds - $watch.Elapsed.TotalSeconds
             if ($remaining -le 0) { break }
@@ -413,7 +426,7 @@ function Assert-GatewayFirewall($Settings) {
     }
 }
 
-function Get-GatewayConfiguration($Settings, [string]$Token) {
+function Get-GatewayConfiguration($Settings, [string]$Token, [ValidateSet(1, 2)][int]$Profile = 1) {
     $template = @'
 {
     admin off
@@ -465,7 +478,136 @@ https://__LAPTOP_IP__:8443 {
     }
 }
 '@
+    if ($Profile -eq 2) {
+        $template = @'
+# SKAO_GATEWAY_PROFILE=activity-images-v1
+{
+    admin off
+    persist_config off
+    auto_https disable_redirects
+    skip_install_trust
+    storage file_system {
+        root "__DATA_PATH__"
+    }
+    servers {
+        protocols h1 h2
+        max_header_size 16KB
+    }
+}
+https://__LAPTOP_IP__:8443 {
+    bind __LAPTOP_IP__
+    tls internal
+    header X-SKAO-Gateway-Profile "activity-images-v1"
+    @allowedGet {
+        remote_ip __PI_IP__
+        header Authorization "Bearer __TOKEN__"
+        method GET
+        expression `{http.request.uri.query} == ""`
+        path /api/status /api/tags
+    }
+    @allowedShow {
+        remote_ip __PI_IP__
+        header Authorization "Bearer __TOKEN__"
+        method POST
+        expression `{http.request.uri.query} == ""`
+        path /api/show
+    }
+    @allowedGenerate {
+        remote_ip __PI_IP__
+        header Authorization "Bearer __TOKEN__"
+        method POST
+        expression `{http.request.uri.query} == ""`
+        path /api/generate
+    }
+    @allowedImageGet {
+        remote_ip __PI_IP__
+        header Authorization "Bearer __TOKEN__"
+        method GET
+        expression `{http.request.uri.query} == ""`
+        path_regexp activityImageGet "^/api/activity-images/(?:status|jobs/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/frames/[1-6])?)$"
+    }
+    @allowedImagePost {
+        remote_ip __PI_IP__
+        header Authorization "Bearer __TOKEN__"
+        method POST
+        expression `{http.request.uri.query} == ""`
+        path /api/activity-images/jobs
+    }
+    @allowedImageDelete {
+        remote_ip __PI_IP__
+        header Authorization "Bearer __TOKEN__"
+        method DELETE
+        expression `{http.request.uri.query} == ""`
+        path_regexp activityImageDelete "^/api/activity-images/jobs/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+    handle @allowedGet {
+        reverse_proxy 127.0.0.1:11434 {
+            header_up -Authorization
+            header_up Host localhost:11434
+        }
+    }
+    handle @allowedShow {
+        request_body {
+            max_size 65536
+        }
+        reverse_proxy 127.0.0.1:11434 {
+            header_up -Authorization
+            header_up Host localhost:11434
+        }
+    }
+    handle @allowedGenerate {
+        request_body {
+            max_size 65536
+        }
+        reverse_proxy 127.0.0.1:11435 {
+            header_up Authorization "Bearer __TOKEN__"
+            header_up Host 127.0.0.1:11435
+        }
+    }
+    handle @allowedImageGet {
+        request_body {
+            max_size 16384
+        }
+        reverse_proxy 127.0.0.1:11435 {
+            header_up Authorization "Bearer __TOKEN__"
+            header_up Host 127.0.0.1:11435
+        }
+    }
+    handle @allowedImagePost {
+        request_body {
+            max_size 16384
+        }
+        reverse_proxy 127.0.0.1:11435 {
+            header_up Authorization "Bearer __TOKEN__"
+            header_up Host 127.0.0.1:11435
+        }
+    }
+    handle @allowedImageDelete {
+        request_body {
+            max_size 16384
+        }
+        reverse_proxy 127.0.0.1:11435 {
+            header_up Authorization "Bearer __TOKEN__"
+            header_up Host 127.0.0.1:11435
+        }
+    }
+    handle {
+        respond "Forbidden" 403
+    }
+}
+'@
+    }
     return $template.Replace('__DATA_PATH__', (Join-Path $aiGateway 'data').Replace('\', '/')).Replace('__LAPTOP_IP__', $Settings.LaptopIp).Replace('__PI_IP__', $Settings.PiIp).Replace('__TOKEN__', $Token)
+}
+
+function Get-GatewayProfile($Settings, [string]$Token) {
+    if (!(Test-Path -LiteralPath $aiConfig)) { return 1 }
+    Assert-ProtectedPath $aiConfig
+    $actual = Get-NormalizedText ([IO.File]::ReadAllText($aiConfig))
+    foreach ($profile in @(1, 2)) {
+        if ($actual -ceq (Get-NormalizedText (Get-GatewayConfiguration $Settings $Token $profile))) { return $profile }
+    }
+    Stop-Skao 'The existing gateway configuration is not a recognized profile. It was left unchanged.'
 }
 
 function Get-GatewayLauncher {
@@ -499,8 +641,12 @@ function Get-ExistingToken {
     }
     if (Test-Path -LiteralPath $aiConfig) {
         Assert-ProtectedPath $aiConfig
-        $matches = @([regex]::Matches([IO.File]::ReadAllText($aiConfig), 'header Authorization "Bearer ([A-Za-z0-9_-]{43})"'))
-        if ($matches.Count -ne 2 -or $matches[0].Groups[1].Value -cne $matches[1].Groups[1].Value) {
+        $configText = [IO.File]::ReadAllText($aiConfig)
+        $expectedCount = 2
+        if ((Get-NormalizedText $configText).StartsWith("# SKAO_GATEWAY_PROFILE=activity-images-v1`n", [StringComparison]::Ordinal)) { $expectedCount = 6 }
+        $matches = @([regex]::Matches($configText, 'header Authorization "Bearer ([A-Za-z0-9_-]{43})"'))
+        $values = @($matches | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+        if ($matches.Count -ne $expectedCount -or $values.Count -ne 1) {
             Stop-Skao 'The existing gateway configuration token could not be verified.'
         }
         $tokens += $matches[0].Groups[1].Value
@@ -548,12 +694,12 @@ function Assert-PublicCa([string]$Path) {
     finally { if ($null -ne $certificate) { $certificate.Dispose() } }
 }
 
-function Assert-ExistingFiles($Settings, [string]$Token) {
+function Assert-ExistingFiles($Settings, [string]$Token, [ValidateSet(1, 2)][int]$Profile = 1) {
     Assert-ProtectedPath $aiGateway -Directory
     Assert-ProtectedPath $aiExport -Directory
     Assert-ProtectedPath (Join-Path $aiGateway 'data') -Directory
     Assert-GatewayBinary
-    Assert-Text $aiConfig (Get-GatewayConfiguration $Settings $Token)
+    Assert-Text $aiConfig (Get-GatewayConfiguration $Settings $Token $Profile)
     Assert-Text $aiLauncher (Get-GatewayLauncher)
     Assert-Text (Join-Path $aiExport 'ai.env') (Get-ConnectionEnvironment $Settings $Token)
 }
@@ -586,7 +732,171 @@ function Assert-Administrator {
     }
 }
 
-function Show-GatewayCheck($Settings) {
+function Invoke-SkaoActivityWorkerStatus([string]$Token) {
+    $request = [Net.HttpWebRequest]::Create('http://127.0.0.1:11435/api/activity-images/status')
+    $request.Proxy = $null
+    $request.AllowAutoRedirect = $false
+    $request.Timeout = 5000
+    $request.ReadWriteTimeout = 5000
+    $request.KeepAlive = $false
+    $request.Headers['Authorization'] = 'Bearer ' + $Token
+    $request.Accept = 'application/json'
+    $response = $null; $stream = $null
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $response = $request.GetResponse()
+        if ([int]$response.StatusCode -ne 200 -or [string]$response.ContentType -notmatch '^application/json(?:;|$)') {
+            Stop-Skao 'The activity image worker did not return its authenticated local status.'
+        }
+        $stream = $response.GetResponseStream()
+        $buffer = New-Object byte[] 8192
+        $memory = New-Object IO.MemoryStream
+        try {
+            while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                if ($memory.Length + $read -gt 65536 -or $watch.Elapsed.TotalSeconds -gt 5) { Stop-Skao 'The activity image worker exceeded its status response limit.' }
+                $memory.Write($buffer, 0, $read)
+            }
+            $text = [Text.Encoding]::UTF8.GetString($memory.ToArray())
+        }
+        finally { $memory.Dispose() }
+        return ($text | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch { Stop-Skao 'The authenticated activity image worker is unavailable. Its configuration and existing AI setup were retained.' }
+    finally {
+        if ($stream) { $stream.Dispose() }
+        if ($response) { $response.Dispose() }
+    }
+}
+
+function Assert-SkaoActivityWorkerStatus($Status) {
+    if ($null -eq $Status -or $Status -isnot [pscustomobject] -or
+        ($Status.version -isnot [int] -and $Status.version -isnot [long]) -or $Status.version -ne 1 -or
+        $Status.enabled -isnot [bool] -or !$Status.enabled -or
+        $Status.available -isnot [bool] -or !$Status.available -or
+        $Status.busy -isnot [bool] -or [string]$Status.model -cne 'sd_xl_base_1.0.safetensors') {
+        Stop-Skao 'The activity image worker has not confirmed the installed local SDXL capability.'
+    }
+}
+
+function Assert-SkaoActivityImageIsolation {
+    Assert-SkaoRawFirewall -RuleName 'SKAO-ActivityImages-Block-Remote' -RawPort '11435'
+    Assert-SkaoRawFirewall -RuleName 'SKAO-ComfyUI-Block-Remote' -RawPort '8188'
+}
+
+function Test-SkaoGatewayProfileActive($Settings) {
+    $reply = Invoke-SkaoGatewayCurl -Url ('https://{0}:8443/api/status' -f $Settings.LaptopIp) -CaFile $aiPublicCa -TimeoutSeconds 2 -IncludeProfile
+    $lines = @($reply.Lines | ForEach-Object { ([string]$_).Trim() })
+    return $reply.ExitCode -eq 0 -and @($lines | Where-Object { $_ -ceq '403' }).Count -eq 1 -and
+        @($lines | Where-Object { $_ -imatch '^X-SKAO-Gateway-Profile:\s*activity-images-v1\s*$' }).Count -eq 1
+}
+
+function Test-SkaoGatewayCandidate([string]$Path, [string]$LogPath) {
+    $oldPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $global:LASTEXITCODE = 0
+        & $aiBinary validate --config $Path --adapter caddyfile *> $LogPath
+        $code = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $oldPreference }
+    if ($code -ne 0) { Stop-Skao 'Caddy rejected the staged activity-image configuration. The existing gateway was retained; inspect its protected validation log locally.' }
+}
+
+function Restart-SkaoGatewayTask($Settings, [ValidateSet(1, 2)][int]$Profile) {
+    $task = Get-ScheduledTask -TaskName $aiTaskName -ErrorAction Stop
+    Assert-ManagedTask $task $aiLauncher $aiGateway 45
+    if ([string]$task.State -eq 'Running') {
+        Stop-ScheduledTask -TaskName $aiTaskName -ErrorAction Stop
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        do {
+            $task = Get-ScheduledTask -TaskName $aiTaskName -ErrorAction Stop
+            if ([string]$task.State -ne 'Running') { break }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ([string]$task.State -eq 'Running') { Stop-Skao 'The managed gateway task did not stop; no task credentials were changed.' }
+    }
+    Start-ScheduledTask -TaskName $aiTaskName -ErrorAction Stop
+    $options = @{ Url = ('https://{0}:8443/api/status' -f $Settings.LaptopIp); CaFile = $aiPublicCa; TimeoutSeconds = 30 }
+    if ($Profile -eq 2) { $options.ExpectedProfile = 'activity-images-v1' }
+    Wait-SkaoGatewayHttps @options
+    $task = Get-ScheduledTask -TaskName $aiTaskName -ErrorAction Stop
+    Assert-ManagedTask $task $aiLauncher $aiGateway 45
+    if ([string]$task.State -ne 'Running') { Stop-Skao 'The managed gateway task did not remain running.' }
+}
+
+function Enable-SkaoGatewayActivityImages($Settings, [string]$Token) {
+    Assert-Administrator
+    Assert-ExistingFiles $Settings $Token 1
+    Assert-CurrentCaExport
+    Assert-SkaoActivityImageIsolation
+    $status = Invoke-SkaoActivityWorkerStatus $Token
+    Assert-SkaoActivityWorkerStatus $status
+    if ($status.busy) { Stop-Skao 'The activity image worker is busy. Finish the current AI request before enabling gateway routes.' }
+    $lockPath = Join-Path $aiGateway 'activity-images-upgrade.lock'
+    Assert-NoLink $lockPath
+    if (Test-Path -LiteralPath $lockPath) { Assert-ProtectedPath $lockPath }
+    $lock = $null; $candidate = $null; $swapped = $false
+    $suffix = [Guid]::NewGuid().ToString('N')
+    $backup = Join-Path $aiGateway ('Caddyfile.before-activity-images-' + $suffix)
+    $validationLog = Join-Path $aiGateway ('activity-images-validation-' + $suffix + '.log')
+    try {
+        try { $lock = New-Object IO.FileStream($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+        catch { Stop-Skao 'Another gateway upgrade is running. Existing gateway state was retained.' }
+        Assert-ExistingFiles $Settings $Token 1
+        $original = [IO.File]::ReadAllBytes($aiConfig)
+        $originalHash = (Get-FileHash -LiteralPath $aiConfig -Algorithm SHA256).Hash
+        $preserved = @{}
+        foreach ($path in @($aiMetadataPath, $aiLauncher, (Join-Path $aiExport 'ai.env'), $aiPublicCa, (Join-Path $aiExport 'ca.pem'))) {
+            $preserved[$path] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+        }
+        $candidate = Join-Path $aiGateway ('Caddyfile.activity-images-' + $suffix + '.new')
+        Write-MissingText $candidate (Get-GatewayConfiguration $Settings $Token 2)
+        Test-SkaoGatewayCandidate -Path $candidate -LogPath $validationLog
+        if ((Get-FileHash -LiteralPath $aiConfig -Algorithm SHA256).Hash -cne $originalHash) {
+            Stop-Skao 'Gateway configuration changed during upgrade. It was retained without replacement.'
+        }
+        foreach ($path in $preserved.Keys) {
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne $preserved[$path]) {
+                Stop-Skao 'Protected gateway state changed during upgrade. No configuration was replaced.'
+            }
+        }
+        [IO.File]::Replace($candidate, $aiConfig, $backup)
+        $candidate = $null; $swapped = $true
+        Restart-SkaoGatewayTask -Settings $Settings -Profile 2
+        Assert-ExistingFiles $Settings $Token 2
+        Assert-CurrentCaExport
+        foreach ($path in $preserved.Keys) {
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne $preserved[$path]) {
+                Stop-Skao 'Protected gateway connection state changed while applying the image routes.'
+            }
+        }
+    }
+    catch {
+        if ($swapped) {
+            $restored = $false
+            try {
+                Assert-Text $aiConfig (Get-GatewayConfiguration $Settings $Token 2)
+                $restore = Join-Path $aiGateway ('Caddyfile.restore-' + $suffix + '.new')
+                [IO.File]::WriteAllBytes($restore, $original)
+                $failed = Join-Path $aiGateway ('Caddyfile.failed-activity-images-' + $suffix)
+                [IO.File]::Replace($restore, $aiConfig, $failed)
+                Restart-SkaoGatewayTask -Settings $Settings -Profile 1
+                $restored = $true
+            }
+            catch { }
+            if ($restored) { Stop-Skao 'Activity-image gateway upgrade failed. The exact previous configuration was restored; existing credentials and CA were retained.' }
+            Stop-Skao 'Activity-image gateway upgrade failed. Its protected backup was retained; existing credentials and CA were not replaced.'
+        }
+        Stop-Skao 'Activity-image gateway upgrade stopped before replacement. The existing configuration and credentials were retained.'
+    }
+    finally {
+        try { if ($candidate -and (Test-Path -LiteralPath $candidate)) { Remove-Item -LiteralPath $candidate -Force } }
+        finally { if ($lock) { $lock.Dispose() } }
+    }
+    Write-Host 'PASS: activity-image gateway profile enabled; existing token, CA, addresses and task credentials retained'
+}
+
+function Show-GatewayCheck($Settings, [ValidateSet(1, 2)][int]$Profile = 1) {
     $task = Get-ScheduledTask -TaskName $aiTaskName -ErrorAction Stop
     Assert-ManagedTask $task $aiLauncher $aiGateway 45
     if ([string]$task.State -ne 'Running') { Stop-Skao 'The gateway task is not Running.' }
@@ -595,11 +905,39 @@ function Show-GatewayCheck($Settings) {
     Assert-SkaoRawFirewall
     Assert-GatewayFirewall $Settings
     Assert-CurrentCaExport
-    Wait-SkaoGatewayHttps -Url ('https://{0}:8443/api/status' -f $Settings.LaptopIp) -CaFile $aiPublicCa -TimeoutSeconds 10
+    $options = @{ Url = ('https://{0}:8443/api/status' -f $Settings.LaptopIp); CaFile = $aiPublicCa; TimeoutSeconds = 10 }
+    if ($Profile -eq 2) { $options.ExpectedProfile = 'activity-images-v1' }
+    Wait-SkaoGatewayHttps @options
     Write-Host 'PASS: private gateway files and pinned executable'
     Write-Host 'PASS: raw Ollama firewall block and exact Pi-only HTTPS rule'
     Write-Host 'PASS: CA-verified HTTPS denial (403); cloud disabled; pinned local model'
     Write-Host 'Verify authenticated access and raw-port isolation from the Pi next.'
+}
+
+function Use-SkaoGatewayProfile($Settings, [string]$Token, [ValidateSet(1, 2)][int]$Profile,
+    [switch]$Check, [switch]$ActivityImages) {
+    if ($Check -and $ActivityImages -and $Profile -ne 2) {
+        Stop-Skao 'Activity-image gateway routes are not enabled. Check mode made no changes.'
+    }
+    if ($ActivityImages) {
+        Assert-SkaoActivityImageIsolation
+        $status = Invoke-SkaoActivityWorkerStatus $Token
+        Assert-SkaoActivityWorkerStatus $status
+    }
+    if (!$Check -and $ActivityImages -and $Profile -eq 1) {
+        Show-GatewayCheck $Settings 1
+        Enable-SkaoGatewayActivityImages $Settings $Token
+        $Profile = 2
+    }
+    elseif (!$Check -and $Profile -eq 2 -and !(Test-SkaoGatewayProfileActive $Settings)) {
+        # Recover an interrupted profile switch without touching task credentials.
+        Assert-Administrator
+        if ($ActivityImages -and $status.busy) { Stop-Skao 'The activity image worker is busy. Finish the current AI request before restarting its gateway.' }
+        Restart-SkaoGatewayTask -Settings $Settings -Profile 2
+    }
+    Show-GatewayCheck $Settings $Profile
+    if ($ActivityImages) { Write-Host 'PASS: authenticated local activity worker and image-port isolation' }
+    return $Profile
 }
 
 # Dot-sourcing loads only functions for the portable test suite.
@@ -637,6 +975,7 @@ try {
     if ($tasks.Count -eq 1) { $existingTask = $tasks[0]; Assert-ManagedTask $existingTask $aiLauncher $aiGateway 45 }
     if ($null -eq $settings) {
         if ($Check) { Stop-Skao 'Gateway setup is missing. Check mode made no changes.' }
+        if ($ActivityImages) { Stop-Skao 'Complete the normal local AI gateway setup before enabling activity images.' }
         if ($null -ne $existingTask -or (Test-Path -LiteralPath $aiGateway) -or
             @(Get-NetFirewallRule -PolicyStore PersistentStore -Name $aiFirewallName -ErrorAction SilentlyContinue).Count -gt 0) {
             Stop-Skao 'Gateway state exists without recognized metadata. It was left unchanged.'
@@ -650,10 +989,12 @@ try {
     }
     Assert-Network $settings
     $token = Get-ExistingToken
+    $profile = 1
     if ($token) {
+        $profile = Get-GatewayProfile $settings $token
         foreach ($file in @($aiConfig, $aiLauncher, (Join-Path $aiExport 'ai.env'))) {
             if (Test-Path -LiteralPath $file) {
-                if ($file -eq $aiConfig) { Assert-Text $file (Get-GatewayConfiguration $settings $token) }
+                if ($file -eq $aiConfig) { Assert-Text $file (Get-GatewayConfiguration $settings $token $profile) }
                 elseif ($file -eq $aiLauncher) { Assert-Text $file (Get-GatewayLauncher) }
                 else { Assert-Text $file (Get-ConnectionEnvironment $settings $token) }
             }
@@ -664,7 +1005,7 @@ try {
     }
     $complete = $token -and (Test-Path -LiteralPath $aiBinary) -and (Test-Path -LiteralPath $aiConfig) -and
         (Test-Path -LiteralPath $aiLauncher) -and (Test-Path -LiteralPath (Join-Path $aiExport 'ai.env'))
-    if ($complete) { Assert-ExistingFiles $settings $token }
+    if ($complete) { Assert-ExistingFiles $settings $token $profile }
     $existingRules = @(Get-NetFirewallRule -PolicyStore PersistentStore -Name $aiFirewallName -ErrorAction SilentlyContinue)
     $rawRules = @(Get-NetFirewallRule -PolicyStore PersistentStore -Name 'SKAO-Ollama-Block-Remote' -ErrorAction SilentlyContinue)
     $hasCompleteExports = (Test-Path -LiteralPath $aiPublicCa) -and (Test-Path -LiteralPath (Join-Path $aiExport 'ca.pem'))
@@ -673,10 +1014,11 @@ try {
         if (!$complete -or $null -eq $existingTask -or [string]$existingTask.State -ne 'Running') {
             Stop-Skao 'Gateway setup is incomplete or its task is stopped. Check mode made no changes.'
         }
-        Show-GatewayCheck $settings
+        $null = Use-SkaoGatewayProfile -Settings $settings -Token $token -Profile $profile -Check:$Check -ActivityImages:$ActivityImages
         $global:LASTEXITCODE = 0
         return
     }
+    if ($ActivityImages) { Stop-Skao 'The normal local AI gateway must be complete and running before enabling activity images.' }
     Assert-Administrator
     Ensure-SkaoRawFirewall
     if ($existingRules.Count -gt 0) { Assert-GatewayFirewall $settings }
@@ -729,9 +1071,9 @@ try {
     }
     # Write the token-bearing environment first so an interrupted run can reuse it.
     Write-MissingText (Join-Path $aiExport 'ai.env') (Get-ConnectionEnvironment $settings $token)
-    Write-MissingText $aiConfig (Get-GatewayConfiguration $settings $token)
+    Write-MissingText $aiConfig (Get-GatewayConfiguration $settings $token $profile)
     Write-MissingText $aiLauncher (Get-GatewayLauncher)
-    Assert-ExistingFiles $settings $token
+    Assert-ExistingFiles $settings $token $profile
     if ($null -eq $existingTask) {
         $previousPreference = $ErrorActionPreference
         try {
@@ -762,7 +1104,9 @@ try {
     $task = Get-ScheduledTask -TaskName $aiTaskName -ErrorAction Stop
     Assert-ManagedTask $task $aiLauncher $aiGateway 45
     if ([string]$task.State -ne 'Running') { Start-ScheduledTask -TaskName $aiTaskName }
-    Wait-SkaoGatewayHttps -Url ('https://{0}:8443/api/status' -f $settings.LaptopIp) -CaFile $aiPublicCa -TimeoutSeconds 30
+    $readiness = @{ Url = ('https://{0}:8443/api/status' -f $settings.LaptopIp); CaFile = $aiPublicCa; TimeoutSeconds = 30 }
+    if ($profile -eq 2) { $readiness.ExpectedProfile = 'activity-images-v1' }
+    Wait-SkaoGatewayHttps @readiness
     Assert-PublicCa $aiPublicCa
     $exported = Join-Path $aiExport 'ca.pem'
     if (!(Test-Path -LiteralPath $exported)) {
@@ -773,7 +1117,7 @@ try {
         }
         finally { $source.Dispose() }
     }
-    Show-GatewayCheck $settings
+    Show-GatewayCheck $settings $profile
     $global:LASTEXITCODE = 0
 }
 catch {

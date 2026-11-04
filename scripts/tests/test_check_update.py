@@ -40,11 +40,11 @@ class UpdateCheckSelectionTests(unittest.TestCase):
                      'Browser tests (isolated test servers)', 'PWA browser privacy checks (production build)'):
             self.assertIn(step, result.stdout)
         for name in ('localActivityAi.test.js', 'activityVideoExamples.test.js', 'localActivityKnowledge.test.js', 'activityAi.test.js',
-                     'activityTutorials.test.js', 'activityPlanner.postgres.test.js',
+                     'activityTutorials.test.js', 'activityMedia.test.js', 'activityMediaTransport.test.js', 'activityMedia.postgres.test.js', 'activityPlanner.postgres.test.js',
                      'activityPlannerGeneration.postgres.test.js', 'workAccess.test.js',
                      'ActivityAiIdeas.test.tsx', 'ActivityAiPlanner.test.tsx', 'Activities.test.tsx', 'ActivityComposer.test.tsx',
-                     'ActivityTutorialLinks.test.tsx', 'ActivityTutorialViews.test.tsx', 'Classroom.test.tsx',
-                     'WorkAccessGate.test.tsx', 'activity-ai.spec.ts', 'activity-generation.spec.ts',
+                     'ActivityTutorialLinks.test.tsx', 'ActivityImages.test.tsx', 'ActivityTutorialViews.test.tsx', 'Classroom.test.tsx',
+                     'WorkAccessGate.test.tsx', 'activity-ai.spec.ts', 'activity-images.spec.ts', 'activity-generation.spec.ts',
                      'core-screens.spec.ts'):
             self.assertIn(name, result.stdout)
         for name in ('recipePhotoOcr.test.js', 'tests/payroll.test.js', 'tests/browser/payroll.spec.ts'):

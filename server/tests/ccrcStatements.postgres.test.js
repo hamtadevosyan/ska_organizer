@@ -64,7 +64,7 @@ test('migration030 preserves populated tuition history and enforces private stat
       { replacements: { data: JSON.stringify({ charges: [{ id: 'monthly:2026-10', tuitionCents: 120000 }], payments: [{ amountCents: 100000 }] }), now }, transaction });
     });
     const before = await connection.query(`SELECT * FROM ${quoted('ChildBillingRecords')}`, { type: QueryTypes.SELECT });
-    expect(await migrate(connection, schema)).toEqual(['030-ccrc-statements', '031-activity-tutorial-links']);
+    expect(await migrate(connection, schema)).toEqual(['030-ccrc-statements', '031-activity-tutorial-links', '032-activity-media']);
     expect(await connection.query(`SELECT * FROM ${quoted('ChildBillingRecords')}`, { type: QueryTypes.SELECT })).toEqual(before);
     expect(await migrate(connection, schema)).toEqual([]);
 

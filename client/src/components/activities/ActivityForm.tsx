@@ -6,6 +6,7 @@ import type { Activity, ActivityDetails, Material } from '../../api/activities';
 import type { Room } from '../../api/rooms';
 import type { InventoryItem } from '../../api/inventory';
 import { ActivityTutorialLinks } from './ActivityTutorialLinks';
+import { ActivityIllustrations } from './ActivityIllustrations';
 
 type Props = { activity: Activity | null; initialDetails?: ActivityDetails; room?: Room; scheduleDate?: string; nameInputRef?: Ref<HTMLInputElement>;
   submitLabel?: string; helpText?: string; disabled?: boolean;
@@ -25,6 +26,8 @@ export function ActivityForm({ activity, initialDetails, room, scheduleDate, nam
   const [maxAge, setMaxAge] = useState(String(initial ? initial.ageMaxMonths ?? '' : roomHasAges ? room.ageMaxMonths : ''));
   const [materials, setMaterials] = useState<Material[]>(initial?.materials || []);
   const [tutorialLinks, setTutorialLinks] = useState(initial?.tutorialLinks || []);
+  const [illustrations, setIllustrations] = useState(initial?.illustrations || []);
+  const [pictureNotice, setPictureNotice] = useState('');
   const [clearOldMaterials, setClearOldMaterials] = useState(false);
   const hasOldMaterials = !!(activity?.materialsNotes?.trim() || activity?.materialsLinks?.length);
   const suggestedMaterials = !activity && initialDetails?.materialsNotes?.trim();
@@ -60,6 +63,12 @@ export function ActivityForm({ activity, initialDetails, room, scheduleDate, nam
   const fieldProps = (key: string) => ({ id: formId + '-' + key, 'aria-invalid': !!fields[key],
     'aria-describedby': fields[key] ? formId + '-error-' + key : undefined });
   const fieldError = (key: string) => fields[key] && <p id={formId + '-error-' + key} className="mt-1 text-sm text-red-700">{fields[key]}</p>;
+  function textChanged() {
+    if (illustrations.length) {
+      setIllustrations([]);
+      setPictureNotice('Step pictures were removed because the name or instructions changed. Review the updated text and save without these pictures, or cancel this edit to keep the original activity.');
+    }
+  }
   function addMaterial() {
     if (busy || disabled) return;
     const item = items.find((value) => value.id === itemId);
@@ -89,7 +98,7 @@ export function ActivityForm({ activity, initialDetails, room, scheduleDate, nam
     if (itemId) { setDetailsOpen(true); setFields({ material: 'Click Add material for the selected item, or clear the selection before saving.' }); setError('Click Add material for the selected item, or clear the selection before saving.'); return; }
     const details: ActivityDetails = { name: name.trim(), durationMinutes: Number(duration), description: description.trim(),
       ageMinMonths: minAge === '' ? null : Number(minAge), ageMaxMonths: maxAge === '' ? null : Number(maxAge),
-      materials, tutorialLinks, roomId: initial?.roomId || null,
+      materials, tutorialLinks, illustrations, roomId: initial?.roomId || null,
       ...(!activity && initialDetails ? { materialsNotes: initialDetails.materialsNotes || '', materialsLinks: [] } : {}),
       ...(clearOldMaterials ? { materialsNotes: '', materialsLinks: [] } : {}) };
     if (scheduleDate && room && !suitable(details, room)) {
@@ -109,12 +118,14 @@ export function ActivityForm({ activity, initialDetails, room, scheduleDate, nam
     {(helpText || scheduleDate) && <p className="mt-1 text-sm text-slate-600">{helpText || <>This will be added to {dayLabel(scheduleDate!)}. Save the week when your schedule is ready.</>}</p>}
     <fieldset disabled={busy || disabled} className="mt-4 space-y-4">
       <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
-        <div><label htmlFor={formId + '-name'}>Activity name</label><input {...fieldProps('name')} ref={nameInputRef} autoFocus maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={input} />{fieldError('name')}</div>
+        <div><label htmlFor={formId + '-name'}>Activity name</label><input {...fieldProps('name')} ref={nameInputRef} autoFocus maxLength={100} value={name} onChange={(e) => { textChanged(); setName(e.target.value); }} className={input} />{fieldError('name')}</div>
         <div><label htmlFor={formId + '-duration'}>Minutes</label><input {...fieldProps('duration')} type="number" min="1" max="1440" step="1" value={duration} onChange={(e) => setDuration(e.target.value)} className={input} />{fieldError('duration')}</div>
       </div>
+      {pictureNotice && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm">{pictureNotice}</p>}
       <details open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold text-violet-800">More details</summary>
         <div className="mt-4 space-y-4">
-          <div><label htmlFor={formId + '-description'} className="block">Description</label><textarea {...fieldProps('description')} rows={8} maxLength={4000} value={description} onChange={(e) => setDescription(e.target.value)} className={input} />{fieldError('description')}</div>
+          <div><label htmlFor={formId + '-description'} className="block">Description</label><textarea {...fieldProps('description')} rows={8} maxLength={4000} value={description} onChange={(e) => { textChanged(); setDescription(e.target.value); }} className={input} />{fieldError('description')}</div>
+          <ActivityIllustrations images={illustrations} initiallyOpen={detailsOpen} onRemove={id => { setIllustrations(values => values.filter(image => image.id !== id)); setChanged(true); setConfirmCancel(false); }} />
           <ActivityTutorialLinks links={tutorialLinks} onRemove={index => { setTutorialLinks(values => values.filter((_, position) => position !== index)); setChanged(true); setConfirmCancel(false); }} />
           <div className="grid gap-4 sm:grid-cols-2">
             <div><label htmlFor={formId + '-minAge'}>Minimum age (months)</label><input {...fieldProps('minAge')} type="number" min="0" max="215" step="1" value={minAge} onChange={(e) => setMinAge(e.target.value)} className={input} />{fieldError('minAge')}</div>

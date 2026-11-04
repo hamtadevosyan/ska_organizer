@@ -4,10 +4,11 @@ import type { Room } from './rooms';
 import type { InventoryItem, InventoryList } from './inventory';
 
 export type Material = { itemId: string; name?: string; location?: string; quantity: string; unit: string; reusable: boolean };
-export type TutorialLink = { title: string; publisher: string; url: string };
+export type TutorialLink = { title: string; publisher: string; url: string; kind?: 'search' };
+export type Illustration = { id: string; step: number; caption: string; width: number; height: number };
 export type Activity = { id: string; name: string; description: string; durationMinutes: number | null;
   ageMinMonths: number | null; ageMaxMonths: number | null; roomId: string | null; materials: Material[]; version: number;
-  materialsNotes?: string | null; materialsLinks?: string[] | null; tutorialLinks?: TutorialLink[] | null };
+  materialsNotes?: string | null; materialsLinks?: string[] | null; tutorialLinks?: TutorialLink[] | null; illustrations?: Illustration[] | null };
 export type ActivityDetails = Omit<Activity, 'id' | 'version'>;
 export type CopySource = { roomId: string; weekStart: string; version: number; entryId: string };
 export type Entry = { id: string; date: string; startTime: string | null; endTime: string | null;
@@ -47,7 +48,8 @@ export function weekDates(start: string) {
 export const dayLabel = (date: string) => new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
 export const materialUnitLabel = (unit: string) => ({ count: 'items', box: 'boxes', pack: 'packs' } as Record<string, string>)[unit] || unit;
 export async function saveActivity(previous: Activity | null, details: ActivityDetails) {
-  const values = { ...details, materials: details.materials.map(({ itemId, quantity, unit, reusable }) => ({ itemId, quantity, unit, reusable })) };
+  const values = { ...details, materials: details.materials.map(({ itemId, quantity, unit, reusable }) => ({ itemId, quantity, unit, reusable })),
+    ...(details.illustrations ? { illustrations: details.illustrations.map(({ id }) => ({ id })) } : {}) };
   const response = previous ? await axios.put<{ data: Activity }>(activitiesUrl + '/' + encodeURIComponent(previous.id), { ...values, version: previous.version })
     : await axios.post<{ data: Activity }>(activitiesUrl, values);
   return response.data.data;

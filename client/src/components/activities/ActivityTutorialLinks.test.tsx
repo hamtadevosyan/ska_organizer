@@ -45,3 +45,23 @@ test('video metadata is rendered as text and the displayed collection is bounded
   expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
   expect(container.querySelector('img')).toBeNull();
 });
+
+test('YouTube search fallback is explicitly unreviewed and never presented as a selected video', () => {
+  const search: TutorialLink = { title: 'Search YouTube for how-to videos', publisher: 'YouTube', kind: 'search', url: 'https://www.youtube.com/results?search_query=paper+folding+preschool' };
+  const { container } = render(<ActivityTutorialLinks links={[search]} />);
+  expect(screen.getByRole('heading', { name: 'Find how-to videos' })).toBeVisible();
+  expect(screen.getByText('Unreviewed search')).toBeVisible();
+  expect(screen.getByText(/not a selected or reviewed video/)).toBeVisible();
+  expect(screen.queryByText('These are examples.')).not.toBeInTheDocument();
+  expect(screen.getByRole('link')).toHaveAttribute('href', search.url);
+  expect(container.querySelector('iframe, video, audio, img')).toBeNull();
+});
+
+test('search metadata cannot disguise an arbitrary website or redirect as YouTube results', () => {
+  const { container } = render(<ActivityTutorialLinks links={[
+    { ...video, kind: 'search', url: 'https://example.com/results?search_query=blocks' },
+    { ...video, kind: 'search', url: 'https://www.youtube.com/redirect?q=https://example.com' },
+    { ...video, kind: 'search', url: 'https://www.youtube.com/results' },
+  ]} />);
+  expect(container).toBeEmptyDOMElement();
+});

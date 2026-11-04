@@ -12,6 +12,7 @@ import { ActivityReuse } from '../components/activities/ActivityReuse';
 import { ActivityMove } from '../components/activities/ActivityMove';
 import { ActivityGenerate } from '../components/activities/ActivityGenerate';
 import { ActivityAiIdeas } from '../components/activities/ActivityAiIdeas';
+import { useActivityPicturePrint } from '../components/activities/useActivityPicturePrint';
 import { dayLabel, entryProblem, suitable, weekDates, materialUnitLabel } from '../api/activities';
 import type { Activity, Entry } from '../api/activities';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
@@ -22,6 +23,7 @@ export default function Activities() {
   const editable = account?.role === 'admin' || account?.role === 'editor';
   const rooms = useRooms();
   const planner = useActivityPlanner();
+  const picturePrint = useActivityPicturePrint(planner.entries);
   const [catalogForm, setCatalogForm] = useState<{ activity: Activity | null } | null>(null);
   const [composer, setComposer] = useState<{ entry?: Entry } | null>(null);
   const [reuse, setReuse] = useState<'day' | 'week' | null>(null);
@@ -79,8 +81,10 @@ export default function Activities() {
         <label className="ska-field">Room<RoomSelect rooms={rooms.rooms} value={planner.roomId} onChange={planner.chooseRoom} allowArchived disabled={rooms.loading || planner.saving || focusedForm} /></label>
         <label className="ska-field">Week starting Monday<input type="date" value={planner.weekStart} min="1970-01-05" step="7" disabled={planner.saving || focusedForm} onChange={event => planner.chooseWeek(event.target.value)} /></label>
         <div className="planner-save-actions">{editable && <button disabled={!ready || locked || focusedForm || incomplete || (!planner.dirty && !!planner.plan?.savedAt)} onClick={() => void planner.save()} className="ska-button is-primary"><CheckCircle2 size={18} aria-hidden="true" />{planner.saving ? 'Saving…' : 'Save week'}</button>}
-          <button disabled={!ready || planner.saving || focusedForm || !planner.entries.length || incomplete} onClick={() => window.print()} className="ska-button"><Printer size={18} aria-hidden="true" />Print</button></div>
+          <button disabled={!ready || planner.saving || focusedForm || !planner.entries.length || incomplete || picturePrint.busy} onClick={() => void picturePrint.print()} className="ska-button"><Printer size={18} aria-hidden="true" />{picturePrint.busy ? 'Preparing pictures…' : 'Print'}</button></div>
       </section>
+      {picturePrint.busy && <p role="status">Preparing step pictures for printing… <button type="button" className="ska-button" onClick={picturePrint.cancel}>Cancel print preparation</button></p>}
+      {picturePrint.error && <p role="alert" className="ska-alert is-error">{picturePrint.error}</p>}
       {(rooms.error || planner.catalogError || planner.error) && <div className="planner-errors">
         {rooms.error && <p role="alert" className="ska-alert is-error">{rooms.error} <button className="ska-button" onClick={() => void rooms.refresh()}>Retry rooms</button></p>}
         {planner.catalogError && <p role="alert" className="ska-alert is-error">{planner.catalogError} <button className="ska-button" disabled={focusedForm} onClick={planner.refreshCatalog}>Refresh activities</button></p>}
@@ -149,6 +153,6 @@ export default function Activities() {
       {ready && room && aiIdeas && <ActivityAiIdeas room={room} onDirtyChange={setAiDirty} onBusyChange={setActivitySaving}
         onSaved={planner.activitySaved} onCancel={() => { setAiIdeas(false); setAiDirty(false); }} />}
     </div>
-    {ready && <ActivityPrint roomName={room?.name || 'Room'} weekStart={planner.weekStart} dates={allDates} entries={planner.entries} draft={planner.dirty || !planner.plan?.savedAt} />}
+    {ready && <ActivityPrint roomName={room?.name || 'Room'} weekStart={planner.weekStart} dates={allDates} entries={planner.entries} draft={planner.dirty || !planner.plan?.savedAt} pictureSources={picturePrint.sources} />}
   </div>;
 }

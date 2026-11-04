@@ -56,7 +56,10 @@ function jsonRequest(config, method, path, value, signal) {
       ...(config.ca ? { ca: config.ca } : {}), rejectUnauthorized: true,
       maxHeaderSize: 16384, signal, headers: { Accept: 'application/json', ...(config.token ? { Authorization: 'Bearer ' + config.token } : {}), ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {}) } }, response => {
       if (response.statusCode !== 200 || !/^application\/json(?:;|$)/i.test(response.headers['content-type'] || '')) {
-        response.destroy(); reject(Object.assign(unavailable(), { runtimeStatus: response.statusCode })); return;
+        response.destroy();
+        if (response.statusCode === 429) reject(Object.assign(issue('AI_BUSY', 'Another AI request is running. Try again shortly.'), { status: 429, retryAfter: 5 }));
+        else reject(Object.assign(unavailable(), { runtimeStatus: response.statusCode }));
+        return;
       }
       const chunks = []; let size = 0;
       response.on('data', chunk => {

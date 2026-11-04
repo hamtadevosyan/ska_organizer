@@ -197,7 +197,7 @@ test('video examples can be disabled while full activity instructions remain ava
   const dialog = await open(page);
   await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Shape collages without video');
   await dialog.getByLabel('Number of ideas', { exact: true }).fill('1');
-  await dialog.getByRole('checkbox', { name: 'Include related how-to videos when available', exact: true }).uncheck();
+  await dialog.getByRole('checkbox', { name: 'Include how-to video links', exact: true }).uncheck();
   const drafted = page.waitForResponse(response => response.url() === api + '/activity-ai/draft' && response.request().method() === 'POST');
   await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
   const response = await drafted;

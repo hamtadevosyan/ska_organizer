@@ -48,7 +48,7 @@ exports.getActivityById = async (req, res, next) => {
 exports.createActivity = async (req, res, next) => {
   try {
     const payload = req.body;
-    const created = await activityService.createActivity(payload);
+    const created = await activityService.createActivity(payload, { account: req.account });
     res.status(201).json({ data: created });
   } catch (err) {
     next(err);
@@ -66,7 +66,7 @@ exports.updateActivity = async (req, res, next) => {
     }
 
     const changes = req.body;
-    const updated = await activityService.updateActivity(id, changes);
+    const updated = await activityService.updateActivity(id, changes, { account: req.account });
 
     if (!updated) {
       return res.status(404).json({

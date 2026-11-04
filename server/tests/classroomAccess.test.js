@@ -117,7 +117,7 @@ test('activities without a saved week header do not expose orphan entries', asyn
 test('legacy activities without snapshots fall back to a linked name without its current description', async () => {
   const own = await room(); await schedule(own, { snapshot: false }); await viewer(own);
   expect((await get('/activities?weekStart=' + weekStart)).entries[0].activity)
-    .toEqual({ name: 'Current catalog name', description: '', durationMinutes: null, tutorialLinks: [] });
+    .toEqual({ name: 'Current catalog name', description: '', durationMinutes: null, tutorialLinks: [], illustrations: [] });
 });
 
 test('classroom how-to examples come only from the saved class snapshot and expose allowed fields', async () => {

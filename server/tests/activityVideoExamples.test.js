@@ -28,6 +28,10 @@ test.each([
 
 test.each([
   ['a story activity', guide()],
+  ['a nature activity', guide({ name: 'Nature texture explorers', purpose: 'Compare safe outdoor textures.',
+    materialsNotes: 'Large fallen leaves and bark pieces.', steps: ['Look at fallen leaves.', 'Feel the leaf surfaces.', 'Compare rough and smooth textures.', 'Describe a favorite discovery.'] })],
+  ['a movement activity', guide({ name: 'Body movement mirror', purpose: 'Copy large body movements.',
+    materialsNotes: 'An open floor space.', steps: ['Stand in a clear space.', 'Reach both arms up.', 'Copy a slow side step.', 'Take turns leading movements.'] })],
   ['a shape hunt', guide({ name: 'Shape scavenger hunt', purpose: 'Find shapes in the room.',
     materialsNotes: 'Paper shape cards.', steps: ['Look for a large circle.', 'Find a square together.', 'Point to a triangle.', 'Describe the shapes that were found.'] })],
   ['block building', guide({ name: 'Build a block town', materialsNotes: 'Large wooden blocks.',
@@ -36,8 +40,37 @@ test.each([
     steps: ['Choose two blocks.', 'Count the blocks together.', 'Add another block.', 'Count the new total.'] })],
   ['incidental questions or safety notes', guide({ safety: 'Keep old newspaper and paper weaving looms away from the work area.',
     conversationPrompts: ['Have you played number bingo?', 'Have you made a paper shape collage?'] })],
-])('%s does not get an unrelated video just to fill the optional field', (label, activity) => {
-  expect(videos.match(activity)).toEqual([]);
+])('%s gets a labeled search rather than an unrelated publisher example', (label, activity) => {
+  const links = videos.match(activity);
+  expect(links).toHaveLength(1);
+  expect(links[0]).toMatchObject({ title: 'Search YouTube for how-to videos', publisher: 'YouTube', kind: 'search' });
+  const url = new URL(links[0].url);
+  expect(url.origin + url.pathname).toBe('https://www.youtube.com/results');
+  expect([...url.searchParams]).toEqual([['search_query', activity.name + ' preschool activity how to']]);
+  expect(url.hash).toBe('');
+});
+
+test.each(['字'.repeat(100), '🧩'.repeat(50), 'e\u0301'.repeat(50), 'Sort & count? #1 / blocks'])('searches safely encode and bound Unicode activity names: %s', name => {
+  const [link] = videos.match(guide({ name }));
+  expect(link.kind).toBe('search');
+  expect(link.url.length).toBeLessThanOrEqual(500);
+  const url = new URL(link.url);
+  expect(url.origin + url.pathname).toBe('https://www.youtube.com/results');
+  expect([...url.searchParams.keys()]).toEqual(['search_query']);
+  expect(url.searchParams.get('search_query')).toMatch(/ preschool activity how to$/);
+  expect(url.searchParams.get('search_query')).not.toContain('\uFFFD');
+  expect(url.hash).toBe('');
+});
+
+test('search queries use only the activity name and generic tutorial terms', () => {
+  const activity = guide({ name: 'Color story circle', theme: 'PRIVATE THEME', roomName: 'PRIVATE ROOM',
+    childName: 'PRIVATE CHILD', employeeName: 'PRIVATE EMPLOYEE', purpose: 'PRIVATE PURPOSE',
+    preparation: 'PRIVATE PREPARATION', materialsNotes: 'PRIVATE INVENTORY', steps: ['PRIVATE INSTRUCTIONS'] });
+  const before = JSON.stringify(activity);
+  const [link] = videos.match(activity);
+  expect(new URL(link.url).searchParams.get('search_query')).toBe('Color story circle preschool activity how to');
+  expect(JSON.stringify(link)).not.toContain('PRIVATE');
+  expect(JSON.stringify(activity)).toBe(before);
 });
 
 test('returned video metadata cannot mutate the fixed publisher collection', () => {

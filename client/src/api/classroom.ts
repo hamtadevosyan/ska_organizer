@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../lib/api';
-import type { TutorialLink } from './activities';
+import type { Illustration, TutorialLink } from './activities';
 
 export type ClassroomRoom = { id: string; name: string; ageMinMonths: number | null; ageMaxMonths: number | null; capacity: number | null };
 export type ClassroomScope = { state: 'assigned' | 'unassigned' | 'unavailable'; room: ClassroomRoom | null };
@@ -8,7 +8,7 @@ export type ClassroomOverview = ClassroomScope & { today: string; timeZone: stri
 export type ClassroomChildren = ClassroomScope & { items: { id: string; firstName: string; lastName: string; preferredName: string | null }[]; total: number };
 export type ClassroomActivities = ClassroomScope & { weekStart: string; hasPlan: boolean; version: number; savedAt: string | null; entries: {
   id: string; date: string; startTime: string | null; endTime: string | null; timeBlock: string | null;
-  activity: { name: string; description: string; durationMinutes: number | null; tutorialLinks?: TutorialLink[] | null };
+  activity: { name: string; description: string; durationMinutes: number | null; tutorialLinks?: TutorialLink[] | null; illustrations?: Illustration[] | null };
 }[] };
 export type ClassroomMeals = ClassroomScope & { weekStart: string; hasPlan: boolean; version: number; savedAt: string | null; scope: 'facility';
   week: { day: string; meals: { slot: string; name: string; type: string }[] }[] };

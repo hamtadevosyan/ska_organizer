@@ -87,7 +87,7 @@ test('novel activity ideas use only room ages, explicit non-personal choices and
     '\n\nHow to do it:\n' + guide.steps.map((step, index) => (index + 1) + '. ' + step).join('\n') +
     '\n\nAsk the children:\n' + guide.conversationPrompts.map(prompt => '- ' + prompt).join('\n') +
     '\n\nAdaptations: ' + guide.adaptations + '\n\nSupervision and safety: ' + guide.safety + '\n\nCleanup: ' + guide.cleanup);
-  expect(result.drafts[0].tutorialLinks).toEqual([]);
+  expect(result.drafts[0].tutorialLinks).toEqual([expect.objectContaining({ kind: 'search', publisher: 'YouTube' })]);
   expect(calls.every(call => !call.headers.cookie && !call.headers.authorization)).toBe(true);
   expect(await db.listActivities()).toEqual(before); expect(await db.listAudit({})).toEqual(audit);
 });
@@ -130,9 +130,9 @@ test('enabling videos does not change generation context and disabling them skip
   expect(calls.map(call => call.path)).toEqual(['/api/status', '/api/tags', '/api/show', '/api/generate', '/api/status', '/api/tags', '/api/show', '/api/generate']);
 });
 
-test('a novel activity remains available when the small video collection has no matching procedure', async () => {
+test('a novel activity remains available with a video search when the small collection has no matching procedure', async () => {
   const result = await service.draft({ ...input(await room()), theme: 'Color stories', includeVideos: true });
-  expect(result.drafts[0]).toMatchObject({ name: 'Color story circle', tutorialLinks: [] });
+  expect(result.drafts[0]).toMatchObject({ name: 'Color story circle', tutorialLinks: [expect.objectContaining({ kind: 'search', publisher: 'YouTube' })] });
   expect(result.drafts[0].description).toContain('How to do it:\n1. ');
   expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(1);
 });
