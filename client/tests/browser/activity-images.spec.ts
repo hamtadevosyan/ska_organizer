@@ -26,7 +26,7 @@ for (const width of [320, 768, 1280]) test(`step pictures and unreviewed video s
   const roomResponse = await http.post(api + '/rooms', { data: { name: 'Picture room ' + randomUUID().slice(0, 8), ageMinMonths: 36, ageMaxMonths: 60, capacity: 12 } });
   expect(roomResponse.status()).toBe(201); const room = (await roomResponse.json()).data;
   const imageRequests: string[] = []; const jobRequests: Record<string, unknown>[] = []; const saved: Record<string, unknown>[] = [];
-  const external: string[] = [];
+  const external: string[] = []; let completeImages = false;
   page.on('request', request => { const url = new URL(request.url()); if (!['blob:', 'data:'].includes(url.protocol) && !['127.0.0.1', 'localhost'].includes(url.hostname)) external.push(request.url()); });
   const draft = { name: 'Shared paper collage', description, durationMinutes: 20, ageMinMonths: 36, ageMaxMonths: 60,
     roomId: room.id, materials: [], materialsNotes: 'Large paper shapes and washable glue.', sourceIds: [], visualSteps: steps,
@@ -42,7 +42,7 @@ for (const width of [320, 768, 1280]) test(`step pictures and unreviewed video s
       expect(request.headers()['x-csrf-token']).toBeTruthy(); jobRequests.push(request.postDataJSON());
       return send({ id: 'browser-job', status: 'running', completed: 0, total: 2, images: [] });
     }
-    if (path.endsWith('/images/jobs/browser-job')) return send({ id: 'browser-job', status: request.method() === 'DELETE' ? 'cancelled' : 'complete', completed: 2, total: 2, images });
+    if (path.endsWith('/images/jobs/browser-job')) return send({ id: 'browser-job', status: request.method() === 'DELETE' ? 'cancelled' : completeImages ? 'complete' : 'running', completed: completeImages ? 2 : 0, total: 2, images: completeImages ? images : [] });
     if (/\/images\/browser-picture-[12]$/.test(path)) { imageRequests.push(path); return route.fulfill({ status: 200, headers: cors, contentType: 'image/png', body: png }); }
     return route.fulfill({ status: 404, headers: cors, json: { error: { message: 'Unexpected media UI fixture request.' } } });
   });
@@ -65,8 +65,18 @@ for (const width of [320, 768, 1280]) test(`step pictures and unreviewed video s
   await expect(dialog).not.toContainText('Planning sources (0)');
   expect(jobRequests).toHaveLength(0); expect(imageRequests).toHaveLength(0); await fits(page, dialog);
   await card.getByRole('button', { name: 'Create step pictures', exact: true }).click();
-  await expect(card).toContainText('Creating step pictures: 0 of 2 complete.');
-  await expect(card.getByRole('button', { name: 'Review idea 1', exact: true })).toBeDisabled();
+  const pending = dialog.locator('.app-modal-pending');
+  await expect(pending).toBeVisible();
+  await expect(pending.getByRole('status')).toContainText('Creating step pictures: 0 of 2 complete.');
+  await expect(pending.getByRole('status')).toBeInViewport();
+  const cancelPictures = pending.getByRole('button', { name: 'Cancel picture generation', exact: true });
+  await expect(cancelPictures).toBeEnabled(); await expect(cancelPictures).toBeInViewport();
+  await expect(card).toBeHidden();
+  await expect(dialog.getByRole('button', { name: 'Review idea 1', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('article', { name: 'AI idea 1', exact: true, includeHidden: true })
+    .getByRole('button', { name: 'Review idea 1', exact: true, includeHidden: true })).toBeDisabled();
+  completeImages = true;
+  await expect(pending).toHaveCount(0);
   await expect(card.getByRole('img')).toHaveCount(2); await fits(page, dialog);
   for (const image of await card.getByRole('img').all()) { await expect(image).toHaveAttribute('src', /^blob:/); await expect(image).toHaveCSS('object-fit', 'contain'); await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(128); }
   await card.getByRole('img').first().scrollIntoViewIfNeeded();

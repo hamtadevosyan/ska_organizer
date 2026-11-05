@@ -170,4 +170,4 @@ command again. Existing keys, certificates, model files, configuration and tasks
 are reused. The source package includes a correction-only patch for checkouts
 that already received the original media integration.
 
-Activity and picture generation now show a [little thinker loading animation](loading-animation.md). Pause animation keeps the job running; Cancel picture generation stops it. The picture progress bar uses actual completed steps.
+Activity and picture generation now show a [little thinker loading animation](loading-animation.md) in a dedicated visible waiting panel. Pause animation keeps the job running; Cancel picture generation stops it. Reduce Motion starts with a still picture and offers Play animation. The picture progress bar uses actual completed steps. Activity ideas wait and retry an explicit busy rejection for up to two minutes; Stop AI generation cancels that wait.

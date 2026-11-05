@@ -14,14 +14,14 @@
 .ska-loading-scene__progress progress::-webkit-progress-bar{border-radius:99px;background:#dce9e5}
 .ska-loading-scene__progress progress::-webkit-progress-value{border-radius:99px;background:#7970ac}
 .ska-loading-scene__progress progress::-moz-progress-bar{border-radius:99px;background:#7970ac}
-.ska-loading-scene__child{transform-origin:79px 120px;animation:ska-loading-sway 4.8s ease-in-out infinite}
-.ska-loading-scene__head{transform-origin:80px 91px;animation:ska-loading-think 4.8s ease-in-out infinite}
-.ska-loading-scene__eyes{transform-origin:81px 73px;animation:ska-loading-blink 6.4s linear infinite}
-.ska-loading-scene__thought{animation:ska-loading-thought 3.6s ease-in-out infinite}
-.ska-loading-scene__idea{opacity:0;transform-origin:129px 27px;animation:ska-loading-idea 9s ease-in-out infinite}
+.ska-loading-scene__child{transform-box:fill-box;transform-origin:center bottom;animation:ska-loading-sway 3.8s ease-in-out infinite}
+.ska-loading-scene__head{transform-box:fill-box;transform-origin:center bottom;animation:ska-loading-think 3.8s ease-in-out infinite}
+.ska-loading-scene__eyes{transform-box:fill-box;transform-origin:center;animation:ska-loading-blink 6.4s linear infinite}
+.ska-loading-scene__thought{transform-box:fill-box;transform-origin:center;animation:ska-loading-thought 2.6s ease-in-out infinite}
+.ska-loading-scene__idea{opacity:0;transform-box:fill-box;transform-origin:center;animation:ska-loading-idea 6s ease-in-out infinite}
 .ska-loading-scene__idea--star{opacity:1;animation-delay:0s}
-.ska-loading-scene__idea--pencil{animation-delay:-6s}
-.ska-loading-scene__idea--blocks{animation-delay:-3s}
+.ska-loading-scene__idea--pencil{animation-delay:-4s}
+.ska-loading-scene__idea--blocks{animation-delay:-2s}
 .ska-loading-scene.is-paused .ska-loading-scene__art *{animation-play-state:paused}
 .ska-loading-scene.is-compact{flex-wrap:nowrap;justify-content:flex-start;gap:.65rem;margin:.55rem 0;padding:.55rem .7rem;border-color:transparent;border-radius:.8rem;background:#f5f8f7}
 .ska-loading-scene.is-compact .ska-loading-scene__visual{flex-basis:44px}
@@ -31,12 +31,26 @@
 .ska-loading-scene.is-compact .ska-loading-scene__art *{animation:none}
 .ska-loading-scene.is-compact .ska-loading-scene__idea--star{opacity:1}
 .ska-loading-scene.is-compact .ska-loading-scene__idea--pencil,.ska-loading-scene.is-compact .ska-loading-scene__idea--blocks{opacity:0}
-@keyframes ska-loading-sway{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.5px)}}
-@keyframes ska-loading-think{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+@keyframes ska-loading-sway{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes ska-loading-think{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
 @keyframes ska-loading-blink{0%,43%,47%,100%{transform:scaleY(1)}45%{transform:scaleY(.15)}}
-@keyframes ska-loading-thought{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes ska-loading-thought{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes ska-loading-idea{0%,27%{opacity:1;transform:translateY(0) scale(1)}31%,96%{opacity:0;transform:translateY(2px) scale(.9)}100%{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:420px){.ska-loading-scene{gap:.65rem;padding:.8rem}.ska-loading-scene__visual{flex-basis:86px}.ska-loading-scene .ska-loading-scene__label{font-size:.95rem}.ska-loading-scene .ska-loading-scene__detail{font-size:.85rem}}
 @media(max-width:300px){.ska-loading-scene:not(.is-compact){flex-direction:column;align-items:flex-start}.ska-loading-scene:not(.is-compact) .ska-loading-scene__visual{width:90px;flex-basis:auto}}
-@media(prefers-reduced-motion:reduce){.ska-loading-scene .ska-loading-scene__art *{animation:none!important;transition:none!important}.ska-loading-scene .ska-loading-scene__idea--star{opacity:1}.ska-loading-scene .ska-loading-scene__idea--pencil,.ska-loading-scene .ska-loading-scene__idea--blocks{opacity:0}.ska-loading-scene .ska-loading-scene__toggle{display:none}}
+@media(prefers-reduced-motion:reduce){.ska-loading-scene:not(.is-motion-enabled) .ska-loading-scene__art *{animation:none!important;transition:none!important}.ska-loading-scene:not(.is-motion-enabled) .ska-loading-scene__idea--star{opacity:1}.ska-loading-scene:not(.is-motion-enabled) .ska-loading-scene__idea--pencil,.ska-loading-scene:not(.is-motion-enabled) .ska-loading-scene__idea--blocks{opacity:0}}
 @media print{.ska-loading-scene{display:none}}
+
+.ska-loading-scene .ska-loading-scene__motion-note{margin:.35rem 0 0;color:#52646d;font-size:.78rem;line-height:1.45}
+
+/* An explicit Play choice applies only to this decorative scene. The app-wide
+   reduced-motion default still disables every other animation. */
+@media(prefers-reduced-motion:reduce){
+  .ska-loading-scene.is-motion-enabled .ska-loading-scene__child{animation:ska-loading-sway 3.8s ease-in-out infinite!important}
+  .ska-loading-scene.is-motion-enabled .ska-loading-scene__head{animation:ska-loading-think 3.8s ease-in-out infinite!important}
+  .ska-loading-scene.is-motion-enabled .ska-loading-scene__eyes{animation:ska-loading-blink 6.4s linear infinite!important}
+  .ska-loading-scene.is-motion-enabled .ska-loading-scene__thought{animation:ska-loading-thought 2.6s ease-in-out infinite!important}
+  .ska-loading-scene.is-motion-enabled .ska-loading-scene__idea{animation:ska-loading-idea 6s ease-in-out infinite!important}
+  .ska-loading-scene.is-motion-enabled .ska-loading-scene__idea--pencil{animation-delay:-4s!important}
+  .ska-loading-scene.is-motion-enabled .ska-loading-scene__idea--blocks{animation-delay:-2s!important}
+}

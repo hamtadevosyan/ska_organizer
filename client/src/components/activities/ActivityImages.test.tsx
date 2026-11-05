@@ -102,10 +102,13 @@ test('one job polls progress and completes while another idea cannot start or sa
   });
   render(<ActivityAiIdeas {...callbacks()} />); const card = await createIdeas();
   fireEvent.click(within(card).getByRole('button', { name: 'Create step pictures' }));
-  await within(card).findByText('Creating step pictures: 1 of 2 complete.');
-  const other = screen.getByRole('article', { name: 'AI idea 2' });
-  expect(within(other).getByRole('button', { name: 'Create step pictures' })).toBeDisabled();
-  expect(within(card).getByRole('button', { name: 'Review idea 1' })).toBeDisabled();
+  await screen.findByText('Creating step pictures: 1 of 2 complete.');
+  expect(document.querySelector('.app-modal-pending')).toHaveFocus();
+  expect(screen.queryByRole('article', { name: 'AI idea 1' })).not.toBeInTheDocument();
+  const other = screen.getByRole('article', { name: 'AI idea 2', hidden: true });
+  expect(other).not.toBeVisible();
+  expect(within(other).getByRole('button', { name: 'Create step pictures', hidden: true })).toBeDisabled();
+  expect(within(card).getByRole('button', { name: 'Review idea 1', hidden: true })).toBeDisabled();
   await within(card).findByRole('img', { name: 'Step 2: ' + images[1].caption }, { timeout: 3000 });
   expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.endsWith('/images/jobs/job-images'))).toBe(true);
   expect(within(other).getByRole('button', { name: 'Create step pictures' })).toBeEnabled();
@@ -115,8 +118,8 @@ test('cancelling a running job aborts polling, cancels the owned job and permits
   vi.mocked(axios.post).mockImplementation(async url => url.endsWith('/draft') ? response(result) : response({ ...complete, status: 'running', completed: 0, images: [] }));
   render(<ActivityAiIdeas {...callbacks()} />); const card = await createIdeas();
   fireEvent.click(within(card).getByRole('button', { name: 'Create step pictures' }));
-  await within(card).findByText('Creating step pictures: 0 of 2 complete.');
-  fireEvent.click(within(card).getByRole('button', { name: 'Cancel picture generation' }));
+  await screen.findByText('Creating step pictures: 0 of 2 complete.');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel picture generation' }));
   expect(imagePostCalls()[0][2]?.signal?.aborted).toBe(true);
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/images\/jobs\/job-images$/)));
   expect(within(card).getByText('Picture generation cancelled. Your activity is unchanged.')).toBeVisible();
@@ -241,4 +244,20 @@ test('printing waits for authenticated picture preparation and keeps captions wi
   await waitFor(() => expect(print).toHaveBeenCalledOnce());
   expect(screen.getByAltText('Step 1: ' + images[0].caption)).toHaveClass('object-contain');
   view.unmount(); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:protected-picture-1');
+});
+
+
+test('completion focuses the picture gallery for the requested later idea', async () => {
+  const pending = deferred<ReturnType<typeof response>>();
+  vi.mocked(axios.post).mockImplementation(async url => url.endsWith('/draft')
+    ? response({ ...result, drafts: [result.drafts[0], { ...result.drafts[0], name: 'Color pairs' }, { ...result.drafts[0], name: 'Tall towers' }] }) : pending.promise);
+  render(<ActivityAiIdeas {...callbacks()} />); await createIdeas();
+  const third = screen.getByRole('article', { name: 'AI idea 3' });
+  fireEvent.click(within(third).getByRole('button', { name: 'Create step pictures' }));
+  expect(screen.getByText('Pictures for idea 3. This can take several minutes.')).toBeVisible();
+  expect(document.querySelector('.app-modal-pending')).toHaveFocus();
+  await act(async () => pending.resolve(response(complete)));
+  await within(third).findByRole('img', { name: 'Step 1: ' + images[0].caption });
+  expect(document.getElementById('activity-ai-picture-result-2')).toHaveFocus();
+  expect(screen.getByRole('article', { name: 'AI idea 1' })).toBeVisible();
 });

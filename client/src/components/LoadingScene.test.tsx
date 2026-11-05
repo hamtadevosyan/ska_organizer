@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { LoadingScene } from './LoadingScene';
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 test('announces the real task and detail once while its decorative artwork stays hidden', () => {
   const { container } = render(<LoadingScene label="Creating activity ideas…" detail="You can stop this request at any time." />);
@@ -48,4 +50,21 @@ test('compact connection checks retain readable status without animation control
   expect(screen.getByRole('status')).toHaveTextContent('Checking the picture connection…');
   expect(container.firstElementChild).toHaveClass('is-compact');
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
+});
+
+
+test('reduced motion stays still by default and permits an explicit animation opt-in', () => {
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  const { container } = render(<LoadingScene label="Creating pictures…" progress={{ completed: 1, total: 4 }} />);
+  expect(container.firstElementChild).toHaveClass('is-paused');
+  expect(screen.getByText('Reduced motion is on. You can play this animation if you choose.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Play animation' }));
+  expect(container.firstElementChild).toHaveClass('is-motion-enabled');
+  expect(screen.getByRole('button', { name: 'Pause animation' })).toBeVisible();
+  expect(screen.getByRole('progressbar')).toHaveAttribute('value', '1');
+  expect(screen.getByRole('status')).toHaveTextContent('Creating pictures…');
+  fireEvent.click(screen.getByRole('button', { name: 'Pause animation' }));
+  expect(container.firstElementChild).toHaveClass('is-paused');
+  fireEvent.click(screen.getByRole('button', { name: 'Resume animation' }));
+  expect(container.firstElementChild).toHaveClass('is-motion-enabled');
 });

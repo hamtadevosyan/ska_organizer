@@ -273,3 +273,37 @@ test('long source metadata keeps complete source IDs, versions and instructions 
   expect(saved).toBe(value.trim()); expect(saved.startsWith(description)).toBe(true);
   for (const source of sources) { expect(saved).toContain(source.id); expect(saved).toContain(source.version.trim()); }
 });
+
+
+test('busy waiting is visible, stoppable and preserves previous ideas and entered settings', async () => {
+  vi.mocked(axios.isAxiosError).mockReturnValue(true);
+  const busy = { response: { status: 429, headers: { 'retry-after': '30' }, data: { error: { code: 'AI_BUSY', message: 'Another AI request is running. Try again shortly.' } } } };
+  vi.mocked(axios.post).mockResolvedValueOnce(response(result)).mockRejectedValueOnce(busy);
+  const callbacks = props(); render(<ActivityAiIdeas {...callbacks} />); await draft();
+  fireEvent.change(screen.getByLabelText('Theme (optional)'), { target: { value: 'Rainy days' } });
+  createMore();
+  expect(document.querySelector('.app-modal-pending')).toHaveFocus();
+  await screen.findByText('Waiting for your activity ideas…');
+  expect(screen.getByText(/Your request will continue automatically/)).toBeVisible();
+  expect(screen.queryByRole('article', { name: 'AI idea 1' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Create more AI ideas' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Stop AI generation' }));
+  expect(screen.getByRole('status')).toHaveFocus();
+  expect(screen.getByLabelText('Theme (optional)')).toHaveValue('Rainy days');
+  expect(screen.getByRole('article', { name: 'AI idea 1' })).toHaveTextContent('Autumn color detectives');
+  expect(draftCalls()).toHaveLength(2);
+  expect(callbacks.onSaved).not.toHaveBeenCalled();
+});
+
+test('a generation error is focused above the retained form with a direct retry action', async () => {
+  vi.mocked(axios.post).mockRejectedValueOnce(new Error('Synthetic generation failure'));
+  const callbacks = props(); render(<ActivityAiIdeas {...callbacks} />); await ready();
+  fireEvent.change(screen.getByLabelText('Theme (optional)'), { target: { value: 'Ocean animals' } });
+  create(); const alert = await screen.findByRole('alert');
+  expect(alert).toHaveFocus();
+  expect(screen.getByLabelText('Theme (optional)')).toHaveValue('Ocean animals');
+  expect(alert.compareDocumentPosition(screen.getByLabelText('Development focus')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(within(alert).getByRole('button', { name: 'Try AI generation again' }));
+  await screen.findByRole('article', { name: 'AI idea 1' });
+  expect(draftCalls()[1][1]).toMatchObject({ theme: 'Ocean animals' });
+});

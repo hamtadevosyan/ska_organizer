@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import './LoadingScene.css';
 
 type Props = {
@@ -62,12 +62,25 @@ function LittleThinker() {
   </svg>;
 }
 
+const motionPreference = '(prefers-reduced-motion: reduce)';
+function readReducedMotion() {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(motionPreference).matches;
+}
+function subscribeReducedMotion(changed: () => void) {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+  const query = window.matchMedia(motionPreference);
+  query.addEventListener?.('change', changed);
+  return () => query.removeEventListener?.('change', changed);
+}
+
 export function LoadingScene({ label, detail, compact = false, progress }: Props) {
-  const [moving, setMoving] = useState(true);
+  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, readReducedMotion, () => false);
+  const [motion, setMotion] = useState<'system' | 'play' | 'pause'>('system');
+  const moving = !compact && motion !== 'pause' && (!reducedMotion || motion === 'play');
   const total = progress && Number.isSafeInteger(progress.total) && progress.total > 0 ? progress.total : null;
   const completed = total !== null && progress && Number.isSafeInteger(progress.completed)
     ? Math.max(0, Math.min(total, progress.completed)) : null;
-  return <div className={'ska-loading-scene' + (compact ? ' is-compact' : '') + (!moving ? ' is-paused' : '')}>
+  return <div className={'ska-loading-scene' + (compact ? ' is-compact' : '') + (!moving ? ' is-paused' : ' is-motion-enabled')}>
     <div className="ska-loading-scene__visual" aria-hidden="true"><LittleThinker /></div>
     <div className="ska-loading-scene__content">
       <div role="status" aria-live="polite" aria-atomic="true">
@@ -78,11 +91,12 @@ export function LoadingScene({ label, detail, compact = false, progress }: Props
         <progress aria-label="Task progress" max={total} value={completed} />
         <span>{completed} of {total} complete</span>
       </div>}
-      {!compact && <button className="ska-loading-scene__toggle" type="button" onClick={() => setMoving(value => !value)}>
+      {!compact && reducedMotion && <p className="ska-loading-scene__motion-note">Reduced motion is on. You can play this animation if you choose.</p>}
+      {!compact && <button className="ska-loading-scene__toggle" type="button" onClick={() => setMotion(moving ? 'pause' : 'play')}>
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
           {moving ? <path d="M5 3v10M11 3v10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /> : <path d="m5 2 8 6-8 6Z" fill="currentColor" />}
         </svg>
-        {moving ? 'Pause animation' : 'Resume animation'}
+        {moving ? 'Pause animation' : reducedMotion && motion === 'system' ? 'Play animation' : 'Resume animation'}
       </button>}
     </div>
   </div>;

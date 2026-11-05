@@ -1,11 +1,46 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 
-type Props = { id: string; title: string; sheet?: boolean; initialFocusId?: string; onDismiss: () => void; children: ReactNode };
+type Props = { id: string; title: string; sheet?: boolean; initialFocusId?: string; onDismiss: () => void; children: ReactNode;
+  pendingContent?: ReactNode; pendingKey?: string; attentionKey?: string; attentionId?: string };
 
-export default function AppModal({ id, title, sheet = false, initialFocusId, onDismiss, children }: Props) {
+export default function AppModal({ id, title, sheet = false, initialFocusId, onDismiss, children, pendingContent, pendingKey, attentionKey, attentionId }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  const pendingRef = useRef<HTMLDivElement>(null);
+  const previousPending = useRef(false);
+  const previousPendingKey = useRef(pendingKey);
+  const returnFocusId = useRef('');
+  const hasPending = pendingContent !== undefined && pendingContent !== null && pendingContent !== false;
+
+  useLayoutEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (hasPending) {
+      if (!previousPending.current) returnFocusId.current = document.activeElement?.id || '';
+      if (!previousPending.current || pendingKey !== previousPendingKey.current) {
+        dialog.scrollTop = 0;
+        pendingRef.current?.focus({ preventScroll: true });
+      }
+    } else if (previousPending.current || attentionKey) {
+      dialog.scrollTop = 0;
+      const requested = attentionId ? document.getElementById(attentionId) : null;
+      const attention = dialog.querySelector<HTMLElement>('[data-modal-error]')
+        || (requested instanceof HTMLElement && dialog.contains(requested) ? requested : null)
+        || dialog.querySelector<HTMLElement>('[data-modal-notice], [role="alert"], [data-modal-result]');
+      const previous = returnFocusId.current ? document.getElementById(returnFocusId.current) : null;
+      const target = attention || (previous instanceof HTMLElement && dialog.contains(previous) ? previous : null);
+      if (target) {
+        if (attention && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+        // Completion and failure may have a result below the restored settings.
+        // Move the outcome into view rather than leaving it below a long form.
+        if (attention) target.scrollIntoView?.({ block: 'start' });
+      }
+    }
+    previousPending.current = hasPending;
+    previousPendingKey.current = pendingKey;
+  }, [hasPending, pendingKey, attentionKey, attentionId]);
 
   useEffect(() => {
     const dialog = ref.current!;
@@ -15,7 +50,7 @@ export default function AppModal({ id, title, sheet = false, initialFocusId, onD
     dialog.showModal();
     // React autofocus runs before the native dialog opens. Focus the requested
     // action after showModal makes its controls available.
-    const initialFocus = initialFocusId ? document.getElementById(initialFocusId) : null;
+    const initialFocus = pendingRef.current || (initialFocusId ? document.getElementById(initialFocusId) : null);
     if (initialFocus instanceof HTMLElement && dialog.contains(initialFocus)) initialFocus.focus({ preventScroll: true });
     document.body.style.overflow = 'hidden';
     return () => {
@@ -52,6 +87,7 @@ export default function AppModal({ id, title, sheet = false, initialFocusId, onD
         <X size={22} aria-hidden="true" />
       </button>
     </div>
-    {children}
+    <div className="app-modal-content" hidden={hasPending}>{children}</div>
+    {hasPending && <div className="app-modal-pending" ref={pendingRef} tabIndex={-1}>{pendingContent}</div>}
   </dialog>;
 }
