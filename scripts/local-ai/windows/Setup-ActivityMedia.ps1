@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([switch]$Check)
+param([switch]$Check, [switch]$Update, [switch]$Recover, [switch]$Diagnose)
 
 $ErrorActionPreference = 'Stop'
 $script:SkaoActivityMediaTask = 'SKAO Activity Images'
@@ -249,16 +249,18 @@ function Resolve-SkaoActivityMediaSid {
 }
 
 function Assert-SkaoActivityMediaTask {
-    param([Parameter(Mandatory = $true)]$Task, [Parameter(Mandatory = $true)]$Context)
-    $launcher = Join-Path $Context.Root 'Run-ActivityMedia.cmd'
+    param([Parameter(Mandatory = $true)]$Task, [Parameter(Mandatory = $true)]$Context, [switch]$Gateway)
+    $taskRoot = if ($Gateway) { $Context.GatewayRoot } else { $Context.Root }
+    $launcher = Join-Path $taskRoot $(if ($Gateway) { 'Run-Gateway.cmd' } else { 'Run-ActivityMedia.cmd' })
+    $delays = if ($Gateway) { @('PT45S') } else { @('PT60S', 'PT1M') }
     $actions = @($Task.Actions); $triggers = @($Task.Triggers); $settings = $Task.Settings
     if ([string]$Task.TaskPath -ne '\' -or (Resolve-SkaoActivityMediaSid ([string]$Task.Principal.UserId)) -cne $Context.Sid -or
         [string]$Task.Principal.LogonType -ne 'Password' -or [string]$Task.Principal.RunLevel -ne 'Limited' -or
         $actions.Count -ne 1 -or [string]$actions[0].Execute -ine (Join-Path $env:SystemRoot 'System32/cmd.exe') -or
         [string]$actions[0].Arguments -cne ('/d /c ""{0}""' -f $launcher) -or
-        [string]$actions[0].WorkingDirectory -ine $Context.Root -or
+        [string]$actions[0].WorkingDirectory -ine $taskRoot -or
         $triggers.Count -ne 1 -or [string]$triggers[0].CimClass.CimClassName -ne 'MSFT_TaskBootTrigger' -or
-        [string]$triggers[0].Delay -notin @('PT60S', 'PT1M') -or [string]$triggers[0].Enabled -ne 'True' -or
+        [string]$triggers[0].Delay -notin $delays -or [string]$triggers[0].Enabled -ne 'True' -or
         [int]$settings.Priority -ne 7 -or [string]$settings.MultipleInstances -ne 'IgnoreNew' -or
         [int]$settings.RestartCount -ne 3 -or [string]$settings.RestartInterval -ne 'PT1M' -or
         [string]$settings.ExecutionTimeLimit -ne 'PT0S' -or [string]$settings.Enabled -ne 'True' -or
@@ -354,10 +356,10 @@ function Register-SkaoActivityMediaTask {
 }
 
 function Assert-SkaoActivityMediaStatus {
-    param([Parameter(Mandatory = $true)]$Status)
+    param([Parameter(Mandatory = $true)]$Status, [switch]$AllowUnavailable)
     if (($Status.version -isnot [int] -and $Status.version -isnot [long]) -or $Status.version -ne 1 -or
         $Status.enabled -isnot [bool] -or !$Status.enabled -or
-        $Status.available -isnot [bool] -or !$Status.available -or $Status.busy -isnot [bool] -or
+        $Status.available -isnot [bool] -or (!$AllowUnavailable -and !$Status.available) -or $Status.busy -isnot [bool] -or
         [string]$Status.model -cne 'sd_xl_base_1.0.safetensors') {
         throw 'AI_MEDIA_STATUS: The local worker did not confirm its expected ready capabilities.'
     }
@@ -365,7 +367,7 @@ function Assert-SkaoActivityMediaStatus {
 
 function Invoke-SkaoActivityMediaStatus {
     param([Parameter(Mandatory = $true)][string]$Token,
-          [ValidateRange(1, 5)][int]$TimeoutSeconds = 2)
+          [ValidateRange(1, 5)][int]$TimeoutSeconds = 2, [switch]$AllowUnavailable)
     $request = [Net.HttpWebRequest]::Create('http://127.0.0.1:11435/api/activity-images/status')
     $request.Proxy = $null; $request.AllowAutoRedirect = $false; $request.KeepAlive = $false
     $request.Timeout = $TimeoutSeconds * 1000; $request.ReadWriteTimeout = $TimeoutSeconds * 1000
@@ -391,7 +393,7 @@ function Invoke-SkaoActivityMediaStatus {
             $memory.Write($buffer, 0, $read)
         }
         $status = [Text.Encoding]::UTF8.GetString($memory.ToArray()) | ConvertFrom-Json -ErrorAction Stop
-        Assert-SkaoActivityMediaStatus -Status $status
+        Assert-SkaoActivityMediaStatus -Status $status -AllowUnavailable:$AllowUnavailable
         return $status
     }
     catch { throw 'AI_MEDIA_STATUS: The authenticated loopback worker status could not be verified.' }
@@ -415,9 +417,231 @@ function Wait-SkaoActivityMediaReady {
     throw 'AI_MEDIA_STATUS: The worker readiness deadline expired. Review its protected local log.'
 }
 
+function Get-SkaoActivityMediaPreviousSources {
+    # Exact prior release; never trust hashes or filenames supplied by setup.json.
+    return [pscustomobject]@{ id = '57c29e314eb4c299b0a5f5867a1fb71ef214725a98a2a62e2f08aebf3a4739c7'; files = @(
+        [pscustomobject][ordered]@{ name = 'activity_image_worker.py'; bytes = [long]32657; sha256 = 'c92c3421ffffddcbdc41d49da11f160513ded2a4dffc67b77c3d65e935be00ba' },
+        [pscustomobject][ordered]@{ name = 'activity_image_engine.py'; bytes = [long]17196; sha256 = '34ebd32eae1956e993165c02ae68196761bba51f5ac25ff72e96ecbd06af77f0' },
+        [pscustomobject][ordered]@{ name = 'run-activity-images.py'; bytes = [long]49658; sha256 = '077391046f9933f58625946a06049947984a97b9d58ab139e2d07031f057960e' },
+        [pscustomobject][ordered]@{ name = 'activity_image_layouts.py'; bytes = [long]6381; sha256 = 'cfe6efeb70845a43e6934517f614467a4bf7cb86b9fe87414d1ca22c45256890' }
+    ) }
+}
+
+function Resolve-SkaoActivityMediaInstalledSources {
+    param($Context, $Sources)
+    $receipt = Join-Path $Context.Root 'setup.json'
+    if (!(Test-Path -LiteralPath $receipt)) { return $Sources }
+    [void](Assert-SkaoActivityMediaPath -Path $Context.Root -Directory)
+    Assert-SkaoActivityMediaAcl -Path $Context.Root -Sid $Context.Sid -Protected
+    Assert-SkaoActivityMediaAcl -Path $receipt -Sid $Context.Sid
+    $saved = Read-SkaoActivityMediaJson $receipt
+    if ([string]$saved.packageId -ceq $Sources.id) { return $Sources }
+    foreach ($previous in @(Get-SkaoActivityMediaPreviousSources)) {
+        if ([string]$saved.packageId -ceq $previous.id) { return $previous }
+    }
+    throw 'AI_MEDIA_CONFLICT: The installed worker is not a recognized source release; it was preserved.'
+}
+
+function Assert-SkaoActivityMediaIdle {
+    param([string]$Token)
+    $status = Invoke-SkaoActivityMediaStatus -Token $Token -AllowUnavailable
+    if (!$status.available) { throw 'AI_MEDIA_RECOVERY_REQUIRED: The worker is unavailable. Run -Diagnose; -Update -Recover is available for verified owned-worker recovery.' }
+    if ($status.busy) { throw 'AI_MEDIA_BUSY: The worker is using AI capacity. Finish or cancel that work before -Update, or explicitly use -Update -Recover to cancel owned work.' }
+}
+
+function Get-SkaoActivityMediaManagedTask {
+    param($Context, [switch]$Gateway)
+    $name = if ($Gateway) { 'SKAO AI Gateway' } else { $script:SkaoActivityMediaTask }
+    $tasks = @(Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop)
+    if ($tasks.Count -ne 1) { throw 'AI_MEDIA_TASK_CONFLICT: A required managed task is missing or ambiguous.' }
+    Assert-SkaoActivityMediaTask -Task $tasks[0] -Context $Context -Gateway:$Gateway
+    return $tasks[0]
+}
+
+function Stop-SkaoActivityMediaManagedTask {
+    param($Context, [switch]$Gateway)
+    $name = if ($Gateway) { 'SKAO AI Gateway' } else { $script:SkaoActivityMediaTask }
+    $task = Get-SkaoActivityMediaManagedTask -Context $Context -Gateway:$Gateway
+    if ([string]$task.State -eq 'Running') {
+        Stop-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        do {
+            $task = Get-SkaoActivityMediaManagedTask -Context $Context -Gateway:$Gateway
+            if ([string]$task.State -eq 'Ready') { return }
+            Start-Sleep -Milliseconds 200
+        } while ($watch.Elapsed.TotalSeconds -lt 10)
+        throw 'AI_MEDIA_STOP_TIMEOUT: A validated managed task did not stop. No replacement worker was started.'
+    }
+}
+
+function Start-SkaoActivityMediaManagedTask {
+    param($Context, [switch]$Gateway)
+    $name = if ($Gateway) { 'SKAO AI Gateway' } else { $script:SkaoActivityMediaTask }
+    $task = Get-SkaoActivityMediaManagedTask -Context $Context -Gateway:$Gateway
+    if ([string]$task.State -eq 'Ready') { Start-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop }
+}
+
+function Assert-SkaoActivityMediaNoManagedProcess {
+    param($Context, [ValidateRange(0, 10)][int]$TimeoutSeconds = 10)
+    $expected = [IO.Path]::GetFullPath((Join-Path $Context.ImageRoot 'runtime/ComfyUI_windows_portable/python_embeded/python.exe'))
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        try { $processes = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'python.exe'" -OperationTimeoutSec 5 -ErrorAction Stop) }
+        catch { throw 'AI_MEDIA_PROCESS_INSPECTION: Windows could not verify that the managed image processes stopped. No replacement worker was started.' }
+        $remaining = $false
+        foreach ($process in $processes) {
+            if (![string]$process.ExecutablePath) { throw 'AI_MEDIA_PROCESS_INSPECTION: A Python process path could not be inspected. No replacement worker was started.' }
+            try { $path = [IO.Path]::GetFullPath([string]$process.ExecutablePath) }
+            catch { throw 'AI_MEDIA_PROCESS_INSPECTION: A Python process path could not be verified. No replacement worker was started.' }
+            if ([string]::Equals($path, $expected, [StringComparison]::OrdinalIgnoreCase)) { $remaining = $true }
+        }
+        if (!$remaining) { return }
+        if ($watch.Elapsed.TotalSeconds -ge $TimeoutSeconds) { break }
+        Start-Sleep -Milliseconds 200
+    } while ($true)
+    throw 'AI_MEDIA_RESIDUAL_PROCESS: A managed image process is still present. It was not killed, and no replacement worker was started. Restart Windows before retrying this update.'
+}
+
+function Set-SkaoActivityMediaManagedText {
+    param([string]$Path, [string]$Text, [string]$Backup)
+    # Each file replacement is atomic. The stopped worker is started only after
+    # both launcher and receipt validate; exceptions restore both saved files.
+    $temporary = $Path + '.update-' + [Guid]::NewGuid().ToString('N')
+    try {
+        Write-SkaoActivityMediaText -Path $temporary -Text $Text
+        [IO.File]::Replace($temporary, $Path, $Backup)
+    }
+    finally { if (Test-Path -LiteralPath $temporary) { [IO.File]::Delete($temporary) } }
+}
+
+function Invoke-SkaoActivityMediaUpdate {
+    param($Context, $Sources, $InstalledSources, [string]$Token, $Task, [string]$GatewayScript, [switch]$Recover)
+    Assert-SkaoActivityMediaInstallation -Context $Context -Sources $InstalledSources -Token $Token -Complete
+    Ensure-SkaoActivityMediaRawRules -Check
+    Invoke-SkaoActivityMediaChild -Script $GatewayScript -Options @{ Check = $true; ActivityImages = $true }
+    $gateway = Get-SkaoActivityMediaManagedTask -Context $Context -Gateway
+    $restoreGateway = [string]$gateway.State -eq 'Running'
+    if (!$restoreGateway) { throw 'AI_MEDIA_GATEWAY: The validated gateway must be running before an update.' }
+    if (!$Recover) { Assert-SkaoActivityMediaIdle -Token $Token }
+    Assert-SkaoActivityMediaAdministrator
+    $lock = $null; $workerStopped = $false; $safeToStart = $false; $changed = $false
+    $launcher = Join-Path $Context.Root 'Run-ActivityMedia.cmd'; $receipt = Join-Path $Context.Root 'setup.json'
+    $oldLauncher = [IO.File]::ReadAllText($launcher); $oldReceipt = [IO.File]::ReadAllText($receipt)
+    $backupRoot = $null
+    try {
+        try { $lock = New-Object IO.FileStream((Join-Path $Context.Root 'setup.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+        catch { throw 'AI_MEDIA_BUSY: Another worker setup is using this installation.' }
+        # Closing the verified gateway removes Pi ingress before the second idle
+        # check. It does not change any gateway task/configuration/credentials.
+        Stop-SkaoActivityMediaManagedTask -Context $Context -Gateway
+        if (!$Recover) { Assert-SkaoActivityMediaIdle -Token $Token }
+        Stop-SkaoActivityMediaManagedTask -Context $Context
+        $workerStopped = $true
+        Assert-SkaoActivityMediaNoManagedProcess -Context $Context
+        $safeToStart = $true
+        Assert-SkaoActivityMediaInstallation -Context $Context -Sources $InstalledSources -Token $Token -Complete
+        if ($Sources.id -cne $InstalledSources.id) {
+            foreach ($name in @('code', ('code/' + $Sources.id), 'updates')) {
+                $directory = Join-Path $Context.Root $name
+                if (!(Test-Path -LiteralPath $directory)) { [void](New-Item -ItemType Directory -Path $directory) }
+                [void](Assert-SkaoActivityMediaPath -Path $directory -Directory)
+                Assert-SkaoActivityMediaAcl -Path $directory -Sid $Context.Sid
+            }
+            foreach ($entry in $Sources.files) {
+                $destination = Join-Path $Context.Root ('code/' + $Sources.id + '/' + $entry.name)
+                if (!(Test-Path -LiteralPath $destination)) { [IO.File]::Copy((Join-Path $Context.Source $entry.name), $destination) }
+                $item = Assert-SkaoActivityMediaPath -Path $destination
+                Assert-SkaoActivityMediaAcl -Path $destination -Sid $Context.Sid
+                if ($item.Length -ne $entry.bytes -or (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256) {
+                    throw 'AI_MEDIA_CONFLICT: A staged worker file differs; existing state was retained.'
+                }
+            }
+            $backupRoot = Join-Path $Context.Root ('updates/' + [Guid]::NewGuid().ToString('N'))
+            [void](New-Item -ItemType Directory -Path $backupRoot)
+            $changed = $true
+            Set-SkaoActivityMediaManagedText -Path $launcher -Text (Get-SkaoActivityMediaLauncher $Sources) -Backup (Join-Path $backupRoot 'launcher.previous.cmd')
+            Set-SkaoActivityMediaManagedText -Path $receipt -Text ((Get-SkaoActivityMediaReceipt $Context $Sources) | ConvertTo-Json -Depth 8) -Backup (Join-Path $backupRoot 'setup.previous.json')
+            Assert-SkaoActivityMediaInstallation -Context $Context -Sources $Sources -Token $Token -Complete
+        }
+        Start-SkaoActivityMediaManagedTask -Context $Context
+        Wait-SkaoActivityMediaReady -Token $Token
+        Write-Output 'PASS: verified activity worker updated; existing credentials, models, private settings and gateway configuration retained'
+    }
+    catch {
+        $failure = $_
+        if ($workerStopped -and $safeToStart) {
+            try {
+                # Gateway ingress is still paused; this known worker has not
+                # accepted Pi inference while its startup is being checked.
+                Stop-SkaoActivityMediaManagedTask -Context $Context
+                Assert-SkaoActivityMediaNoManagedProcess -Context $Context
+                if ($changed) {
+                    Set-SkaoActivityMediaManagedText -Path $launcher -Text $oldLauncher -Backup (Join-Path $backupRoot 'launcher.failed.cmd')
+                    Set-SkaoActivityMediaManagedText -Path $receipt -Text $oldReceipt -Backup (Join-Path $backupRoot 'setup.failed.json')
+                    Assert-SkaoActivityMediaInstallation -Context $Context -Sources $InstalledSources -Token $Token -Complete
+                }
+                Start-SkaoActivityMediaManagedTask -Context $Context
+            }
+            catch { throw 'AI_MEDIA_UPDATE_RECOVERY: The old worker files were retained in the private update backup; replacement startup or rollback could not be verified. No unknown process was killed.' }
+        }
+        throw $failure
+    }
+    finally {
+        try { if ($restoreGateway) { Start-SkaoActivityMediaManagedTask -Context $Context -Gateway } }
+        catch { throw 'AI_MEDIA_GATEWAY_RESTART: The gateway could not be restarted after the worker update. Its existing configuration and credentials were retained.' }
+        finally { if ($lock) { $lock.Dispose() } }
+    }
+}
+
+function Get-SkaoActivityMediaDiagnostic {
+    param($Context)
+    # Fixed protected paths only. Never return tokens, paths, IDs, names, prompt
+    # text, captions, arbitrary exception strings, or raw process/log output.
+    [void](Assert-SkaoActivityMediaPath -Path $Context.Root -Directory)
+    Assert-SkaoActivityMediaAcl -Path $Context.Root -Sid $Context.Sid -Protected
+    $token = Get-SkaoActivityMediaToken -Context $Context
+    $configPath = Join-Path $Context.Root 'config.json'
+    Assert-SkaoActivityMediaAcl -Path $configPath -Sid $Context.Sid
+    Assert-SkaoActivityMediaObject -Actual (Read-SkaoActivityMediaJson $configPath) -Expected (Get-SkaoActivityMediaConfiguration $Context $token)
+    $task = Get-SkaoActivityMediaManagedTask -Context $Context
+    $available = $null; $busy = $null; $statusCode = 'WORKER_STATUS_UNAVAILABLE'
+    try {
+        $status = Invoke-SkaoActivityMediaStatus -Token $token -AllowUnavailable
+        $available = $status.available; $busy = $status.busy
+        $statusCode = if ($status.code -ceq 'WORKER_RESTART_REQUIRED') { 'WORKER_RESTART_REQUIRED' } elseif ($available) { 'WORKER_READY' } else { 'WORKER_UNAVAILABLE' }
+    }
+    catch { }
+    $codes = @('AI_BUSY','IMAGE_UNAVAILABLE','IMAGE_RUNTIME','IMAGE_RUNTIME_TIMEOUT','IMAGE_CONTAINMENT','IMAGE_DIRECTORY','IMAGE_PROCESS','IMAGE_STARTUP_TIMEOUT','IMAGE_CUDA','IMAGE_CONNECTION','IMAGE_WORKFLOW','IMAGE_RESPONSE','IMAGE_TIMEOUT','IMAGE_OOM','IMAGE_INVALID','IMAGE_GENERATION','IMAGE_GENERATION_FAILED','IMAGE_CLEANUP','IMAGE_INCOMPLETE','IMAGE_NOT_STARTED','WORKER_RESTARTED')
+    $jobsRoot = Join-Path $Context.Root 'jobs'
+    [void](Assert-SkaoActivityMediaPath -Path $jobsRoot -Directory)
+    Assert-SkaoActivityMediaAcl -Path $jobsRoot -Sid $Context.Sid
+    $recent = @(); $invalid = 0
+    $directories = @(Get-ChildItem -LiteralPath $jobsRoot -Directory -Force | Where-Object { $_.Name -cmatch '^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$' } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 6)
+    foreach ($directory in $directories) {
+        try {
+            [void](Assert-SkaoActivityMediaPath -Path $directory.FullName -Directory)
+            Assert-SkaoActivityMediaAcl -Path $directory.FullName -Sid $Context.Sid
+            $path = Join-Path $directory.FullName 'job.json'
+            $item = Assert-SkaoActivityMediaPath -Path $path -MaximumBytes 16384
+            Assert-SkaoActivityMediaAcl -Path $path -Sid $Context.Sid
+            $job = Read-SkaoActivityMediaJson $path
+            if ([string]$job.status -notin @('running','complete','failed','cancelled') -or
+                ($job.total -isnot [int] -and $job.total -isnot [long]) -or $job.total -lt 1 -or $job.total -gt 6 -or
+                ($job.completed -isnot [int] -and $job.completed -isnot [long]) -or $job.completed -lt 0 -or $job.completed -gt $job.total) { throw 'invalid job' }
+            $code = if ($job.code -is [string] -and $job.code -cin $codes) { [string]$job.code } elseif ($job.status -eq 'failed') { 'UNCLASSIFIED_FAILURE' } else { $null }
+            $recent += [pscustomobject][ordered]@{ Status = [string]$job.status; Code = $code; Completed = [int]$job.completed; Total = [int]$job.total; UpdatedUtc = $item.LastWriteTimeUtc.ToString('o') }
+        }
+        catch { $invalid++ }
+    }
+    [pscustomobject][ordered]@{ TaskState = [string]$task.State; WorkerStatus = $statusCode; Available = $available; Busy = $busy; RecentJobs = $recent; UnreadableJobs = $invalid } | ConvertTo-Json -Depth 6
+}
+
 function Invoke-SkaoActivityMediaSetup {
-    param([switch]$Check)
+    param([switch]$Check, [switch]$Update, [switch]$Recover, [switch]$Diagnose)
+    if ($Recover -and !$Update) { throw 'AI_MEDIA_OPTIONS: -Recover requires -Update and explicitly cancels owned worker work.' }
+    if (([int][bool]$Check + [int][bool]$Update + [int][bool]$Diagnose) -gt 1) { throw 'AI_MEDIA_OPTIONS: Choose only one of -Check, -Update or -Diagnose.' }
     $context = Get-SkaoActivityMediaContext
+    if ($Diagnose) { Get-SkaoActivityMediaDiagnostic -Context $context; return }
     $gatewayScript = Join-Path $context.Source 'Setup-Gateway.ps1'
     Invoke-SkaoActivityMediaChild -Script $gatewayScript -Options @{ Check = $true }
     Invoke-SkaoActivityMediaChild -Script (Join-Path $context.Source 'Setup-ActivityImages.ps1') -Options @{ Check = $true; CompareSDXL = $true }
@@ -425,13 +649,20 @@ function Invoke-SkaoActivityMediaSetup {
     $sources = Get-SkaoActivityMediaSources -Context $context
     $python = Join-Path $context.ImageRoot 'runtime/ComfyUI_windows_portable/python_embeded/python.exe'
     [void](Assert-SkaoActivityMediaPath -Path $python -MaximumBytes 1073741824)
-    Assert-SkaoActivityMediaInstallation -Context $context -Sources $sources -Token $token
+    $installedSources = Resolve-SkaoActivityMediaInstalledSources -Context $context -Sources $sources
+    if ($installedSources.id -cne $sources.id -and !$Update) { throw 'AI_MEDIA_UPDATE_REQUIRED: A recognized older worker is installed. Run this installer with -Update.' }
+    Assert-SkaoActivityMediaInstallation -Context $context -Sources $installedSources -Token $token
     $tasks = @(Get-ScheduledTask -TaskName $script:SkaoActivityMediaTask -TaskPath '\' -ErrorAction SilentlyContinue)
     if ($tasks.Count -gt 1) { throw 'AI_MEDIA_TASK_CONFLICT: Multiple worker tasks were found.' }
     $task = $null
     if ($tasks.Count -eq 1) { $task = $tasks[0]; Assert-SkaoActivityMediaTask -Task $task -Context $context }
     if ($task -and !(Test-Path -LiteralPath (Join-Path $context.Root 'setup.json'))) {
         throw 'AI_MEDIA_CONFLICT: A worker task exists without recognized private setup state; it was preserved.'
+    }
+    if ($Update) {
+        if (!$task) { throw 'AI_MEDIA_MISSING: Install the worker before using -Update.' }
+        Invoke-SkaoActivityMediaUpdate -Context $context -Sources $sources -InstalledSources $installedSources -Token $token -Task $task -GatewayScript $gatewayScript -Recover:$Recover
+        return
     }
     if ($Check) {
         Assert-SkaoActivityMediaInstallation -Context $context -Sources $sources -Token $token -Complete
@@ -491,11 +722,23 @@ function Invoke-SkaoActivityMediaSetup {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    try { Invoke-SkaoActivityMediaSetup -Check:$Check; $global:LASTEXITCODE = 0 }
+    try { Invoke-SkaoActivityMediaSetup -Check:$Check -Update:$Update -Recover:$Recover -Diagnose:$Diagnose; $global:LASTEXITCODE = 0 }
     catch {
         $code = 'AI_MEDIA_SETUP'
         if ([string]$_.Exception.Message -match '^(AI_MEDIA_[A-Z_]+):') { $code = $Matches[1] }
-        Write-Error ($code + ': Activity image setup stopped. Existing AI keys, models and gateway state were preserved.') -ErrorAction Continue
+        $safeMessages = @{
+            AI_MEDIA_OPTIONS = 'Choose one of -Check, -Update or -Diagnose. -Recover requires -Update and explicitly cancels owned worker work.'
+            AI_MEDIA_UPDATE_REQUIRED = 'A recognized older worker is installed. Run this installer with -Update.'
+            AI_MEDIA_RECOVERY_REQUIRED = 'The worker is unavailable. Run -Diagnose. Use -Update -Recover only when ready to cancel owned worker work.'
+            AI_MEDIA_BUSY = 'AI work or another setup is running. Finish or cancel it before updating, or explicitly use -Update -Recover to cancel owned worker work.'
+            AI_MEDIA_PROCESS_INSPECTION = 'Windows could not verify that managed image processes stopped. No replacement worker was started and no unknown process was killed.'
+            AI_MEDIA_RESIDUAL_PROCESS = 'A managed image process is still present. It was not killed and no replacement worker was started. Restart Windows before retrying -Update.'
+            AI_MEDIA_STOP_TIMEOUT = 'A validated managed task did not stop in time. No replacement worker was started.'
+            AI_MEDIA_UPDATE_RECOVERY = 'Replacement startup or rollback could not be verified. Review the retained private updates backup before retrying. No unknown process was killed.'
+            AI_MEDIA_GATEWAY_RESTART = 'The gateway could not be restarted. Its existing configuration and credentials were retained; check the SKAO AI Gateway scheduled task.'
+        }
+        $message = if ($safeMessages.ContainsKey($code)) { $safeMessages[$code] } else { 'Activity image setup stopped. Existing AI keys, models and gateway configuration were preserved.' }
+        Write-Error ($code + ': ' + $message) -ErrorAction Continue
         exit 1
     }
 }

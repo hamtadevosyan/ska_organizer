@@ -16,7 +16,8 @@ import type { ActivityImageStatus } from '../../api/activityImages';
 import type { Room } from '../../api/rooms';
 
 type Props = { room: Room; onSaved: (activity: Activity) => void; onCancel: () => void;
-  onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void };
+  onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void;
+  rememberedNames?: string[]; onRememberNames?: (names: string[]) => void };
 const focusOptions: [ActivityAiFocus, string][] = [['balanced', 'A little of everything'], ['language', 'Language & early literacy'],
   ['creative', 'Art & creative expression'], ['physical', 'Movement & coordination'], ['discovery', 'Discovery & early math'], ['social', 'Social & emotional skills']];
 function rememberNames(previous: string[], incoming: string[]) {
@@ -46,7 +47,7 @@ function editableDetails(draft: ActivityAiDraft, sources: ActivityAiSource[]): A
     durationMinutes: draft.durationMinutes, ageMinMonths: draft.ageMinMonths, ageMaxMonths: draft.ageMaxMonths,
     roomId: draft.roomId, materials: draft.materials, materialsNotes: draft.materialsNotes || '', materialsLinks: [], tutorialLinks: draft.tutorialLinks || [] };
 }
-export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusyChange }: Props) {
+export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusyChange, rememberedNames, onRememberNames }: Props) {
   const [status, setStatus] = useState<ActivityAiStatus | null>(null);
   const [checking, setChecking] = useState(true);
   const [retry, setRetry] = useState(0);
@@ -72,9 +73,10 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
   const imageJobs = useActivityImageJobs((index, images) => { setPictures(values => ({ ...values, [index]: images })); setDirty(true); });
   const controller = useRef<AbortController | null>(null);
   const turn = useRef(0);
-  // Only this dialog's completed AI suggestions are remembered. Saved library
-  // records and abandoned/failed requests never become generation context.
-  const recentNames = useRef<string[]>([]);
+  // The planner can retain completed generated titles when this dialog closes.
+  // Saved library records and failed requests never become generation context.
+  const recentNames = useRef<string[]>([...(rememberedNames || [])]);
+  const [previousBatch, setPreviousBatch] = useState(false);
   const numeric = (value: string, minimum: number, maximum: number) => /^\d+$/.test(value) && Number(value) >= minimum && Number(value) <= maximum;
   const valid = numeric(count, 1, 5) && numeric(minutes, 5, 120);
   useLayoutEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
@@ -109,12 +111,15 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
     if (!valid || pending || saving || checking || imageJobs.activeIndex !== null || !status?.available) return;
     const request = new AbortController(); controller.current?.abort(); controller.current = request;
     const currentTurn = ++turn.current; setPending(true); setWaiting(false); setError(''); setNotice(''); setConfirmCancel(false); setDirty(true);
+    if (result) setPreviousBatch(true);
     try {
       const value = await draftActivityIdeas({ roomId: room.id, focus, theme: theme.trim(), activityCount: Number(count), durationMinutes: Number(minutes), includeVideos, avoidNames: [...recentNames.current] }, request.signal, {
         onWaiting: () => { if (!request.signal.aborted && currentTurn === turn.current) setWaiting(true); },
       });
       if (request.signal.aborted || currentTurn !== turn.current) return;
       recentNames.current = rememberNames(recentNames.current, value.drafts.map(draft => draft.name));
+      onRememberNames?.([...recentNames.current]);
+      setPreviousBatch(false);
       setResult(value); setSelected(null); setSaved([]); setPictures({}); setLastImageIndex(null); imageJobs.reset();
     } catch (failure) {
       if (!request.signal.aborted && currentTurn === turn.current && !axios.isCancel(failure)) setError(authError(failure, 'Could not create AI ideas. Your library and week are unchanged.'));
@@ -173,7 +178,8 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
           <p className="planner-generation-small">Ideas may include a related video example or a YouTube search for demonstrations. Search results are unreviewed. External websites open only when you choose a link.</p>
           <button id="activity-ai-create" type="button" className="ska-button is-primary" disabled={!valid} onClick={() => void generate()}><Sparkles size={18} aria-hidden="true" />{result ? 'Create more AI ideas' : 'Create AI ideas'}</button>
         </fieldset>
-        {result && <section aria-label="AI activity ideas preview" className="planner-ai-results" data-modal-result tabIndex={-1}><h3>Choose an idea to make your own</h3>
+        {result && <section aria-label="AI activity ideas preview" className="planner-ai-results" data-modal-result tabIndex={-1}><h3>{previousBatch ? 'Your previous ideas' : 'Choose an idea to make your own'}</h3>
+          {previousBatch && <p className="planner-notice">No new ideas were returned. These are your previous ideas, kept so you can still review or save them.</p>}
           {result.warnings.length > 0 && <ul className="planner-generation-warnings">{result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
           {result.drafts.map((draft, index) => <article key={index} className="planner-ai-card" aria-label={'AI idea ' + (index + 1)}>
             <span className="planner-ai-number">Idea {index + 1}</span><h3>{draft.name}</h3><p>{draft.durationMinutes} minutes · Ages {draft.ageMinMonths}–{draft.ageMaxMonths} months</p><p className="planner-ai-text">{draft.description}</p>

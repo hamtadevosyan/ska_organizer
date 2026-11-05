@@ -667,3 +667,56 @@ test('viewers have no generation action', async () => {
   navigationApp('viewer'); await chooseRoom();
   expect(screen.queryByRole('button', { name: 'Generate week' })).not.toBeInTheDocument();
 });
+
+function mockAiIdeas() {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
+  const get = vi.mocked(axios.get).getMockImplementation()!, post = vi.mocked(axios.post).getMockImplementation()!;
+  let generated = 0;
+  vi.mocked(axios.get).mockImplementation(async (url, config) => {
+    if (url.endsWith('/activity-ai/status')) return response({ enabled: true, available: true, model: 'synthetic-local', sourceCount: 0, message: 'Ready' });
+    if (url.endsWith('/images/status')) return response({ enabled: false, available: false, busy: false, model: null, message: 'Synthetic images disabled' });
+    return get(url, config);
+  });
+  vi.mocked(axios.post).mockImplementation(async (url, payload, config) => url.endsWith('/draft')
+    ? response({ model: 'synthetic-local', generatedAt: '2026-11-05T00:00:00Z', sources: [], warnings: [], drafts: [{
+      name: 'Generated public idea ' + ++generated, description: 'Prepare large objects and explore them together.', durationMinutes: 20,
+      ageMinMonths: 24, ageMaxMonths: 60, roomId: room.id, materials: [], materialsNotes: '', sourceIds: [],
+    }] }) : post(url, payload, config));
+  return () => vi.mocked(axios.post).mock.calls.filter(([url]) => url.endsWith('/draft')).map(call => call[1] as { avoidNames: string[] });
+}
+async function generateAiBatch() {
+  fireEvent.click(screen.getByRole('button', { name: 'AI activity ideas' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Create AI ideas' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Create AI ideas' }));
+  await screen.findByRole('article', { name: 'AI idea 1' });
+}
+async function closeAiBatch() {
+  fireEvent.click(screen.getByRole('button', { name: 'Close ai activity ideas' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Discard AI ideas' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'AI activity ideas' })).not.toBeInTheDocument());
+}
+
+test('closing AI ideas keeps generated-title avoidance for the same room, without mixing another room or private catalog contents', async () => {
+  const requests = mockAiIdeas(); render(<SignedIn><Activities /></SignedIn>); await chooseRoom();
+  await generateAiBatch(); await closeAiBatch();
+  await generateAiBatch(); await closeAiBatch();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Room' }), { target: { value: 'other-room' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'AI activity ideas' })).toBeEnabled());
+  await generateAiBatch(); await closeAiBatch();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Room' }), { target: { value: room.id } });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'AI activity ideas' })).toBeEnabled());
+  await generateAiBatch();
+  expect(requests().map(request => request.avoidNames)).toEqual([[], ['Generated public idea 1'], [], ['Generated public idea 1', 'Generated public idea 2']]);
+  expect(JSON.stringify(requests())).not.toContain(art.name);
+  expect(JSON.stringify(requests())).not.toContain(art.description);
+});
+
+test('changing accounts clears planner-owned generated-title history', async () => {
+  const requests = mockAiIdeas();
+  const view = render(<SignedIn><Activities /></SignedIn>); await chooseRoom();
+  await generateAiBatch(); await closeAiBatch();
+  view.rerender(<SignedIn account={{ ...testAccount, id: 'different-ideas-account' }}><Activities /></SignedIn>);
+  await generateAiBatch();
+  expect(requests().map(request => request.avoidNames)).toEqual([[], []]);
+});

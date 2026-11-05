@@ -56,6 +56,12 @@ $payload | ConvertTo-Json -Depth 5 -Compress
             self.assertNotEqual(check.returncode, 0)
             self.assertIn("AI_MEDIA_NOT_CONFIGURED", check.stderr)
             self.assertFalse((root / "local").exists())
+            diagnose = subprocess.run([PWSH, "-NoProfile", "-File", str(output), "-Diagnose"],
+                                      env=env, text=True, capture_output=True, timeout=30)
+            self.assertNotEqual(diagnose.returncode, 0)
+            self.assertIn("AI_MEDIA_DIAGNOSTIC", diagnose.stderr)
+            self.assertFalse((root / "local").exists(), "Diagnosis must not extract or create any tool files")
+            self.assertNotIn(str(root), diagnose.stdout + diagnose.stderr)
 
 
 if __name__ == "__main__":

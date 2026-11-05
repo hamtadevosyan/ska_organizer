@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import type { APIResponse, Locator, Page } from '@playwright/test';
 import type { Activity, ActivityPlan } from '../../src/api/activities';
 import type { Room } from '../../src/api/rooms';
-import { api, authenticatedApi } from './auth-helpers';
+import { api, authenticatedApi, signIn } from './auth-helpers';
 
 // This is a local HTTP substitute for the inference engine, not the Organizer
 // API. Authentication, room reads, validation, catalog saves and weekly saves
@@ -13,6 +13,7 @@ import { api, authenticatedApi } from './auth-helpers';
 let runtime: Server;
 const prompts: Record<string, unknown>[] = [];
 let stoppedRequests = 0;
+let restartRequests = 0;
 const generatedGuide = {
   purpose: 'Explore shape names while making a shared paper collage and practicing turn taking.',
   preparation: 'An adult prepares large paper shapes, a sheet of paper and washable glue at a clear table.',
@@ -27,6 +28,43 @@ const generatedGuide = {
   safety: 'An adult supervises throughout, prepares cut shapes, and keeps glue and paper away from mouths.',
   cleanup: 'Collect spare paper, put the collage aside to dry, wipe the table and help everyone wash their hands.',
 };
+// Deliberately different procedures: renaming the same collage must no longer
+// satisfy the real server's novelty checks.
+const alternateProcedures = [
+  { title: 'Shape pathway', purpose: 'Practice coordinated movement along a safe shape pathway.', preparation: 'Place large floor markers in an open walking area.', steps: [
+    'Lay a circle, triangle and square marker well apart on the clear floor.',
+    'Model walking slowly from the circle to the triangle while naming each stop.',
+    'Invite children to choose a marker and travel to it with a careful tiptoe walk.',
+    'Change the route together and let each child lead one slow journey.',
+  ] },
+  { title: 'Rhythm echoes', purpose: 'Listen and reproduce short sound patterns.', preparation: 'Gather a large hand drum and soft tapping sticks for an adult.', steps: [
+    'Gather in a seated circle and listen quietly to one soft drum tap.',
+    'Tap a short slow rhythm and invite everyone to echo it with clapping.',
+    'Ask a child to invent a clap pattern while the others listen and copy.',
+    'Alternate quiet and loud rhythms, then finish with one shared gentle beat.',
+  ] },
+  { title: 'Shadow shapes', purpose: 'Investigate how light makes shadows change.', preparation: 'Prepare a flashlight and large opaque objects beside a blank wall.', steps: [
+    'Aim the flashlight at the blank wall and show the bright patch of light.',
+    'Hold a large toy between the light and wall to reveal its dark shadow.',
+    'Move the toy closer and farther while children describe changes in size.',
+    'Invite children to select an object and predict the shadow before testing it.',
+  ] },
+  { title: 'Story puppets', purpose: 'Build oral language through shared puppet storytelling.', preparation: 'Set out large fabric puppets and an empty play stage.', steps: [
+    'Introduce a puppet who has lost a favorite hat and ask what might happen next.',
+    'Invite each child to choose a puppet voice and introduce their character.',
+    'Take turns moving the puppets through a simple beginning, problem and solution.',
+    'Retell the finished story together and let children choose a new ending.',
+  ] },
+  { title: 'Texture prints', purpose: 'Explore textured surfaces with washable paint prints.', preparation: 'Arrange large textured rollers, washable paint and a protected work surface.', steps: [
+    'Let children touch a smooth roller and a ridged roller to compare their surfaces.',
+    'Demonstrate dipping the roller lightly in washable paint and rolling across paper.',
+    'Offer a different roller so children can test how its print changes the pattern.',
+    'Display the dry prints together and invite children to identify matching textures.',
+  ] },
+];
+const guides = [{ title: 'Shape collage', ...generatedGuide }, ...alternateProcedures.map(value => ({
+  ...generatedGuide, ...value, conversationPrompts: ['What changed when you tried that?', 'What would you like to try next?'],
+}))];
 const tutorial = {
   title: 'Create Colorful Collages to Learn About Shapes', publisher: 'PBS SoCal — Family Math',
   url: 'https://www.pbs.org/video/create-colorful-collages-to-learn-about-shapes/',
@@ -45,17 +83,25 @@ test.beforeAll(async () => {
     const prompt = JSON.parse(input.prompt) as Record<string, unknown>;
     prompts.push(prompt);
     if (prompt.theme === 'Synthetic outage') return send({ error: 'Synthetic unavailable engine' }, 503);
+    if (prompt.theme === 'Synthetic worker restart') {
+      restartRequests++;
+      return restartRequests === 1 ? send({ code: 'AI_BUSY' }, 429) : send({ code: 'WORKER_RESTART_REQUIRED' }, 503);
+    }
     if (prompt.theme === 'Slow sorting') {
       response.once('close', () => { stoppedRequests++; });
       return; // The test must cancel the request; no timeout sleeps are needed.
     }
     const avoided = new Set(Array.isArray(prompt.avoidNames) ? prompt.avoidNames : []);
-    let next = 1;
+    let next = Math.max(0, ...[...avoided].map(value => Number(String(value).match(/(\d+)$/)?.[1] || 0))) + 1;
     const drafts = Array.from({ length: Number(prompt.activityCount) }, () => {
-      let name: string;
-      do { name = 'Shape collage ' + prompt.theme + ' ' + next++; } while (avoided.has(name));
+      let name: string, guide: typeof guides[number];
+      do {
+        guide = guides[(next - 1) % guides.length];
+        name = guide.title + ' ' + prompt.theme + ' ' + next++;
+      } while (avoided.has(name));
       avoided.add(name);
-      return { name, ...generatedGuide,
+      const instructions = Object.fromEntries(Object.entries(guide).filter(([key]) => key !== 'title'));
+      return { name, ...instructions,
         durationMinutes: prompt.durationMinutes,
         materialsNotes: 'Large colored shapes; review quantities and link available Inventory materials before planning.',
         sourceIds: Array.isArray(prompt.sources) && prompt.sources.some(value => value.id === 'synthetic-turn-taking') ? ['synthetic-turn-taking'] : [],
@@ -74,16 +120,17 @@ async function data<T>(response: APIResponse, status = 200): Promise<T> {
   expect(response.status(), await response.text()).toBe(status);
   return (await response.json()).data as T;
 }
-async function setup(page: Page) {
-  const http = await authenticatedApi(page);
+async function setup(page: Page, { extraRoom = false, freshSession = false } = {}) {
+  const http = await authenticatedApi(page, { freshSession });
   const suffix = randomUUID().slice(0, 8);
   const room = await data<Room>(await http.post(api + '/rooms', { data: { name: 'Private room name ' + suffix, ageMinMonths: 24, ageMaxMonths: 60, capacity: 12 } }), 201);
   const stock = await data<{ id: string; quantity: string }>(await http.post(api + '/inventory', { data: { name: 'Shapes ' + suffix, category: 'Classroom', location: 'Cupboard', unit: 'count', openingQuantity: '10', reorderThreshold: '0', reason: 'Synthetic browser stock', requestId: randomUUID() } }), 201);
+  const otherRoom = extraRoom ? await data<Room>(await http.post(api + '/rooms', { data: { name: 'Other idea room ' + suffix, ageMinMonths: 24, ageMaxMonths: 60, capacity: 12 } }), 201) : null;
   await page.goto('/activities');
   await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
   await page.getByLabel('Week starting Monday', { exact: true }).fill(week);
   await expect(page.getByRole('button', { name: 'AI activity ideas', exact: true })).toBeEnabled();
-  return { http, room, stock, suffix };
+  return { http, room, otherRoom, stock, suffix };
 }
 const getPlan = (http: Http, room: Room) => http.get(`${api}/schedule/plan?roomId=${room.id}&weekStart=${week}`).then(response => data<ActivityPlan>(response));
 const catalog = (http: Http) => http.get(api + '/activity').then(response => data<Activity[]>(response));
@@ -92,6 +139,11 @@ async function open(page: Page) {
   const dialog = page.getByRole('dialog', { name: 'AI activity ideas', exact: true });
   await expect(dialog.getByRole('button', { name: 'Create AI ideas', exact: true })).toBeEnabled();
   return dialog;
+}
+async function discard(dialog: Locator) {
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Discard AI ideas', exact: true }).click();
+  await expect(dialog).toBeHidden();
 }
 async function fits(page: Page, dialog: Locator) {
   await expect.poll(() => page.evaluate(() => document.fonts.status)).toBe('loaded');
@@ -235,8 +287,8 @@ test('create more sends recent suggestion names and shows a different batch with
   expect(secondNames.every(name => !firstNames.includes(name))).toBe(true);
   const idea = dialog.getByRole('article', { name: 'AI idea 1', exact: true });
   await expect(idea).toContainText(secondNames[0]);
-  await expect(idea).toContainText(generatedGuide.steps[3]);
-  await expect(idea.getByRole('link', { name: new RegExp(tutorial.title) })).toHaveAttribute('href', tutorial.url);
+  await expect(idea).toContainText(alternateProcedures[2].steps[3]);
+  await expect(idea.getByRole('link', { name: /Search YouTube for how-to videos/ })).toHaveAttribute('href', /^https:\/\/www\.youtube\.com\/results\?/);
   const prompt = prompts.at(-1)!;
   expect(prompt.avoidNames).toEqual(firstNames);
   expect(JSON.stringify(prompt)).not.toContain(privateTitle);
@@ -269,4 +321,105 @@ test('an unavailable local engine leaves the manual planner usable and a cancell
   await expect(dialog.getByRole('article', { name: 'AI idea 1', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Create AI ideas', exact: true })).toBeEnabled();
   expect(await getPlan(http, room)).toEqual(original);
+});
+
+test('closing and reopening ideas keeps recent titles only for their selected room', async ({ page }) => {
+  test.setTimeout(45000); await page.setViewportSize({ width: 390, height: 900 });
+  const { room, otherRoom, suffix } = await setup(page, { extraRoom: true });
+  const theme = 'Reopen ideas ' + suffix;
+  async function createOne(expectedNames: string[]) {
+    const dialog = await open(page);
+    await dialog.getByLabel('Theme (optional)', { exact: true }).fill(theme);
+    await dialog.getByLabel('Number of ideas', { exact: true }).fill('1');
+    const requested = page.waitForRequest(request => request.url() === api + '/activity-ai/draft' && request.method() === 'POST');
+    const drafted = page.waitForResponse(response => response.url() === api + '/activity-ai/draft' && response.request().method() === 'POST');
+    await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+    expect((await requested).postDataJSON().avoidNames).toEqual(expectedNames);
+    const result = await data<{ drafts: Activity[] }>(await drafted);
+    await expect(dialog.getByRole('article', { name: 'AI idea 1', exact: true })).toContainText(result.drafts[0].name);
+    await discard(dialog);
+    return result.drafts[0];
+  }
+  const first = await createOne([]);
+  const second = await createOne([first.name]);
+  expect(second.name).not.toBe(first.name); expect(second.description).not.toBe(first.description);
+  await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(otherRoom!.id);
+  const other = await createOne([]);
+  expect(other.name).toBe(first.name); // A different room has its own suggestion history.
+  await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
+  const third = await createOne([first.name, second.name]);
+  expect([first.name, second.name]).not.toContain(third.name);
+});
+
+test('failed regeneration explicitly labels the retained previous batch', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const { http } = await setup(page); const before = await catalog(http);
+  const dialog = await open(page);
+  await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Original ideas');
+  await dialog.getByLabel('Number of ideas', { exact: true }).fill('1');
+  await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+  const idea = dialog.getByRole('article', { name: 'AI idea 1', exact: true });
+  await expect(idea).toContainText('Shape collage');
+  const title = await idea.getByRole('heading', { name: /^Shape collage Original ideas / }).textContent();
+  await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Synthetic outage');
+  await dialog.getByRole('button', { name: 'Create more AI ideas', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Your previous ideas', exact: true })).toBeVisible();
+  await expect(dialog).toContainText('No new ideas were returned. These are your previous ideas, kept so you can still review or save them.');
+  await expect(idea.getByRole('heading', { name: title!, exact: true })).toBeVisible();
+  await expect(idea.getByRole('button', { name: 'Review idea 1', exact: true })).toBeEnabled();
+  await expect(dialog.locator('.app-modal-pending')).toHaveCount(0);
+  expect(await catalog(http)).toEqual(before);
+});
+
+test('a worker restart requirement ends a busy wait instead of repeatedly retrying', async ({ page }) => {
+  test.setTimeout(30000); await page.setViewportSize({ width: 390, height: 780 });
+  await setup(page); restartRequests = 0;
+  const dialog = await open(page);
+  await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Synthetic worker restart');
+  const failed = page.waitForResponse(async response => response.url() === api + '/activity-ai/draft' && response.status() === 424);
+  await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+  await expect(dialog.getByRole('status')).toContainText('Waiting for your activity ideas');
+  const response = await failed;
+  expect((await response.json()).error.code).toBe('AI_WORKER_RESTART_REQUIRED');
+  await expect(dialog.getByRole('alert')).toContainText('The private AI worker needs to be restarted on the AI laptop before using AI again.');
+  await expect(dialog.getByRole('alert')).toBeInViewport();
+  await expect(dialog.locator('.app-modal-pending')).toHaveCount(0);
+  await expect(dialog.getByRole('article')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Try AI generation again', exact: true })).toBeEnabled();
+  await page.clock.install(); await page.clock.fastForward(30000);
+  expect(restartRequests).toBe(2);
+});
+
+test('switching accounts does not send another account’s recent generated titles', async ({ page }) => {
+  test.setTimeout(45000); await page.setViewportSize({ width: 1280, height: 900 });
+  const { http, room, suffix } = await setup(page, { freshSession: true });
+  const username = 'ideas-editor-' + suffix;
+  const temporaryPassword = 'Synthetic temporary ideas password 20!';
+  const changedPassword = 'Synthetic changed ideas password 20!';
+  await data(await http.post(api + '/admin/accounts', { data: { username, displayName: 'Ideas editor ' + suffix,
+    role: 'editor', password: temporaryPassword, documentAccess: 'none', roomId: null, staffMemberId: null } }), 201);
+  const dialog = await open(page);
+  await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Account scoped ideas');
+  await dialog.getByLabel('Number of ideas', { exact: true }).fill('1');
+  await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+  await expect(dialog.getByRole('article', { name: 'AI idea 1', exact: true })).toContainText('Shape collage');
+  await discard(dialog);
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await signIn(page, username, temporaryPassword);
+  await page.getByLabel('Current password', { exact: true }).fill(temporaryPassword);
+  await page.getByLabel('New password', { exact: true }).fill(changedPassword);
+  await page.getByLabel('Confirm new password', { exact: true }).fill(changedPassword);
+  await page.getByRole('button', { name: 'Save password', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Change password', exact: true })).toHaveCount(0);
+  await page.goto('/activities');
+  await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
+  const next = await open(page);
+  await next.getByLabel('Theme (optional)', { exact: true }).fill('Account scoped ideas');
+  await next.getByLabel('Number of ideas', { exact: true }).fill('1');
+  const request = page.waitForRequest(value => value.url() === api + '/activity-ai/draft' && value.method() === 'POST');
+  await next.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+  expect((await request).postDataJSON().avoidNames).toEqual([]);
+  await expect(next.getByRole('article', { name: 'AI idea 1', exact: true })).toContainText('Shape collage');
+  expect(prompts.at(-1)?.avoidNames).toEqual([]);
 });

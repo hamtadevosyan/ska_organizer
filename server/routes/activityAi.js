@@ -35,7 +35,7 @@ function handle(operation) {
 }
 
 router.get('/status', handle((req, signal) => service.status({ signal })));
-router.post('/draft', handle((req, signal) => service.draft(req.body, { signal })));
+router.post('/draft', handle((req, signal) => service.draft(req.body, { signal, accountId: req.account.id })));
 router.get('/images/status', handle((req, signal) => media.status({ signal })));
 router.post('/images/jobs', handle((req, signal) => media.createJob(req.sessionToken, req.body, { signal })));
 router.get('/images/jobs/:id', handle(req => media.getJob(req.sessionToken, req.params.id)));

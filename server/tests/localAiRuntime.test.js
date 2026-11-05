@@ -1,4 +1,5 @@
 const https = require('node:https');
+const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -65,4 +66,47 @@ test('runtime cannot select management paths or send an oversized context', asyn
   const config = { url: new URL('http://127.0.0.1:1') };
   await expect(runtime.jsonRequest(config, 'POST', '/api/pull', {}, AbortSignal.timeout(1000))).rejects.toMatchObject({ code: 'AI_LOCAL_ONLY_REQUIRED' });
   await expect(runtime.jsonRequest(config, 'POST', '/api/generate', { prompt: 'x'.repeat(65536) }, AbortSignal.timeout(1000))).rejects.toMatchObject({ code: 'AI_CONTEXT_TOO_LARGE' });
+});
+
+test('a truncated text response rejects before its deadline and releases admission for a later request', async () => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '1000' });
+    res.write('{"done":'); setImmediate(() => res.destroy());
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const config = { url: new URL('http://127.0.0.1:' + server.address().port) }, signal = AbortSignal.timeout(1000);
+  try {
+    await expect(runtime.generate(() => runtime.jsonRequest(config, 'POST', '/api/generate', { model: 'synthetic' }, signal)))
+      .rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
+    expect(signal.aborted).toBe(false);
+    expect(await runtime.generate(async () => 'free')).toBe('free');
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('rejecting oversized text preserves its validation code before closing the response and frees admission', async () => {
+  const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end('x'.repeat(270000)); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const config = { url: new URL('http://127.0.0.1:' + server.address().port) }, signal = AbortSignal.timeout(1000);
+  try {
+    await expect(runtime.generate(() => runtime.jsonRequest(config, 'POST', '/api/generate', {}, signal)))
+      .rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE', message: 'The local AI returned too much data. Try fewer activity ideas.' });
+    expect(signal.aborted).toBe(false);
+    expect(await runtime.generate(async () => 'free')).toBe('free');
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('a protected worker restart requirement ends waiting with a safe action rather than ordinary busy', async () => {
+  let body = { code: 'WORKER_RESTART_REQUIRED', message: 'PRIVATE prompt and filesystem path' };
+  const server = http.createServer((req, res) => { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const config = { url: new URL('http://127.0.0.1:' + server.address().port) };
+  try {
+    const failure = await runtime.jsonRequest(config, 'POST', '/api/generate', { model: 'synthetic' }, AbortSignal.timeout(1000)).catch(error => error);
+    expect(failure).toMatchObject({ code: 'AI_WORKER_RESTART_REQUIRED' });
+    expect(failure.message).toMatch(/restarted/); expect(failure.message).not.toContain('PRIVATE');
+    body = { code: 'PRIVATE arbitrary code', message: 'PRIVATE reason' };
+    await expect(runtime.jsonRequest(config, 'POST', '/api/generate', {}, AbortSignal.timeout(1000))).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
+    body = { code: 'WORKER_RESTART_REQUIRED', message: 'x'.repeat(5000) };
+    await expect(runtime.jsonRequest(config, 'POST', '/api/generate', {}, AbortSignal.timeout(1000))).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
+  } finally { await new Promise(resolve => server.close(resolve)); }
 });

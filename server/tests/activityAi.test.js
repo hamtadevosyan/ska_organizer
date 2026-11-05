@@ -40,7 +40,7 @@ test('administrator can inspect readiness and prepare an ephemeral draft behind 
   const response = await fixture(app).post('/api/activity-ai/draft').send(payload);
   expect(response.status).toBe(200); expect(response.body.data).toEqual(result);
   expect(response.headers['cache-control']).toBe('no-store');
-  expect(draft).toHaveBeenCalledWith(payload, { signal: expect.any(AbortSignal) });
+  expect(draft).toHaveBeenCalledWith(payload, { signal: expect.any(AbortSignal), accountId: fixture.credentials().account.id });
   const ready = await fixture(app).get('/api/activity-ai/status');
   expect(ready.status).toBe(200); expect(ready.body.data).toEqual(status);
 });

@@ -112,6 +112,8 @@ test('failed requests keep the last successful history without adding rejected s
     .mockRejectedValueOnce(new Error('Synthetic unavailable generation'));
   render(<ActivityAiIdeas {...props()} />); await draft();
   createMore(); await screen.findByRole('alert');
+  expect(screen.getByRole('heading', { name: 'Your previous ideas' })).toBeVisible();
+  expect(screen.getByText('No new ideas were returned. These are your previous ideas, kept so you can still review or save them.')).toBeVisible();
   createMore(); await waitFor(() => expect(draftCalls()).toHaveLength(3));
   expect(draftCalls()[2][1]).toMatchObject({ avoidNames: ['Rhythm parade'] });
 });
@@ -131,10 +133,22 @@ test('cancelled and stale responses never enter history or replace a newer reque
   expect(draftCalls()[3][1]).toMatchObject({ avoidNames: ['Rhythm parade', 'Puppet story'] });
 });
 
-test('closing and reopening the ideas dialog starts a fresh temporary history', async () => {
+test('a standalone dialog has no history outside its planner owner', async () => {
   const first = render(<ActivityAiIdeas {...props()} />); await draft(); first.unmount();
   render(<ActivityAiIdeas {...props()} />); await draft();
   expect(draftCalls()[1][1]).toMatchObject({ avoidNames: [] });
+});
+
+test('the planner owner can preserve generated titles across closing and reopening without reading library records', async () => {
+  let remembered: string[] = [];
+  const remember = vi.fn((names: string[]) => { remembered = names; });
+  const first = render(<ActivityAiIdeas {...props()} rememberedNames={remembered} onRememberNames={remember} />);
+  await draft(); first.unmount();
+  expect(remember).toHaveBeenCalledWith(['Autumn color detectives']);
+  render(<ActivityAiIdeas {...props()} rememberedNames={remembered} onRememberNames={remember} />); await draft();
+  expect(draftCalls()[1][1]).toMatchObject({ avoidNames: ['Autumn color detectives'] });
+  expect(remembered).toEqual(['Autumn color detectives']);
+  expect(vi.mocked(axios.get).mock.calls.every(([url]) => url.endsWith('/status'))).toBe(true);
 });
 
 test('an unsourced idea opens with its full instructions and saves the trailing review notice', async () => {

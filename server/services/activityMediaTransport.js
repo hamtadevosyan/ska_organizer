@@ -30,19 +30,32 @@ function request(config, method, path, value, signal, binary = false) {
       }, res => {
         const status = res.statusCode;
         if (![200, 202].includes(status) || !(binary ? /^image\/png(?:;|$)/i : /^application\/json(?:;|$)/i).test(res.headers['content-type'] || '')) {
-          res.destroy();
+          if (status === 503 && /^application\/json(?:;|$)/i.test(res.headers['content-type'] || '')) {
+            const chunks = []; let size = 0;
+            const interrupted = () => reject(signal?.aborted ? signal.reason : unavailable());
+            res.on('data', chunk => { size += chunk.length; if (size > 4096) { reject(unavailable()); res.destroy(); } else chunks.push(chunk); });
+            res.once('end', () => {
+              let restart = false;
+              try { restart = JSON.parse(Buffer.concat(chunks).toString('utf8'))?.code === 'WORKER_RESTART_REQUIRED'; } catch { /* Unknown failures stay generic. */ }
+              reject(Object.assign(unavailable(), restart ? { workerCode: 'WORKER_RESTART_REQUIRED' } : {}));
+            });
+            res.once('error', interrupted); res.once('aborted', interrupted);
+            res.once('close', () => { if (!res.complete) interrupted(); });
+            return;
+          }
           if (status === 429) reject(Object.assign(issue('AI_BUSY', 'Another AI request is running. Try again shortly.'), { status: 429, retryAfter: 5 }));
           else reject(unavailable());
+          res.destroy();
           return;
         }
-        if (res.headers['content-encoding'] && res.headers['content-encoding'] !== 'identity') { res.destroy(); reject(unavailable()); return; }
+        if (res.headers['content-encoding'] && res.headers['content-encoding'] !== 'identity') { reject(unavailable()); res.destroy(); return; }
         if (res.headers['content-length'] && (!/^\d+$/.test(res.headers['content-length']) || Number(res.headers['content-length']) > limit)) {
-          res.destroy(); reject(unavailable()); return;
+          reject(unavailable()); res.destroy(); return;
         }
         const chunks = []; let size = 0;
         res.on('data', chunk => {
           size += chunk.length;
-          if (size > limit) { res.destroy(); reject(unavailable()); }
+          if (size > limit) { reject(unavailable()); res.destroy(); }
           else chunks.push(chunk);
         });
         res.once('end', () => {
@@ -51,7 +64,10 @@ function request(config, method, path, value, signal, binary = false) {
             resolve(binary ? body : JSON.parse(body.toString('utf8')));
           } catch { reject(unavailable()); }
         });
-        res.once('error', () => reject(signal?.aborted ? signal.reason : unavailable()));
+        const interrupted = () => reject(signal?.aborted ? signal.reason : unavailable());
+        res.once('error', interrupted);
+        res.once('aborted', interrupted);
+        res.once('close', () => { if (!res.complete) interrupted(); });
       });
       req.once('error', () => reject(signal?.aborted ? signal.reason : unavailable()));
       req.end(payload);

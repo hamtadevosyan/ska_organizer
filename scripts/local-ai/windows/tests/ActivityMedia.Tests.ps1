@@ -218,6 +218,94 @@ Assert-MediaTrue $true 'literal Any package filter remains accepted'
     $foreign = Get-MediaTree $script:Context.Root
     Assert-MediaThrows { Invoke-SkaoActivityMediaSetup } 'AI_MEDIA_CONFLICT:*' 'new package identity requires an explicit reviewed migration'
     Assert-MediaTrue ((Get-MediaTree $script:Context.Root) -ceq $foreign) 'package drift preserves the installed worker'
+
+    # Explicit updates recognize only the pinned previous source and close the
+    # already verified gateway ingress while the owned worker is switched.
+    $script:PreviousSources = $sources
+    function Get-SkaoActivityMediaPreviousSources { return $script:PreviousSources }
+    $script:GatewayTask = Copy-MediaObject $script:Task
+    $script:GatewayTask.Actions[0].WorkingDirectory = $script:Context.GatewayRoot
+    $script:GatewayTask.Actions[0].Arguments = '/d /c ""' + (Join-Path $script:Context.GatewayRoot 'Run-Gateway.cmd') + '""'
+    $script:GatewayTask.Triggers[0].Delay = 'PT45S'
+    $script:WorkerStatus = [pscustomobject]@{ enabled = $true; available = $true; busy = $false; model = 'sd_xl_base_1.0.safetensors'; version = 1 }
+    $script:Events = @(); $script:Residual = $false; $script:InspectionError = $false
+    function Invoke-SkaoActivityMediaStatus { param($Token, [switch]$AllowUnavailable) return $script:WorkerStatus }
+    function Get-ScheduledTask {
+        [CmdletBinding()]param($TaskName, $TaskPath)
+        if ($TaskName -eq 'SKAO AI Gateway') { return $script:GatewayTask }
+        if ($script:TaskPresent) { return $script:Task }
+    }
+    function Start-ScheduledTask {
+        [CmdletBinding()]param($TaskName, $TaskPath)
+        $script:Events += 'start:' + $TaskName
+        if ($TaskName -eq 'SKAO AI Gateway') { $script:GatewayTask.State = 'Running' }
+        else { $script:Starts++; $script:Task.State = 'Running' }
+    }
+    function Stop-ScheduledTask {
+        [CmdletBinding()]param($TaskName, $TaskPath)
+        $script:Events += 'stop:' + $TaskName
+        if ($TaskName -eq 'SKAO AI Gateway') { $script:GatewayTask.State = 'Ready' }
+        else { $script:Task.State = 'Ready' }
+    }
+    function Get-CimInstance {
+        [CmdletBinding()]param($ClassName, $Filter, $OperationTimeoutSec)
+        Assert-MediaTrue ($ClassName -ceq 'Win32_Process' -and $Filter -ceq "Name = 'python.exe'") 'process verification uses the fixed managed Python query'
+        if ($script:InspectionError) { throw 'SYNTHETIC PRIVATE QUERY ERROR' }
+        if ($script:Residual) { return [pscustomobject]@{ ExecutablePath = (Join-Path $script:Context.ImageRoot 'runtime/ComfyUI_windows_portable/python_embeded/python.exe') } }
+        return @()
+    }
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Recover } 'AI_MEDIA_OPTIONS:*' 'recover requires explicit update'
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Check -Update } 'AI_MEDIA_OPTIONS:*' 'check cannot mutate through update'
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup } 'AI_MEDIA_UPDATE_REQUIRED:*' 'recognized prior package requires explicit update'
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Check } 'AI_MEDIA_UPDATE_REQUIRED:*' 'check does not silently migrate the prior package'
+    $script:WorkerStatus.busy = $true
+    $before = Get-MediaTree $script:Context.Root
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Update } 'AI_MEDIA_BUSY:*' 'default update refuses ongoing AI work'
+    Assert-MediaTrue ($script:Events.Count -eq 0 -and (Get-MediaTree $script:Context.Root) -ceq $before) 'busy refusal stops no tasks and changes no files'
+    $script:WorkerStatus.available = $false
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Update } 'AI_MEDIA_RECOVERY_REQUIRED:*' 'uncertain worker needs explicit recovery'
+    Assert-MediaTrue ($script:Events.Count -eq 0) 'uncertain default update does not stop any process'
+    $script:Residual = $true
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Update -Recover } 'AI_MEDIA_RESIDUAL_PROCESS:*' 'recovery never overlaps a residual managed Python process'
+    Assert-MediaTrue ($script:Task.State -ceq 'Ready' -and $script:GatewayTask.State -ceq 'Running' -and
+        @($script:Events | Where-Object { $_ -ceq 'start:SKAO Activity Images' }).Count -eq 0) 'residual process refusal restores gateway but starts no worker'
+    Assert-MediaTrue ((Get-MediaTree $script:Context.Root) -ceq $before) 'residual process refusal keeps installed source and settings'
+    $script:Residual = $false; $script:InspectionError = $true; $script:Events = @()
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Update -Recover } 'AI_MEDIA_PROCESS_INSPECTION:*' 'query failure cannot prove safe recovery'
+    Assert-MediaTrue (@($script:Events | Where-Object { $_ -ceq 'start:SKAO Activity Images' }).Count -eq 0 -and $script:GatewayTask.State -ceq 'Running') 'inspection failure starts no worker and restores gateway'
+    $script:InspectionError = $false
+    $script:Events = @(); $script:WorkerReady = $false
+    $oldLauncher = [IO.File]::ReadAllText((Join-Path $script:Context.Root 'Run-ActivityMedia.cmd'))
+    $oldReceipt = [IO.File]::ReadAllText((Join-Path $script:Context.Root 'setup.json'))
+    Assert-MediaThrows { Invoke-SkaoActivityMediaSetup -Update -Recover } 'AI_MEDIA_STATUS:*' 'failed startup restores the previous recognized worker files'
+    Assert-MediaTrue ([IO.File]::ReadAllText((Join-Path $script:Context.Root 'Run-ActivityMedia.cmd')) -ceq $oldLauncher -and
+        [IO.File]::ReadAllText((Join-Path $script:Context.Root 'setup.json')) -ceq $oldReceipt) 'rollback restores both launcher and receipt'
+    Assert-MediaTrue ($script:GatewayTask.State -ceq 'Running') 'rollback restores gateway ingress'
+    $script:WorkerReady = $true; $script:Events = @()
+    $beforeConfig = (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash
+    $beforeRegistrations = $script:Registrations; $beforeRules = $script:RuleWrites; $script:ChildCalls = @()
+    Invoke-SkaoActivityMediaSetup -Update -Recover | Out-Null
+    $updatedSources = Get-SkaoActivityMediaSources -Context $script:Context
+    Assert-SkaoActivityMediaInstallation -Context $script:Context -Sources $updatedSources -Token $token -Complete
+    Assert-MediaTrue ($script:Events[0] -ceq 'stop:SKAO AI Gateway' -and $script:Events[-1] -ceq 'start:SKAO AI Gateway') 'gateway ingress stays paused during controlled worker replacement'
+    Assert-MediaTrue ($script:Task.State -ceq 'Running' -and $script:GatewayTask.State -ceq 'Running') 'verified update restarts only managed tasks'
+    Assert-MediaTrue ($script:Registrations -eq $beforeRegistrations -and $script:RuleWrites -eq $beforeRules -and
+        (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash -ceq $beforeConfig) 'update preserves credentials firewall rules token and private configuration'
+    Assert-MediaTrue (@($script:ChildCalls | Where-Object { !$_.Options.Check }).Count -eq 0) 'update never changes gateway model or runtime setup'
+    Assert-MediaTrue (@(Get-ChildItem -LiteralPath (Join-Path $script:Context.Root 'updates') -Filter '*.json' -Recurse).Count -ge 2) 'update retains private rollback receipts'
+    $script:WorkerStatus.available = $true; $script:WorkerStatus.busy = $false
+    Invoke-SkaoActivityMediaSetup -Check | Out-Null
+
+    # Diagnosis emits a small allowlisted summary, never private prompt fields.
+    $jobDirectory = Join-Path $script:Context.Root 'jobs/11111111-1111-4111-8111-111111111111'
+    [void](New-Item -ItemType Directory -Path $jobDirectory)
+    [IO.File]::WriteAllText((Join-Path $jobDirectory 'job.json'), '{"version":1,"status":"failed","code":"IMAGE_OOM","completed":0,"total":2,"name":"SYNTHETIC_PRIVATE_NAME","message":"SYNTHETIC_PRIVATE_MESSAGE","frames":[{"caption":"SYNTHETIC_PRIVATE_CAPTION"}]}')
+    $before = Get-MediaTree $script:Context.Root; $beforeEvents = $script:Events.Count
+    $diagnosis = Invoke-SkaoActivityMediaSetup -Diagnose
+    $diagnostic = $diagnosis | ConvertFrom-Json
+    Assert-MediaTrue ($diagnostic.RecentJobs.Count -eq 1 -and $diagnostic.RecentJobs[0].Code -ceq 'IMAGE_OOM') 'diagnostics retain the safe failure stage'
+    Assert-MediaTrue ($diagnosis -notmatch 'SYNTHETIC_PRIVATE|[a-z]:\\|token|caption|requestHash|name' -and $diagnosis -notmatch [regex]::Escape($script:Context.Root)) 'diagnostics expose no token prompt file path or arbitrary message'
+    Assert-MediaTrue ((Get-MediaTree $script:Context.Root) -ceq $before -and $script:Events.Count -eq $beforeEvents) 'diagnosis is read-only and starts no inference or tasks'
 }
 finally {
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }

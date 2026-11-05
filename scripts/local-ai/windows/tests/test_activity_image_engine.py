@@ -33,13 +33,15 @@ def image_png():
 
 
 class FakeProcess:
-    def __init__(self, command, *, pending=False, reject=False, cuda=True, **kwargs):
+    def __init__(self, command, *, pending=False, reject=False, cuda=True, history_failures=0, oom=False, **kwargs):
         self.command = command
         self.options = kwargs
         self.returncode = None
         self.stopped = False
         self.workflows = []
         self.jobs = {}
+        self.history_failures = history_failures
+        self.history_reads = 0
         self.raw = Path(command[command.index("--output-directory") + 1])
         process = self
         class Handler(BaseHTTPRequestHandler):
@@ -47,8 +49,16 @@ class FakeProcess:
                 if self.path == "/system_stats":
                     self.respond({"devices": [{"type": "cuda"}] if cuda else []})
                 elif self.path.startswith("/history/"):
+                    process.history_reads += 1
+                    if process.history_failures:
+                        process.history_failures -= 1
+                        self.respond({}, 503)
+                        return
                     job_id = self.path.rsplit("/", 1)[-1]
-                    self.respond({} if pending else {job_id: process.jobs[job_id]})
+                    failure = {"status": {"status_str": "error", "completed": False, "messages": [["execution_error", {
+                        "exception_type": "torch.OutOfMemoryError", "exception_message": "PRIVATE-SYNTHETIC-PROMPT",
+                        "inputs": {"prompt": "PRIVATE-SYNTHETIC-PROMPT"}}]]}}
+                    self.respond({} if pending else {job_id: failure if oom else process.jobs[job_id]})
                 else:
                     self.respond({}, 404)
 
@@ -120,14 +130,14 @@ class GenericEngineTests(unittest.TestCase):
         return directory
 
     @contextmanager
-    def fixtures(self, *, loaded=False, pending=False, reject=False, cuda=True):
+    def fixtures(self, *, loaded=False, pending=False, reject=False, cuda=True, history_failures=0, oom=False):
         original_client = self.helpers.LocalJsonClient
         def client(base):
             if base == "http://127.0.0.1:11434":
                 return SimpleNamespace(request=lambda path, **kwargs: {"models": [{"name": "in use"}] if loaded else []})
             return original_client(base)
         def process(*args, **kwargs):
-            child = FakeProcess(*args, pending=pending, reject=reject, cuda=cuda, **kwargs)
+            child = FakeProcess(*args, pending=pending, reject=reject, cuda=cuda, history_failures=history_failures, oom=oom, **kwargs)
             self.processes.append(child)
             return child
         with patch.object(self.helpers, "LocalJsonClient", side_effect=client), \
@@ -239,6 +249,39 @@ class GenericEngineTests(unittest.TestCase):
             self.assertEqual(error.exception.code, code)
             self.assertNotIn("Private synthetic", str(error.exception))
             self.assertTrue(self.processes[-1].stopped)
+
+    def test_transient_history_failure_retries_only_the_read_without_resubmitting_prompt(self):
+        with self.fixtures(history_failures=1):
+            frames = self.engine.generate("Paper shapes", ["Put the large shapes on the table."], self.job(), threading.Event())
+        self.assertEqual(len(frames), 1)
+        self.assertGreaterEqual(self.processes[-1].history_reads, 2)
+        self.assertEqual(len(self.processes[-1].workflows), 1)
+        self.assertTrue(self.processes[-1].stopped)
+
+    def test_persistent_history_failure_is_bounded_and_stops_its_owned_process(self):
+        self.engine.image_timeout = 10
+        with self.fixtures(history_failures=100), self.assertRaises(ENGINE.EngineError) as error:
+            self.engine.generate("Paper shapes", ["Put the shapes on the table."], self.job(), threading.Event())
+        self.assertEqual(error.exception.code, "IMAGE_CONNECTION")
+        self.assertFalse(error.exception.cleanup_failed)
+        self.assertEqual(self.processes[-1].history_reads, 3)
+        self.assertEqual(len(self.processes[-1].workflows), 1)
+        self.assertTrue(self.processes[-1].stopped)
+
+    def test_oom_history_is_classified_without_exposing_runtime_messages_or_inputs(self):
+        with self.fixtures(oom=True), self.assertRaises(ENGINE.EngineError) as error:
+            self.engine.generate("Paper shapes", ["Put the shapes on the table."], self.job(), threading.Event())
+        self.assertEqual(error.exception.code, "IMAGE_OOM")
+        self.assertNotIn("PRIVATE-SYNTHETIC", str(error.exception))
+        self.assertTrue(self.processes[-1].stopped)
+
+    def test_runtime_probe_timeout_has_safe_diagnostic_and_never_starts_gpu(self):
+        with self.fixtures(), patch.object(ENGINE.subprocess, "run", side_effect=subprocess.TimeoutExpired("PRIVATE-SYNTHETIC-PATH", 45)), \
+             self.assertRaises(ENGINE.EngineError) as error:
+            self.engine.generate("Paper shapes", ["Put the shapes on the table."], self.job(), threading.Event())
+        self.assertEqual(error.exception.code, "IMAGE_RUNTIME_TIMEOUT")
+        self.assertNotIn("PRIVATE-SYNTHETIC", str(error.exception))
+        self.assertFalse(self.processes)
 
     def test_uncertain_cleanup_is_explicit_for_worker_gate_poisoning(self):
         with self.fixtures(), patch.object(FakeProcess, "terminate", side_effect=OSError("synthetic")), \

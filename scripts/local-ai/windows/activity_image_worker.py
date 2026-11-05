@@ -44,6 +44,27 @@ JOB_TTL = 24 * 60 * 60
 TOMBSTONE_TTL = 300
 MAX_TOMBSTONES = 64
 
+# Public diagnostics are authored here, never copied from runtime exceptions,
+# which can contain prompts, workflow inputs or private installation paths.
+IMAGE_FAILURES = {
+    "AI_BUSY": "A text model is still loaded. Wait for it to unload before creating pictures.",
+    "IMAGE_UNAVAILABLE": "The installed image model or runtime is unavailable.",
+    "IMAGE_RUNTIME": "The installed image runtime could not pass its launch check.",
+    "IMAGE_RUNTIME_TIMEOUT": "The image runtime launch check timed out before picture generation started.",
+    "IMAGE_CONTAINMENT": "The image process could not be safely contained.",
+    "IMAGE_DIRECTORY": "The private image job folder could not be used.",
+    "IMAGE_PROCESS": "The image process stopped before the pictures were ready.",
+    "IMAGE_STARTUP_TIMEOUT": "The image process did not become ready before its startup limit.",
+    "IMAGE_CUDA": "The image process could not use the NVIDIA GPU.",
+    "IMAGE_CONNECTION": "The owned image process stopped responding before the pictures were ready.",
+    "IMAGE_WORKFLOW": "The image process could not accept the picture instructions.",
+    "IMAGE_RESPONSE": "The image process returned an unsupported result.",
+    "IMAGE_TIMEOUT": "The image process reached its picture generation time limit.",
+    "IMAGE_OOM": "The image process ran out of GPU memory. Close other GPU work before retrying pictures.",
+    "IMAGE_INVALID": "The generated picture could not be verified.",
+    "IMAGE_GENERATION": "The image process could not finish the picture.",
+}
+
 
 class Problem(RuntimeError):
     def __init__(self, status, code, message):
@@ -265,8 +286,17 @@ class WorkerState:
 
     def status(self):
         available = not self.poisoned and self.engine.available()
-        return {"enabled": True, "available": available, "busy": self.gate.locked(), "model": ENGINE.MODEL_FILE, "version": 1,
-                "message": "Local activity illustrations are ready." if available else "Local activity illustrations are unavailable. Check the AI worker setup."}
+        value = {"enabled": True, "available": available, "busy": self.gate.locked(), "model": ENGINE.MODEL_FILE, "version": 1,
+                 "message": "Local activity illustrations are ready." if available else "Local activity illustrations are unavailable. Check the AI worker setup."}
+        if self.poisoned:
+            value.update(code="WORKER_RESTART_REQUIRED", message="The AI worker needs a restart before it can accept more work.")
+        return value
+
+    def _admit(self):
+        if self.poisoned:
+            raise Problem(503, "WORKER_RESTART_REQUIRED", "The AI worker needs a restart before it can accept more work.")
+        if self.stop_event.is_set():
+            raise Problem(503, "AI_UNAVAILABLE", "The local AI worker is unavailable.")
 
     def start(self, value):
         if set(value) != {"name", "steps", "requestId"}:
@@ -286,15 +316,13 @@ class WorkerState:
                 if existing.fingerprint != fingerprint:
                     raise Problem(409, "IMAGE_CONFLICT", "This request identifier belongs to different activity content.")
                 return existing.public(), 202 if existing.status == "running" else 200
-        if self.stop_event.is_set() or self.poisoned:
-            raise Problem(503, "AI_UNAVAILABLE", "The local AI worker is unavailable.")
+        self._admit()
         if not self.gate.acquire(blocking=False):
             raise Problem(429, "AI_BUSY", "Another AI request is running. Try again shortly.")
         job = None
         try:
             with self.lock:
-                if self.stop_event.is_set() or self.poisoned:
-                    raise Problem(503, "AI_UNAVAILABLE", "The local AI worker is unavailable.")
+                self._admit()
                 if identifier in self.tombstones:
                     raise Problem(409, "IMAGE_CANCELLED", "This image request was cancelled.")
                 self._prune(reserve=True)
@@ -365,7 +393,18 @@ class WorkerState:
             cleanup_failed = getattr(error, "cleanup_failed", False) is True
             with self.lock:
                 job.status = "cancelled" if job.cancel.is_set() and not cleanup_failed else "failed"
-                job.code, job.message = ("IMAGE_CLEANUP", "The image process could not be stopped. Restart the AI worker.") if cleanup_failed else ("IMAGE_GENERATION_FAILED", "The illustrations could not be completed. Try again later.")
+                code = getattr(error, "code", None) if isinstance(error, (ENGINE.EngineError, Problem)) else None
+                if cleanup_failed:
+                    # Publish the unavailable state together with the failure;
+                    # another caller must never interpret this as ordinary busy.
+                    self.poisoned = True
+                    job.code, job.message = "IMAGE_CLEANUP", "The image process could not be stopped. Restart the AI worker."
+                elif job.status == "cancelled":
+                    job.code, job.message = None, "Image request cancelled."
+                elif isinstance(code, str) and code in IMAGE_FAILURES:
+                    job.code, job.message = code, IMAGE_FAILURES[code]
+                else:
+                    job.code, job.message = "IMAGE_GENERATION_FAILED", "The illustrations could not be completed. Try again later."
                 if job.status == "cancelled":
                     self._remove_outputs(job)
                 try:
@@ -433,14 +472,12 @@ class WorkerState:
                 or len(model) > 128 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:-]*", model)
                 or re.search(r"cloud|remote|://|:.*:", model, re.I)):
             raise Problem(400, "AI_INPUT", "Use a non-streaming request to a configured local text model.")
-        if self.stop_event.is_set() or self.poisoned:
-            raise Problem(503, "AI_UNAVAILABLE", "The local AI worker is unavailable.")
+        self._admit()
         if not self.gate.acquire(blocking=False):
             raise Problem(429, "AI_BUSY", "Another AI request is running. Try again shortly.")
         connection, thread, done, result = None, None, threading.Event(), {}
         try:
-            if self.stop_event.is_set() or self.poisoned:
-                raise Problem(503, "AI_UNAVAILABLE", "The local AI worker is unavailable.")
+            self._admit()
             if fixed_ollama_json("/api/status").get("cloud", {}).get("disabled") is not True:
                 raise Problem(503, "AI_LOCAL_ONLY_REQUIRED", "The local text AI could not confirm that cloud access is disabled.")
             data = json.dumps(value, ensure_ascii=False).encode("utf-8")

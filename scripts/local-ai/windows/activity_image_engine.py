@@ -174,17 +174,39 @@ class GenericEngine:
     def _wait_for_image(self, client, prompt_id, deadline, process, cancel):
         if not isinstance(prompt_id, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,100}", prompt_id):
             raise EngineError("IMAGE_RESPONSE", "The image process returned an invalid job response.")
+        disconnected, failed_reads = False, 0
         while time.monotonic() < deadline:
             self._cancelled(cancel)
             if process.poll() is not None:
                 raise EngineError("IMAGE_PROCESS", "The image process stopped before finishing.")
-            history = client.request("/history/" + prompt_id, timeout=min(5, max(0.1, deadline - time.monotonic())))
+            try:
+                history = client.request("/history/" + prompt_id, timeout=min(5, max(0.1, deadline - time.monotonic())))
+                disconnected, failed_reads = False, 0
+            except benchmark_helpers().BenchmarkFailure as error:
+                if error.code != "LOCAL_HTTP":
+                    raise
+                # A busy GPU can briefly delay the read-only history route.
+                # Never resubmit /prompt; retain the same deadline and owned
+                # process, with cancellation checked between bounded reads.
+                disconnected = True
+                failed_reads += 1
+                if failed_reads >= 3:
+                    raise EngineError("IMAGE_CONNECTION", "The owned image process stopped responding.") from error
+                cancel.wait(min(0.2, max(0, deadline - time.monotonic())))
+                continue
             entry = history.get(prompt_id)
             if entry is not None:
                 if not isinstance(entry, dict) or not isinstance(entry.get("status"), dict):
                     raise EngineError("IMAGE_RESPONSE", "The image process returned an invalid status.")
                 status = entry["status"]
                 if status.get("status_str") in ("error", "interrupted"):
+                    messages = status.get("messages")
+                    if isinstance(messages, list):
+                        for message in messages[:32]:
+                            if (isinstance(message, list) and len(message) == 2 and message[0] == "execution_error"
+                                    and isinstance(message[1], dict) and message[1].get("exception_type") in
+                                    ("OutOfMemoryError", "torch.OutOfMemoryError", "torch.cuda.OutOfMemoryError")):
+                                raise EngineError("IMAGE_OOM", "The image process ran out of GPU memory.")
                     raise EngineError("IMAGE_GENERATION", "The image could not be generated.")
                 if status.get("completed") is True:
                     if status.get("status_str") != "success":
@@ -195,6 +217,9 @@ class GenericEngine:
                         raise EngineError("IMAGE_RESPONSE", "The image process did not produce exactly one frame.")
                     return images[0]
             cancel.wait(min(0.2, max(0, deadline - time.monotonic())))
+        self._cancelled(cancel)
+        if disconnected:
+            raise EngineError("IMAGE_CONNECTION", "The owned image process stopped responding.")
         raise EngineError("IMAGE_TIMEOUT", "Image generation exceeded its time limit.")
 
     def generate(self, name: str, steps: list[str], directory: Path, cancel: threading.Event, on_frame=None) -> list[dict]:
@@ -283,6 +308,12 @@ class GenericEngine:
             return frames
         except EngineError:
             raise
+        except subprocess.TimeoutExpired as error:
+            raise EngineError("IMAGE_RUNTIME_TIMEOUT", "The image runtime launch check timed out.") from error
+        except helpers.BenchmarkFailure as error:
+            code = ("IMAGE_INVALID" if error.code in ("IMAGE_FORMAT", "IMAGE_PATH", "IMAGE_SIZE") else
+                    "IMAGE_CONNECTION" if error.code == "LOCAL_HTTP" else "IMAGE_RESPONSE")
+            raise EngineError(code, "The image process could not return a verified result.") from error
         except Exception as error:
             raise EngineError("IMAGE_GENERATION", "The local image job could not complete.") from error
         finally:

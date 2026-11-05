@@ -90,3 +90,53 @@ for (const width of [320, 768, 1280]) test(`step pictures and unreviewed video s
   expect(saved).toHaveLength(1); expect(saved[0].illustrations).toEqual(images.map(({ id }) => ({ id })));
   expect(external).toEqual([]);
 });
+
+test('an image startup failure shows its safe reason and preserves review and retry', async ({ page }) => {
+  test.setTimeout(30000); await page.setViewportSize({ width: 393, height: 780 });
+  const http = await authenticatedApi(page);
+  const roomResponse = await http.post(api + '/rooms', { data: { name: 'Image recovery ' + randomUUID().slice(0, 8), ageMinMonths: 36, ageMaxMonths: 60, capacity: 12 } });
+  expect(roomResponse.status()).toBe(201); const room = (await roomResponse.json()).data;
+  let jobs = 0;
+  const safeMessage = 'The image process did not become ready in time. Check the image worker on the AI laptop before retrying.';
+  const draft = { name: 'Shared paper collage recovery', description, durationMinutes: 20, ageMinMonths: 36, ageMaxMonths: 60,
+    roomId: room.id, materials: [], materialsNotes: 'Large paper shapes.', sourceIds: [], visualSteps: steps, tutorialLinks: [] };
+  await page.route(api + '/activity-ai/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    const send = (value: unknown) => route.fulfill({ status: 200, headers: cors, json: { data: value } });
+    if (path.endsWith('/images/status')) return send({ enabled: true, available: true, busy: false, model: 'sd_xl_base_1.0.safetensors', message: 'Ready' });
+    if (path.endsWith('/activity-ai/status')) return send({ enabled: true, available: true, model: 'browser-model', sourceCount: 0, message: 'Ready' });
+    if (path.endsWith('/draft')) return send({ model: 'browser-model', generatedAt: '2026-11-04T00:00:00Z', sources: [], warnings: [], drafts: [draft] });
+    if (path.endsWith('/images/jobs') && route.request().method() === 'POST') {
+      jobs++;
+      return send({ id: 'recovery-job-' + jobs, status: 'running', completed: 0, total: 2, images: [] });
+    }
+    if (path.endsWith('/images/jobs/recovery-job-1')) return send({ id: 'recovery-job-1', status: 'failed', code: 'IMAGE_STARTUP_TIMEOUT', message: safeMessage, completed: 0, total: 2, images: [] });
+    if (path.endsWith('/images/jobs/recovery-job-2')) return send({ id: 'recovery-job-2', status: 'complete', completed: 2, total: 2, images });
+    if (/\/images\/browser-picture-[12]$/.test(path)) return route.fulfill({ status: 200, headers: cors, contentType: 'image/png', body: png });
+    return route.fulfill({ status: 404, headers: cors, json: { error: { message: 'Unexpected recovery fixture request.' } } });
+  });
+  await page.goto('/activities');
+  await page.getByRole('combobox', { name: 'Room', exact: true }).selectOption(room.id);
+  await page.getByRole('button', { name: 'AI activity ideas', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'AI activity ideas', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Create AI ideas', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+  const idea = dialog.getByRole('article', { name: 'AI idea 1', exact: true });
+  await idea.getByRole('button', { name: 'Create step pictures', exact: true }).click();
+  const message = idea.getByRole('alert');
+  await expect(message).toHaveText(safeMessage); await expect(message).toBeInViewport();
+  await expect(message).toBeFocused();
+  await expect(dialog.locator('.app-modal-pending')).toHaveCount(0);
+  await expect(idea).toContainText(description);
+  await expect(idea.getByRole('button', { name: 'Review idea 1', exact: true })).toBeEnabled();
+  await expect(idea.getByRole('img')).toHaveCount(0);
+  await idea.getByRole('button', { name: 'Retry step pictures', exact: true }).click();
+  await expect(idea.getByRole('img')).toHaveCount(2);
+  await expect(idea.getByRole('alert')).toHaveCount(0);
+  expect(jobs).toBe(2);
+  await idea.getByRole('button', { name: 'Review idea 1', exact: true }).click();
+  const form = dialog.getByRole('form', { name: 'New activity', exact: true });
+  await expect(form.getByRole('img')).toHaveCount(2);
+  await expect(form.getByLabel('Description', { exact: true })).toHaveValue(description + '\n\nAI-assisted educational draft. Review safety and suitability before use.');
+});

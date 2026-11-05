@@ -51,6 +51,7 @@ class FakeEngine:
         self.calls = []
         self.started, self.release, self.cleaning, self.cleanup_release = (threading.Event() for _ in range(4))
         self.available_calls = 0
+        self.failure_code = None
 
     def available(self):
         self.available_calls += 1
@@ -68,6 +69,8 @@ class FakeEngine:
             raise WORKER.ENGINE.EngineError("CANCELLED", "Cancelled")
         if self.cleanup_failed:
             raise WORKER.ENGINE.EngineError("PROCESS_CLEANUP", "Cleanup not confirmed", cleanup_failed=True)
+        if self.failure_code:
+            raise WORKER.ENGINE.EngineError(self.failure_code, "PRIVATE-SYNTHETIC-PROMPT in private path")
         frames, data = [], png()
         for step in range(1, len(steps) + 1):
             (directory / f"step-{step}.png").write_bytes(data)
@@ -299,10 +302,37 @@ class WorkerTests(unittest.TestCase):
         self.assertTrue(self.state.poisoned)
         self.assertTrue(self.state.gate.locked())
         self.assertFalse(self.state.status()["available"])
+        self.assertEqual(self.state.status()["code"], "WORKER_RESTART_REQUIRED")
         cancelled, status = self.state.cancel(payload["requestId"])
         self.assertEqual((status, cancelled["status"]), (202, "failed"))
         self.assertEqual(self.request("POST", "/api/activity-images/jobs", self.payload())[0], 503)
-        self.assertEqual(self.request("POST", "/api/generate", {"model": "qwen3:4b", "stream": False})[0], 503)
+        status, failure = self.request("POST", "/api/generate", {"model": "qwen3:4b", "stream": False})
+        self.assertEqual((status, failure["code"]), (503, "WORKER_RESTART_REQUIRED"))
+
+    def test_safe_image_failures_preserve_diagnostics_release_capacity_and_allow_text(self):
+        for code in ("IMAGE_STARTUP_TIMEOUT", "IMAGE_CUDA", "IMAGE_OOM", "IMAGE_RUNTIME_TIMEOUT", "IMAGE_CONNECTION"):
+            with self.subTest(code=code):
+                self.engine.failure_code = code
+                payload = self.payload()
+                self.assertEqual(self.request("POST", "/api/activity-images/jobs", payload)[0], 202)
+                wait_until(lambda: self.finished(payload["requestId"]))
+                status, value = self.request("GET", "/api/activity-images/jobs/" + payload["requestId"])
+                self.assertEqual((status, value["status"], value["code"]), (200, "failed", code))
+                self.assertEqual(value["message"], WORKER.IMAGE_FAILURES[code])
+                self.assertNotIn("PRIVATE-SYNTHETIC", json.dumps(value))
+                self.assertFalse(self.state.gate.locked())
+                self.assertFalse(self.state.poisoned)
+                status, response = self.request("POST", "/api/generate", {"model": "qwen3:4b", "stream": False})
+                self.assertEqual((status, response["done"]), (200, True))
+
+    def test_unknown_runtime_codes_cannot_expose_arbitrary_exception_text(self):
+        self.engine.failure_code = "PRIVATE-SYNTHETIC-CODE"
+        payload = self.payload()
+        self.request("POST", "/api/activity-images/jobs", payload)
+        wait_until(lambda: self.finished(payload["requestId"]))
+        value = self.request("GET", "/api/activity-images/jobs/" + payload["requestId"])[1]
+        self.assertEqual(value["code"], "IMAGE_GENERATION_FAILED")
+        self.assertNotIn("PRIVATE-SYNTHETIC", json.dumps(value))
 
     def test_recovery_retains_verified_completed_images_and_bounds_jobs_and_tombstones(self):
         for _ in range(WORKER.MAX_JOBS + 1):

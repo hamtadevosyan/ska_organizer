@@ -71,7 +71,8 @@ there is no new token, IP address or certificate to copy to the Pi.
 1. Open Activities, choose a room, and open **AI activity ideas**.
 2. Create the written ideas as usual.
 3. Under the idea you want, choose **Create step pictures**. Pictures are optional
-   and may take several minutes on the P3200. Progress appears beside that idea.
+   and may take several minutes on the P3200. A waiting panel shows progress
+   immediately; your settings and written ideas are kept.
 4. Review each picture against its caption. You can cancel, retry, or continue
    with the written activity only.
 5. Choose **Review idea**, remove any incorrect pictures, and save the activity.
@@ -171,3 +172,63 @@ are reused. The source package includes a correction-only patch for checkouts
 that already received the original media integration.
 
 Activity and picture generation now show a [little thinker loading animation](loading-animation.md) in a dedicated visible waiting panel. Pause animation keeps the job running; Cancel picture generation stops it. Reduce Motion starts with a still picture and offers Play animation. The picture progress bar uses actual completed steps. Activity ideas wait and retry an explicit busy rejection for up to two minutes; Stop AI generation cancels that wait.
+
+## Update an existing worker after a failed picture job
+
+Download the new `Setup-SKAO-ActivityMedia.ps1` to the protected AI account's
+Downloads folder, replacing the older download. Close unfinished AI requests
+in Organizer. In that account's elevated PowerShell session, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$HOME\Downloads\Setup-SKAO-ActivityMedia.ps1" -Update -Recover
+```
+
+This explicitly stops unfinished work in the managed image worker and briefly
+pauses the private AI connection. It validates the existing installation before
+changing it, keeps the old code for rollback, and reuses the existing task and
+password registration. Models, private settings, certificates and gateway
+configuration are retained. It does not download another model or reset Ollama.
+If a managed Python process remains after stopping the task, or process inspection
+cannot confirm that it stopped, the script refuses to start overlapping work.
+It does not kill that residual process.
+
+Use `-Update` without `-Recover` for a normal idle worker update. It refuses to
+interrupt busy work. Use `-Check` afterward for the usual read-only verification.
+Apply and commit this release's source package and update the Pi as described
+above; both the app and the Windows worker need this release.
+
+For read-only diagnostics, run this before recovery when reporting a failure,
+so restarting the worker does not replace the earlier job's diagnostic state:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$HOME\Downloads\Setup-SKAO-ActivityMedia.ps1" -Diagnose
+```
+
+Share only that command's output when reporting a problem. It selects status,
+counts and fixed error codes. Do not upload the private configuration or complete
+job directories; those contain credentials or activity text.
+
+## Understand image failures and repeated ideas
+
+A normal failed image job releases the shared AI slot after its owned process
+has stopped. Brief failures reading image progress get a bounded retry; the
+generation request itself is never submitted twice. When stopping a process
+cannot be confirmed, AI requires worker recovery instead of waiting on an
+ordinary busy retry. The script above handles that recovery conservatively.
+
+New image failures retain a fixed stage code, such as `IMAGE_STARTUP_TIMEOUT`,
+`IMAGE_CUDA`, `IMAGE_OOM` or `IMAGE_CONNECTION`, with a readable explanation.
+The old generic message did not establish why the laptop failed. These changes
+do not claim that a particular native GPU failure has been reproduced.
+
+Recent generated idea names now survive closing and reopening the dialog in
+the planner, separately for each account and room. The server also keeps up to
+20 generated guides per account and room for one hour, with a limit of 64 such
+histories. It rejects repeated titles and identical or near-identical step text,
+including a renamed copy. This history reads no saved activities or personal
+records. It expires or clears on a server restart.
+
+AI gets at most one correction attempt within the original time limit. If it
+still repeats an idea, generation fails clearly. If a previous batch remains
+on screen after a failed or stopped request, it is labeled as the previous
+batch. The comparison does not detect every possible paraphrase of an idea.

@@ -56,22 +56,41 @@ function jsonRequest(config, method, path, value, signal) {
       ...(config.ca ? { ca: config.ca } : {}), rejectUnauthorized: true,
       maxHeaderSize: 16384, signal, headers: { Accept: 'application/json', ...(config.token ? { Authorization: 'Bearer ' + config.token } : {}), ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {}) } }, response => {
       if (response.statusCode !== 200 || !/^application\/json(?:;|$)/i.test(response.headers['content-type'] || '')) {
-        response.destroy();
+        // The broker may deliberately stop admission after uncertain process
+        // cleanup. Preserve only this fixed recovery code, never remote text.
+        if (response.statusCode === 503 && /^application\/json(?:;|$)/i.test(response.headers['content-type'] || '')) {
+          const chunks = []; let size = 0;
+          const failure = () => Object.assign(unavailable(), { runtimeStatus: response.statusCode });
+          const interrupted = () => reject(signal.aborted ? signal.reason : failure());
+          response.on('data', chunk => { size += chunk.length; if (size > 4096) { reject(failure()); response.destroy(); } else chunks.push(chunk); });
+          response.once('end', () => {
+            let restart = false;
+            try { restart = JSON.parse(Buffer.concat(chunks).toString('utf8'))?.code === 'WORKER_RESTART_REQUIRED'; } catch { /* Unknown failures stay generic. */ }
+            reject(restart ? issue('AI_WORKER_RESTART_REQUIRED', 'The private AI worker needs to be restarted on the AI laptop before using AI again.') : failure());
+          });
+          response.once('error', interrupted); response.once('aborted', interrupted);
+          response.once('close', () => { if (!response.complete) interrupted(); });
+          return;
+        }
         if (response.statusCode === 429) reject(Object.assign(issue('AI_BUSY', 'Another AI request is running. Try again shortly.'), { status: 429, retryAfter: 5 }));
         else reject(Object.assign(unavailable(), { runtimeStatus: response.statusCode }));
+        response.destroy();
         return;
       }
       const chunks = []; let size = 0;
       response.on('data', chunk => {
         size += chunk.length;
-        if (size > 262144) { response.destroy(); reject(issue('AI_INVALID_RESPONSE', 'The local AI returned too much data. Try fewer activity ideas.')); }
+        if (size > 262144) { reject(issue('AI_INVALID_RESPONSE', 'The local AI returned too much data. Try fewer activity ideas.')); response.destroy(); }
         else chunks.push(chunk);
       });
       response.once('end', () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
         catch { reject(issue('AI_INVALID_RESPONSE', 'The local AI returned an unreadable response. Try again.')); }
       });
-      response.once('error', () => reject(signal.aborted ? signal.reason : unavailable()));
+      const interrupted = () => reject(signal.aborted ? signal.reason : unavailable());
+      response.once('error', interrupted);
+      response.once('aborted', interrupted);
+      response.once('close', () => { if (!response.complete) interrupted(); });
     });
     request.once('error', () => reject(signal.aborted ? signal.reason : unavailable()));
     request.end(payload);

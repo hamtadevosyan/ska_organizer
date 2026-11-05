@@ -89,3 +89,37 @@ test('worker HTTPS checks configured CA and IP while sending only the dedicated 
     expect(seen).toHaveLength(1); expect(seen[0].authorization).toBe('Bearer dedicated-worker-token'); expect(seen[0].cookie).toBeUndefined();
   } finally { await close(server); fs.rmSync(folder, { recursive: true, force: true }); }
 });
+
+test.each([false, true])('a truncated worker response rejects promptly without retaining the AI guard (binary=%s)', async binary => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': binary ? 'image/png' : 'application/json', 'Content-Length': '1000' });
+    res.write(binary ? Buffer.from([137, 80, 78, 71]) : '{"version":');
+    setImmediate(() => res.destroy());
+  });
+  await open(server);
+  const config = { url: new URL('http://127.0.0.1:' + server.address().port) }, signal = AbortSignal.timeout(1000);
+  try {
+    await expect(runtime.generate(() => transport.request(config, 'GET', binary ? route + '/frames/1' : route, undefined, signal, binary)))
+      .rejects.toMatchObject({ code: 'AI_IMAGES_UNAVAILABLE' });
+    expect(signal.aborted).toBe(false);
+    expect(await runtime.generate(async () => 'free')).toBe('free');
+  } finally { await close(server); }
+});
+
+test('worker recovery codes are read from bounded failure bodies without exposing remote messages', async () => {
+  let body = { code: 'WORKER_RESTART_REQUIRED', message: 'PRIVATE prompt and filesystem path' };
+  const server = http.createServer((req, res) => { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); });
+  await open(server);
+  const config = { url: new URL('http://127.0.0.1:' + server.address().port) };
+  try {
+    const failure = await transport.request(config, 'GET', route, undefined, AbortSignal.timeout(1000)).catch(error => error);
+    expect(failure).toMatchObject({ code: 'AI_IMAGES_UNAVAILABLE', workerCode: 'WORKER_RESTART_REQUIRED' });
+    expect(failure.message).not.toContain('PRIVATE');
+    body = { code: 'PRIVATE arbitrary code', message: 'PRIVATE reason' };
+    const unknown = await transport.request(config, 'GET', route, undefined, AbortSignal.timeout(1000)).catch(error => error);
+    expect(unknown).toMatchObject({ code: 'AI_IMAGES_UNAVAILABLE' }); expect(unknown.workerCode).toBeUndefined();
+    body = { code: 'WORKER_RESTART_REQUIRED', message: 'x'.repeat(5000) };
+    const oversized = await transport.request(config, 'GET', route, undefined, AbortSignal.timeout(1000)).catch(error => error);
+    expect(oversized).toMatchObject({ code: 'AI_IMAGES_UNAVAILABLE' }); expect(oversized.workerCode).toBeUndefined();
+  } finally { await close(server); }
+});

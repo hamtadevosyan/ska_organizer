@@ -1,4 +1,5 @@
 const { createHash, randomBytes, randomUUID } = require('node:crypto');
+const http = require('node:http');
 const anonymous = require('supertest');
 const { PNG } = require('pngjs');
 const request = require('./helpers/authenticatedRequest');
@@ -155,6 +156,68 @@ test('a running image job holds the AI gate until cancellation and does not impo
   expect(await runtime.generate(async () => 'free')).toBe('free');
   expect((await media.getJob(token(), id)).images).toEqual([]);
   expect(sent.some(call => call.method === 'DELETE' && call.path.endsWith(id))).toBe(true);
+});
+
+test.each([
+  ['IMAGE_STARTUP_TIMEOUT', /did not become ready/],
+  ['IMAGE_UNAVAILABLE', /installed image model or runtime is unavailable/],
+])('a failed worker stage %s is safe to display and releases the Pi guard for the next text request', async (code, message) => {
+  const normal = transport.request.getMockImplementation();
+  transport.request.mockImplementation(async (...args) => {
+    const result = await normal(...args);
+    return args[1] === 'POST' ? { ...worker('failed'), code, message: 'PRIVATE prompt C:\\private\\model secret-token' } : result;
+  });
+  const response = await request(app).post(base + '/jobs').send(draft);
+  expect(response.status).toBe(200);
+  const result = await finish(response.body.data.id);
+  expect(result).toMatchObject({ status: 'failed', code, images: [] });
+  expect(result.message).toMatch(message);
+  expect(JSON.stringify(result)).not.toMatch(/PRIVATE|secret-token|C:\\private/);
+  expect(sent.some(call => call.method === 'DELETE')).toBe(true);
+  const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end('{"done":true,"response":"Text request admitted."}'); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const text = await runtime.generate(() => runtime.jsonRequest({ url: new URL('http://127.0.0.1:' + server.address().port) },
+      'POST', '/api/generate', { model: 'synthetic-local' }, AbortSignal.timeout(1000)));
+    expect(text).toEqual({ done: true, response: 'Text request admitted.' });
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test.each(['unknown-failure', '__proto__', 'IMAGE_STARTUP_TIMEOUT\nPRIVATE'])('unknown worker diagnostics never become application messages: %s', async code => {
+  const normal = transport.request.getMockImplementation();
+  transport.request.mockImplementation(async (...args) => {
+    const result = await normal(...args);
+    return args[1] === 'POST' ? { ...worker('failed'), code, message: 'PRIVATE exception body' } : result;
+  });
+  const response = await request(app).post(base + '/jobs').send(draft);
+  expect(response.status).toBe(200);
+  const result = await finish(response.body.data.id);
+  expect(result).toMatchObject({ status: 'failed', code: 'IMAGE_GENERATION_FAILED', images: [] });
+  expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  expect(await runtime.generate(async () => 'free')).toBe('free');
+});
+
+test('uncertain GPU cleanup is a failed job requiring worker recovery, never a successful cancellation', async () => {
+  mode = 'running'; const normal = transport.request.getMockImplementation();
+  transport.request.mockImplementation(async (...args) => {
+    const result = await normal(...args);
+    return args[1] === 'DELETE' ? { ...worker('failed'), code: 'IMAGE_CLEANUP' } : result;
+  });
+  const response = await request(app).post(base + '/jobs').send(draft);
+  expect(response.status).toBe(200);
+  expect((await request(app).delete(base + '/jobs/' + response.body.data.id)).status).toBe(200);
+  const result = await finish(response.body.data.id);
+  expect(result).toMatchObject({ status: 'failed', code: 'IMAGE_CLEANUP', images: [] });
+  expect(result.message).toMatch(/Restart the SKAO Activity Images worker/);
+});
+
+test('an unavailable poisoned worker is described as requiring recovery rather than waiting for ordinary busy work', async () => {
+  transport.request.mockResolvedValue({ version: 1, enabled: true, available: false, busy: true, model, code: 'WORKER_RESTART_REQUIRED', message: 'PRIVATE reason' });
+  const response = await request(app).get(base + '/status');
+  expect(response.status).toBe(200);
+  expect(response.body.data).toMatchObject({ available: false, code: 'WORKER_RESTART_REQUIRED' });
+  expect(response.body.data.message).toMatch(/restarted/);
+  expect(response.body.data.message).not.toMatch(/Try again shortly|PRIVATE/);
 });
 
 test('an aborted POST with a lost reply cancels the same known worker ID before releasing the AI gate', async () => {

@@ -39,6 +39,17 @@ export default function Activities() {
   const [dayIndex, setDayIndex] = useState(0);
   const [view, setView] = useState<'day' | 'week'>('day');
   const [search, setSearch] = useState('');
+  // Generated titles only, in memory, scoped to this account's current access.
+  // Closing the dialog or changing the week must not reset variation history.
+  const aiScope = JSON.stringify([account?.id, account?.role, account?.roomId ?? null, account?.staffMemberId ?? null, account?.workAccess ?? null]);
+  const aiHistory = useRef<{ scope: string; rooms: Map<string, string[]> }>({ scope: aiScope, rooms: new Map() });
+  if (aiHistory.current.scope !== aiScope) aiHistory.current = { scope: aiScope, rooms: new Map() };
+  function rememberAiNames(roomId: string, names: string[]) {
+    if (aiHistory.current.scope !== aiScope) return;
+    aiHistory.current.rooms.delete(roomId);
+    aiHistory.current.rooms.set(roomId, names.slice(-20));
+    while (aiHistory.current.rooms.size > 32) aiHistory.current.rooms.delete(aiHistory.current.rooms.keys().next().value!);
+  }
   const addRef = useRef<HTMLButtonElement>(null);
   const composerTrigger = useRef<HTMLButtonElement | null>(null);
   const restoreFocus = useRef(false);
@@ -151,7 +162,8 @@ export default function Activities() {
         onCancel={() => setMoving(null)} onApply={entries => { planner.applyDraftChange(entries, 'Undo move'); setMoving(null); }} />}
       {ready && room && generating && <ActivityGenerate plan={planner.plan!} entries={planner.entries} room={room} catalog={planner.catalog} onDirtyChange={setGenerationDirty}
         onCancel={closeGeneration} onApply={entries => { planner.applyDraftChange(entries, 'Undo generation'); closeGeneration(); }} />}
-      {ready && room && aiIdeas && <ActivityAiIdeas room={room} onDirtyChange={setAiDirty} onBusyChange={setActivitySaving}
+      {ready && room && aiIdeas && <ActivityAiIdeas key={aiScope + room.id} room={room} onDirtyChange={setAiDirty} onBusyChange={setActivitySaving}
+        rememberedNames={aiHistory.current.rooms.get(room.id)} onRememberNames={names => rememberAiNames(room.id, names)}
         onSaved={planner.activitySaved} onCancel={() => { setAiIdeas(false); setAiDirty(false); }} />}
     </div>
     {ready && <ActivityPrint roomName={room?.name || 'Room'} weekStart={planner.weekStart} dates={allDates} entries={planner.entries} draft={planner.dirty || !planner.plan?.savedAt} pictureSources={picturePrint.sources} />}

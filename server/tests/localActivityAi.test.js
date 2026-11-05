@@ -185,18 +185,18 @@ test.each(['Color story circle', '  COLOR—STORY... CIRCLE  ', 'Ｃｏｌｏｒ
   expect(await db.listActivities()).toEqual([]);
 });
 
-test('one bounded correction can replace a recent idea and uses a separate conservative seed', async () => {
+test('one bounded correction changes a recent procedure and uses a separate exploratory seed', async () => {
   const seeds = jest.spyOn(crypto, 'randomInt').mockReturnValueOnce(501).mockReturnValueOnce(602);
   let attempt = 0;
   generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(++attempt === 1 ? modelReply() : modelReply({ response: JSON.stringify({ drafts: [modelDraft({ name: 'Cooperative color story puppets' })] }) }))); };
+    res.end(JSON.stringify(++attempt === 1 ? modelReply() : modelReply({ response: JSON.stringify({ drafts: [collageDraft()] }) }))); };
   const result = await service.draft({ ...input(await room()), avoidNames: ['Color story circle'] });
-  expect(result.drafts[0].name).toBe('Cooperative color story puppets');
+  expect(result.drafts[0].name).toBe('Paper shape collage');
   const requests = calls.filter(call => call.path === '/api/generate');
   expect(requests).toHaveLength(2);
   expect(requests.map(call => call.body.options)).toEqual([
     expect.objectContaining({ seed: 501, temperature: 0.55 }),
-    expect.objectContaining({ seed: 602, temperature: 0.2 }),
+    expect.objectContaining({ seed: 602, temperature: 0.8 }),
   ]);
   expect(seeds).toHaveBeenCalledTimes(2);
   expect(await db.listActivities()).toEqual([]);
@@ -206,10 +206,118 @@ test('name uniqueness within a batch uses the same normalization as recent-idea 
   generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft(), modelDraft({ name: 'COLOR—STORY... CIRCLE' })] }) }))); };
   await expect(service.draft({ ...input(await room()), activityCount: 2 })).rejects.toMatchObject({
-    code: 'AI_INVALID_RESPONSE', validationReason: 'DUPLICATE_NAMES',
+    code: 'AI_INVALID_RESPONSE', validationReason: 'RECENT_PROCEDURE',
   });
   expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  expect(JSON.parse(calls.at(-1).body.prompt).correction).toEqual({ reason: 'DUPLICATE_NAMES' });
   expect(await db.listActivities()).toEqual([]);
+});
+
+test('different names cannot disguise the same procedure within a batch', async () => {
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft(), modelDraft({ name: 'A different title' })] }) }))); };
+  await expect(service.draft({ ...input(await room()), activityCount: 2 })).rejects.toMatchObject({
+    code: 'AI_INVALID_RESPONSE', validationReason: 'RECENT_PROCEDURE',
+  });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+  expect(JSON.parse(calls.at(-1).body.prompt).correction).toEqual({ reason: 'DUPLICATE_PROCEDURES' });
+});
+
+test('a correction cannot pass by only renaming the rejected recent idea', async () => {
+  let attempt = 0;
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ name: ++attempt === 1 ? 'Color story circle' : 'Different color story title' })] }) }))); };
+  await expect(service.draft({ ...input(await room()), avoidNames: ['Color story circle'] })).rejects.toMatchObject({
+    code: 'AI_INVALID_RESPONSE', validationReason: 'RECENT_PROCEDURE',
+  });
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(2);
+});
+
+test('trusted account and room history rejects renamed guides across separate requests without adding full guides to the prompt', async () => {
+  const target = await room(), options = { accountId: 'account-' + target.id };
+  await service.draft(input(target), options);
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ name: 'Freshly renamed story',
+      steps: modelDraft().steps.map(step => step.replace('The adult', 'An adult').replace('Invite each child', 'Then invite children')) })] }) }))); };
+  await expect(service.draft(input(target), options)).rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE', validationReason: 'RECENT_PROCEDURE' });
+  const requests = calls.filter(call => call.path === '/api/generate');
+  expect(requests).toHaveLength(3);
+  expect(JSON.parse(requests[1].body.prompt).avoidNames).toEqual(['Color story circle']);
+  expect(JSON.parse(requests[2].body.prompt).avoidNames).toEqual(['Color story circle', 'Freshly renamed story']);
+  expect(requests[2].body.options.temperature).toBe(0.8);
+  expect(requests[1].body.prompt).not.toContain(modelDraft().steps[0]);
+  expect(requests[1].body.prompt).not.toContain(options.accountId);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('one bounded correction can provide a genuinely different procedure after a previous successful request', async () => {
+  const target = await room(), options = { accountId: 'account-' + target.id };
+  await service.draft(input(target), options);
+  let attempt = 0;
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [++attempt === 1 ? modelDraft({ name: 'Renamed same story' }) : collageDraft()] }) }))); };
+  expect((await service.draft(input(target), options)).drafts[0].name).toBe('Paper shape collage');
+  expect(calls.filter(call => call.path === '/api/generate')).toHaveLength(3);
+});
+
+test('generated history is isolated between accounts and rooms and is never sourced from saved activities', async () => {
+  const first = await room(), second = await room();
+  let name = 'Account A generated title';
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [modelDraft({ name })] }) }))); };
+  await service.draft(input(first), { accountId: 'A-' + first.id });
+  name = 'Account B generated title';
+  await service.draft(input(first), { accountId: 'B-' + first.id });
+  name = 'Other room generated title';
+  await service.draft(input(second), { accountId: 'A-' + first.id });
+  name = 'Account A generated title';
+  await expect(service.draft(input(first), { accountId: 'A-' + first.id })).rejects.toMatchObject({ validationReason: 'RECENT_IDEA' });
+  const requests = calls.filter(call => call.path === '/api/generate');
+  expect(requests.slice(0, 3).map(call => JSON.parse(call.body.prompt).avoidNames)).toEqual([[], [], []]);
+  expect(JSON.parse(requests[3].body.prompt).avoidNames).toEqual(['Account A generated title']);
+  expect(requests[3].body.prompt).not.toMatch(/Account B generated title|Other room generated title/);
+});
+
+test('generated history expires after an hour instead of persisting as application records', async () => {
+  const target = await room(), options = { accountId: 'expiry-' + target.id };
+  await service.draft(input(target), options);
+  const now = Date.now(); jest.spyOn(Date, 'now').mockReturnValue(now + 60 * 60 * 1000 + 1);
+  expect((await service.draft(input(target), options)).drafts).toHaveLength(1);
+  expect(JSON.parse(calls.at(-1).body.prompt).avoidNames).toEqual([]);
+  expect(await db.listActivities()).toEqual([]);
+});
+
+test('failed generations never become remembered suggestions', async () => {
+  const target = await room(), options = { accountId: 'failed-' + target.id };
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(modelReply({ response: '{' }))); };
+  await expect(service.draft(input(target), options)).rejects.toMatchObject({ code: 'AI_INVALID_RESPONSE' });
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(modelReply())); };
+  expect((await service.draft(input(target), options)).drafts).toHaveLength(1);
+  expect(JSON.parse(calls.at(-1).body.prompt).avoidNames).toEqual([]);
+});
+
+test('history has a fixed scope limit and evicts old scopes', async () => {
+  const target = await room();
+  for (let index = 0; index <= 64; index++) await service.draft(input(target), { accountId: target.id + '-scope-' + index });
+  expect((await service.draft(input(target), { accountId: target.id + '-scope-0' })).drafts).toHaveLength(1);
+  expect(JSON.parse(calls.at(-1).body.prompt).avoidNames).toEqual([]);
+});
+
+test('a scope keeps only the last twenty generated guides', async () => {
+  const target = await room(), options = { accountId: 'bounded-' + target.id };
+  let index = 0;
+  const guide = value => modelDraft({ name: 'Generated guide ' + value, steps: [
+    'Look at object' + value + 'a object' + value + 'b.', 'Arrange object' + value + 'c object' + value + 'd.',
+    'Compare object' + value + 'e object' + value + 'f.', 'Return object' + value + 'g object' + value + 'h.',
+  ] });
+  generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(modelReply({ response: JSON.stringify({ drafts: [guide(index)] }) }))); };
+  for (index = 0; index <= 20; index++) await service.draft(input(target), options);
+  index = 0;
+  expect((await service.draft(input(target), options)).drafts[0].name).toBe('Generated guide 0');
+  const avoided = JSON.parse(calls.at(-1).body.prompt).avoidNames;
+  expect(avoided).toHaveLength(20); expect(avoided).not.toContain('Generated guide 0');
+  expect(avoided).toContain('Generated guide 20');
 });
 
 test('video IDs cannot bypass the user choice to disable examples', async () => {
@@ -231,7 +339,7 @@ test('five complete guides at the supported field bounds fit the saved descripti
   const drafts = Array.from({ length: 5 }, (_, index) => modelDraft({ name: 'Complete guide ' + (index + 1),
     purpose: 'P'.repeat(160), preparation: 'R'.repeat(200), adaptations: 'A'.repeat(200),
     safety: 'S'.repeat(200), cleanup: 'C'.repeat(120), materialsNotes: 'M'.repeat(1000),
-    steps: Array.from({ length: 6 }, (_, step) => String(step + 1) + ' do this action '.padEnd(169, 'x')),
+    steps: Array.from({ length: 6 }, (_, step) => String(step + 1) + ' do this action '.padEnd(169, ['x', 'y', 'z', 'w', 'v'][index])),
     conversationPrompts: ['What happens? '.padEnd(100, 'a'), 'What changes? '.padEnd(100, 'b')],
   }));
   generate = async (req, res) => { res.setHeader('Content-Type', 'application/json');
@@ -460,7 +568,7 @@ test.each(['remote-name', 'local-cloud', 'http://model', 'model:tag:extra'])('mo
 
 test.each([
   { activityCount: 0 }, { activityCount: 6 }, { durationMinutes: 4 }, { durationMinutes: 121 }, { focus: 'arbitrary prompt' },
-  { theme: '<img src=x>' }, { theme: 'https://external.invalid' }, { theme: 'a'.repeat(121) }, { childId: 'private' }, { sourcePath: '/etc/passwd' },
+  { theme: '<img src=x>' }, { theme: 'https://external.invalid' }, { theme: 'a'.repeat(121) }, { childId: 'private' }, { sourcePath: '/etc/passwd' }, { accountId: 'another-account' },
   { includeVideos: 'true' }, { includeVideos: null }, { includeVideos: 1 },
   { avoidNames: null }, { avoidNames: 'Earlier idea' }, { avoidNames: Array(21).fill('Earlier idea') },
   { avoidNames: [''] }, { avoidNames: ['  '] }, { avoidNames: [123] }, { avoidNames: ['x'.repeat(101)] },
