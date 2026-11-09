@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { expect, test } from '@playwright/test';
@@ -14,6 +14,10 @@ let runtime: Server;
 const prompts: Record<string, unknown>[] = [];
 let stoppedRequests = 0;
 let restartRequests = 0;
+// Images are produced by this same synthetic inference server, so the ordinary
+// backend imports their PNGs and saves the real activity/media records.
+const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAABrElEQVR4nO3cMUrDYBiAYVtc3byKowheQTyIHkQPIl5BEEePopuD4FAcugiCpDXJ0+r7zEnzkzff1v9ffLy/HMRZ6gX8dwXACoAVACsAVgCsAFgBsAJgBcAKgBUAKwB2OOSik9OLqdfx3fPT/W9u35c1NwHYoAlYuztaTbeOry7fRvsslue3Y/3Uz1YPV9vd2ARgBcAKgBUAKwBWAKwAWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKwBWAKwAWAGwAmAFwDbYojTizqHZbL1zaDb7907/mEWH9llNAFYArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKwBWAKwAWAGwDf6WMoV9OeF5Ok0Ahidg7fHmdZ4HnV0fz/Og4ZoArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKwBWAKwAWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgCsANhObFHawZ1Ds2kCsM6OxpoArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgH0CryIf2vMeXjEAAAAASUVORK5CYII=', 'base64');
+const pictureJobs = new Map<string, { steps: string[]; cancelled: boolean }>();
 const generatedGuide = {
   purpose: 'Explore shape names while making a shared paper collage and practicing turn taking.',
   preparation: 'An adult prepares large paper shapes, a sheet of paper and washable glue at a clear table.',
@@ -73,6 +77,23 @@ const draftNotice = 'AI-assisted educational draft. Review safety and suitabilit
 test.beforeAll(async () => {
   runtime = createServer(async (request, response) => {
     const send = (body: unknown, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(body)); };
+    if (request.url === '/api/activity-images/status') return send({ version: 1, enabled: true, available: true, busy: false, model: 'sd_xl_base_1.0.safetensors' });
+    if (request.url === '/api/activity-images/jobs' && request.method === 'POST') {
+      let raw = ''; for await (const chunk of request) raw += chunk;
+      const value = JSON.parse(raw) as { requestId: string; steps: string[] };
+      pictureJobs.set(value.requestId, { steps: value.steps, cancelled: false });
+      return send(pictureJob(value.requestId));
+    }
+    const jobRoute = request.url?.match(/^\/api\/activity-images\/jobs\/([a-f0-9-]+)(?:\/frames\/([1-6]))?$/);
+    if (jobRoute) {
+      const job = pictureJobs.get(jobRoute[1]);
+      if (!job) return send({ code: 'IMAGE_NOT_FOUND' }, 404);
+      if (request.method === 'DELETE') { job.cancelled = true; return send(pictureJob(jobRoute[1])); }
+      if (jobRoute[2] && !job.cancelled && Number(jobRoute[2]) <= job.steps.length) {
+        response.writeHead(200, { 'Content-Type': 'image/png' }); return response.end(picture);
+      }
+      return send(pictureJob(jobRoute[1]));
+    }
     if (request.url === '/api/status') return send({ cloud: { disabled: true, source: 'synthetic browser fixture' } });
     if (request.url === '/api/tags') return send({ models: [{ name: 'browser-local:latest', size: 1024, digest: 'a'.repeat(64) }] });
     if (request.url === '/api/show') return send({ model_info: { 'general.architecture': 'synthetic' }, details: { family: 'synthetic' }, capabilities: ['completion'] });
@@ -113,6 +134,13 @@ test.beforeAll(async () => {
   await new Promise<void>((resolve, reject) => { runtime.once('error', reject); runtime.listen(11439, '127.0.0.1', resolve); });
 });
 test.afterAll(async () => { runtime?.closeAllConnections(); await new Promise<void>(resolve => runtime?.close(() => resolve())); });
+
+function pictureJob(id: string) {
+  const job = pictureJobs.get(id)!;
+  return { version: 1, id, status: job.cancelled ? 'cancelled' : 'complete', total: job.steps.length, completed: job.cancelled ? 0 : job.steps.length,
+    frames: job.cancelled ? [] : job.steps.map((caption, index) => ({ step: index + 1, caption, width: 128, height: 128,
+      byteLength: picture.length, sha256: createHash('sha256').update(picture).digest('hex') })) };
+}
 
 type Http = Awaited<ReturnType<typeof authenticatedApi>>;
 const week = '2026-10-26';
@@ -422,4 +450,124 @@ test('switching accounts does not send another account’s recent generated titl
   expect((await request).postDataJSON().avoidNames).toEqual([]);
   await expect(next.getByRole('article', { name: 'AI idea 1', exact: true })).toContainText('Shape collage');
   expect(prompts.at(-1)?.avoidNames).toEqual([]);
+});
+
+async function savedPictureIdea(page: Page, activityCount: number) {
+  const { http, room, suffix } = await setup(page);
+  const before = await catalog(http), original = await getPlan(http, room);
+  const calls: string[] = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && [api + '/activity', api + '/activity-ai/draft', api + '/activity-ai/images/jobs'].includes(request.url())) calls.push(request.url());
+  });
+  const dialog = await open(page);
+  await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Closing picture ideas ' + suffix);
+  await dialog.getByLabel('Number of ideas', { exact: true }).fill(String(activityCount));
+  await dialog.getByRole('button', { name: 'Create AI ideas', exact: true }).click();
+  const idea = dialog.getByRole('article', { name: 'AI idea 1', exact: true });
+  await idea.getByRole('button', { name: 'Create step pictures', exact: true }).click();
+  await expect(idea.getByRole('img')).toHaveCount(4);
+  await idea.getByRole('button', { name: 'Review idea 1', exact: true }).click();
+  const form = dialog.getByRole('form', { name: 'New activity', exact: true });
+  await expect(form.getByRole('img')).toHaveCount(4);
+  await form.getByRole('button', { name: 'Save activity', exact: true }).click();
+  await expect(dialog).toContainText('Activity saved to your library.');
+  const saved = (await catalog(http)).filter(activity => !before.some(existing => existing.id === activity.id));
+  expect(saved).toHaveLength(1); expect(saved[0].illustrations).toHaveLength(4);
+  for (const image of await idea.getByRole('img').all()) {
+    await expect(image).toHaveAttribute('src', /^blob:/);
+    await expect.poll(() => image.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBe(128);
+  }
+  expect(await getPlan(http, room)).toEqual(original);
+  const badge = idea.getByText('Saved to library', { exact: true });
+  // Reproduce the screenshot: close from deep inside the restored picture list,
+  // after the persistent save notice was already focused at the dialog's top.
+  await badge.scrollIntoViewIfNeeded();
+  expect(await dialog.evaluate(element => element.scrollTop)).toBeGreaterThan(500);
+  return { http, room, dialog, idea, badge, saved: saved[0], original, calls };
+}
+
+async function fullyVisibleConfirmation(dialog: Locator) {
+  const panel = dialog.getByRole('group', { name: 'Discard AI ideas', exact: true });
+  await expect(panel).toBeVisible(); await expect(panel.getByRole('button', { name: 'Keep editing', exact: true })).toBeFocused();
+  for (const element of [panel, panel.getByRole('button', { name: 'Discard AI ideas', exact: true }), panel.getByRole('button', { name: 'Keep editing', exact: true })]) {
+    await expect.poll(async () => {
+      const box = await element.boundingBox();
+      const bounds = await dialog.evaluate(node => {
+        const rect = node.getBoundingClientRect(), header = node.querySelector('.app-modal-header')!.getBoundingClientRect();
+        return { top: Math.max(header.bottom, 0), bottom: Math.min(rect.bottom, innerHeight), left: Math.max(rect.left, 0), right: Math.min(rect.right, innerWidth) };
+      });
+      return !!box && box.y >= bounds.top - 1 && box.y + box.height <= bounds.bottom + 1 && box.x >= bounds.left - 1 && box.x + box.width <= bounds.right + 1;
+    }, { message: 'The close choice and both actions must be visible without scrolling' }).toBe(true);
+  }
+  return panel;
+}
+
+test.describe('AI dialog close actions', () => {
+  test.use({ hasTouch: true, isMobile: true });
+  for (const [width, height] of [[320, 568], [393, 780]]) {
+    test(`X closes after all picture ideas are saved at ${width}px`, async ({ page }) => {
+      test.setTimeout(45000); await page.setViewportSize({ width, height });
+      const { http, room, dialog, saved, original, calls } = await savedPictureIdea(page, 1);
+      await dialog.getByRole('button', { name: 'Close ai activity ideas', exact: true }).tap();
+      await expect(dialog).toBeHidden();
+      expect(calls.filter(url => url === api + '/activity')).toHaveLength(1);
+      expect(calls.filter(url => url === api + '/activity-ai/draft')).toHaveLength(1);
+      expect(calls.filter(url => url === api + '/activity-ai/images/jobs')).toHaveLength(1);
+      expect((await catalog(http)).find(activity => activity.id === saved.id)).toEqual(saved);
+      expect(await getPlan(http, room)).toEqual(original);
+    });
+
+    test(`X, Cancel and Escape reveal the unsaved-idea close choice at ${width}px`, async ({ page }, testInfo) => {
+      test.setTimeout(60000); await page.setViewportSize({ width, height });
+      const { http, room, dialog, badge, saved, original, calls } = await savedPictureIdea(page, 2);
+      const close = dialog.getByRole('button', { name: 'Close ai activity ideas', exact: true });
+      await close.tap();
+      let panel = await fullyVisibleConfirmation(dialog);
+      await expect(panel).toContainText('Activities you already saved will stay in your library.');
+      await page.screenshot({ path: testInfo.outputPath('visible-close-confirmation.png') });
+      await panel.getByRole('button', { name: 'Keep editing', exact: true }).click();
+      await expect(panel).toHaveCount(0); await expect(badge).toBeInViewport();
+      await expect(dialog.getByRole('article', { name: 'AI idea 2', exact: true })).toHaveCount(1);
+      const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+      await cancel.scrollIntoViewIfNeeded(); await cancel.click();
+      panel = await fullyVisibleConfirmation(dialog);
+      await panel.getByRole('button', { name: 'Keep editing', exact: true }).click();
+      await expect(panel).toHaveCount(0);
+      await expect(cancel).toBeInViewport();
+      await page.keyboard.press('Escape');
+      panel = await fullyVisibleConfirmation(dialog);
+      await panel.getByRole('button', { name: 'Discard AI ideas', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      expect(calls.filter(url => url === api + '/activity')).toHaveLength(1);
+      expect(calls.filter(url => url === api + '/activity-ai/draft')).toHaveLength(1);
+      expect(calls.filter(url => url === api + '/activity-ai/images/jobs')).toHaveLength(1);
+      expect((await catalog(http)).find(activity => activity.id === saved.id)).toEqual(saved);
+      expect(await getPlan(http, room)).toEqual(original);
+    });
+  }
+
+  test('a previous save notice and regeneration error cannot hide the close choice', async ({ page }) => {
+    test.setTimeout(45000); await page.setViewportSize({ width: 393, height: 780 });
+    const { http, room, dialog, badge, saved, original, calls } = await savedPictureIdea(page, 2);
+    await dialog.getByLabel('Theme (optional)', { exact: true }).fill('Synthetic outage');
+    await dialog.getByRole('button', { name: 'Create more AI ideas', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Your previous ideas', exact: true })).toBeVisible();
+    await badge.scrollIntoViewIfNeeded();
+    expect(await dialog.evaluate(element => element.scrollTop)).toBeGreaterThan(500);
+    const close = dialog.getByRole('button', { name: 'Close ai activity ideas', exact: true });
+    await close.tap();
+    const panel = await fullyVisibleConfirmation(dialog);
+    await panel.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await expect(panel).toHaveCount(0); await expect(badge).toBeInViewport();
+    await expect(dialog.getByRole('heading', { name: 'Your previous ideas', exact: true })).toHaveCount(1);
+    await close.tap();
+    await (await fullyVisibleConfirmation(dialog)).getByRole('button', { name: 'Discard AI ideas', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    expect(calls.filter(url => url === api + '/activity')).toHaveLength(1);
+    expect(calls.filter(url => url === api + '/activity-ai/draft')).toHaveLength(2);
+    expect(calls.filter(url => url === api + '/activity-ai/images/jobs')).toHaveLength(1);
+    expect((await catalog(http)).find(activity => activity.id === saved.id)).toEqual(saved);
+    expect(await getPlan(http, room)).toEqual(original);
+  });
 });

@@ -126,7 +126,10 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
     } finally { if (!request.signal.aborted && currentTurn === turn.current) setPending(false); }
   }
   function activitySaved(activity: Activity) {
-    onSaved(activity); setSaved(values => [...values, selected!]); setSelected(null);
+    const nextSaved = [...saved, selected!];
+    onSaved(activity); setSaved(nextSaved); setSelected(null);
+    setDirty(!!result?.drafts.some((_, index) => !nextSaved.includes(index)));
+    setConfirmCancel(false);
     setNotice('Activity saved to your library. Choose Generate week to include saved ideas in your plan.');
   }
   const selectedDraft = result && selected !== null ? result.drafts[selected] : null;
@@ -145,6 +148,15 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
     <button type="button" className="ska-button" onClick={() => imageJobs.cancel()}>Cancel picture generation</button>
   </> : null;
   return <AppModal id="activity-ai-ideas" title="AI activity ideas" initialFocusId="activity-ai-focus" onDismiss={dismiss}
+    dismissDisabled={saving}
+    confirmationFocusId="activity-ai-keep-editing"
+    confirmationContent={confirmCancel ? <div role="group" aria-label="Discard AI ideas" className="planner-generation-unfilled">
+      <p>Discard these unsaved AI ideas? Activities you already saved will stay in your library.</p>
+      <div className="planner-action-buttons">
+        <button type="button" className="ska-button" onClick={onCancel}>Discard AI ideas</button>
+        <button id="activity-ai-keep-editing" type="button" className="ska-button" onClick={() => setConfirmCancel(false)}>Keep editing</button>
+      </div>
+    </div> : null}
     pendingContent={pendingContent} pendingKey={pending ? 'ideas' : 'pictures-' + activePicture}
     attentionKey={error || notice || (confirmCancel ? 'discard' : selectedDraft ? 'review-' + selected : lastPictureJob?.status || '')}
     attentionId={!error && !notice && !confirmCancel && !selectedDraft && lastPictureJob
@@ -155,8 +167,6 @@ export function ActivityAiIdeas({ room, onSaved, onCancel, onDirtyChange, onBusy
       {error && <div role="alert" data-modal-error className="ska-alert is-error"><p>{error}</p>
         {status?.available && valid && !selectedDraft && <button type="button" className="ska-button" onClick={() => void generate()}>Try AI generation again</button>}
       </div>}
-      {confirmCancel && <div role="group" data-modal-notice aria-label="Discard AI ideas" className="planner-generation-unfilled"><p>Discard these unsaved AI ideas? Activities you already saved will stay in your library.</p><div className="planner-action-buttons"><button type="button" className="ska-button" onClick={onCancel}>Discard AI ideas</button><button type="button" className="ska-button" onClick={() => setConfirmCancel(false)}>Keep editing</button></div></div>}
-
       <div className="planner-generation-intro"><Sparkles size={26} aria-hidden="true" /><div><strong>Fresh ideas for little minds</strong><p>Create varied step-by-step activity guides with preparation, questions, age adaptations and cleanup. Create more ideas to explore different activities, then review and save the ones you love.</p></div></div>
       <p className="planner-copy-summary"><strong>{room.name}</strong> · Ages {room.ageMinMonths}–{room.ageMaxMonths} months<br />Ideas stay on your local AI server. Child names, health records and staff details are not included.</p>
       <p>These are educational drafts. Check safety, suitability and materials before use. AI ideas do not establish regulatory compliance or replace your judgment.</p>

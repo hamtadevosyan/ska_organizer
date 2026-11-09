@@ -232,3 +232,18 @@ AI gets at most one correction attempt within the original time limit. If it
 still repeats an idea, generation fails clearly. If a previous batch remains
 on screen after a failed or stopped request, it is labeled as the previous
 batch. The comparison does not detect every possible paraphrase of an idea.
+
+## Close the ideas window
+
+Choose **X** or **Cancel** to close the window. If every idea in the current
+batch is saved, it closes immediately. If unsaved ideas or edits remain, a
+confirmation appears in view with **Discard AI ideas** and **Keep editing**.
+Keep editing returns to the same place, with the ideas and pictures preserved.
+Discard closes the window; activities already saved stay in your library.
+Escape follows the same rules. During an unfinished save, X is disabled until
+the save completes. Closing a running generation stops that request before
+asking about its unsaved work.
+
+This close-button correction updates the app source only. After applying and
+committing it, use the normal Pi update and refresh Organizer. The existing
+Windows AI worker does not need another update for this correction.

@@ -249,6 +249,77 @@ test('closing modified ideas asks before discarding and never saves them', async
   expect(callbacks.onCancel).toHaveBeenCalledOnce(); expect(saveCalls()).toHaveLength(0);
 });
 
+test.each(['X', 'Cancel', 'Escape'])('all saved ideas close directly using %s without another save or discard prompt', async action => {
+  const callbacks = props(); render(<ActivityAiIdeas {...callbacks} />); await draft();
+  fireEvent.click(screen.getByRole('button', { name: 'Review idea 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save activity' }));
+  await screen.findByText('Saved to library');
+  await waitFor(() => expect(callbacks.onDirtyChange).toHaveBeenLastCalledWith(false));
+  if (action === 'X') fireEvent.click(screen.getByRole('button', { name: 'Close ai activity ideas' }));
+  else if (action === 'Cancel') fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  else fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
+  expect(callbacks.onCancel).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('group', { name: 'Discard AI ideas' })).not.toBeInTheDocument();
+  expect(saveCalls()).toHaveLength(1); expect(callbacks.onSaved).toHaveBeenCalledOnce();
+});
+
+test('closing a partly saved batch prioritizes confirmation over the save notice and Keep editing restores the same state', async () => {
+  vi.mocked(axios.post).mockResolvedValueOnce(response(ideas('Leaf detectives', 'Leaf story circle')));
+  const callbacks = props(); render(<ActivityAiIdeas {...callbacks} />); await draft();
+  fireEvent.click(screen.getByRole('button', { name: 'Review idea 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save activity' }));
+  await screen.findByText('Saved to library');
+  const dialog = screen.getByRole('dialog'), card = screen.getByRole('article', { name: 'AI idea 2' });
+  const close = screen.getByRole('button', { name: 'Close ai activity ideas' });
+  close.focus(); dialog.scrollTop = 900; fireEvent.click(close);
+  const confirmation = screen.getByRole('group', { name: 'Discard AI ideas' });
+  expect(confirmation).toBeVisible(); expect(dialog.scrollTop).toBe(0);
+  expect(within(confirmation).getByRole('button', { name: 'Keep editing' })).toHaveFocus();
+  expect(card).not.toBeVisible(); expect(callbacks.onCancel).not.toHaveBeenCalled();
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Keep editing' }));
+  expect(card).toBeVisible(); expect(dialog.scrollTop).toBe(900); expect(close).toHaveFocus();
+  expect(screen.getByText('Saved to library')).toBeVisible();
+  expect(within(card).getByRole('button', { name: 'Review idea 2' })).toBeEnabled();
+  fireEvent.click(close); fireEvent.click(screen.getByRole('button', { name: 'Discard AI ideas' }));
+  expect(callbacks.onCancel).toHaveBeenCalledOnce(); expect(saveCalls()).toHaveLength(1);
+});
+
+test('an unsaved review with a save error stays intact behind the focused close confirmation', async () => {
+  const callbacks = props(); render(<ActivityAiIdeas {...callbacks} />); await draft();
+  fireEvent.click(screen.getByRole('button', { name: 'Review idea 1' }));
+  const name = screen.getByLabelText('Activity name');
+  fireEvent.change(name, { target: { value: 'Our edited leaf game' } });
+  vi.mocked(axios.post).mockRejectedValueOnce(new Error('Synthetic save error'));
+  fireEvent.click(screen.getByRole('button', { name: 'Save activity' }));
+  await screen.findByText('Could not save this activity. Your details are still here.');
+  const dialog = screen.getByRole('dialog'); dialog.scrollTop = 600;
+  fireEvent.click(screen.getByRole('button', { name: 'Close ai activity ideas' }));
+  const keep = screen.getByRole('button', { name: 'Keep editing' });
+  expect(keep).toHaveFocus(); expect(name).not.toBeVisible();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  fireEvent.click(keep);
+  expect(name).toBeVisible(); expect(name).toHaveValue('Our edited leaf game');
+  expect(dialog.scrollTop).toBe(600); expect(callbacks.onSaved).not.toHaveBeenCalled();
+  expect(callbacks.onCancel).not.toHaveBeenCalled(); expect(saveCalls()).toHaveLength(1);
+});
+
+test('X explains its disabled state while a save is unfinished and works as soon as it completes', async () => {
+  const save = deferred<ReturnType<typeof response>>();
+  const callbacks = props(); render(<ActivityAiIdeas {...callbacks} />); await draft();
+  fireEvent.click(screen.getByRole('button', { name: 'Review idea 1' }));
+  vi.mocked(axios.post).mockReturnValueOnce(save.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Save activity' }));
+  const close = screen.getByRole('button', { name: 'Close ai activity ideas' });
+  expect(close).toBeDisabled(); expect(close).toHaveAttribute('title', 'Please wait for the current action to finish.');
+  fireEvent.click(close); fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
+  expect(callbacks.onCancel).not.toHaveBeenCalled();
+  expect(screen.queryByRole('group', { name: 'Discard AI ideas' })).not.toBeInTheDocument();
+  await act(async () => save.resolve(response({ ...result.drafts[0], id: 'saved-once', version: 1 })));
+  await screen.findByText('Saved to library'); expect(close).toBeEnabled();
+  fireEvent.click(close); expect(callbacks.onCancel).toHaveBeenCalledOnce();
+  expect(saveCalls()).toHaveLength(1); expect(callbacks.onSaved).toHaveBeenCalledOnce();
+});
+
 test('model output and source excerpts render as plain text without external resources', async () => {
   const hostile = '<img src="https://external.invalid/track">';
   vi.mocked(axios.post).mockResolvedValueOnce(response({ ...result, drafts: [{ ...result.drafts[0], description: hostile }],
