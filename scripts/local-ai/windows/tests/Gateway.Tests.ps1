@@ -250,7 +250,8 @@ finally {
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('skao-gateway-v2-' + [guid]::NewGuid().ToString('N'))
 try {
     [void](New-Item -ItemType Directory -Path $temporary)
-    $env:SystemRoot = $temporary
+    # Native SHA-256 providers need the real Windows root; native operations
+    # below are mocked individually instead of changing the process environment.
     $aiGateway = $temporary; $aiConfig = Join-Path $temporary 'Caddyfile'
     $aiExport = Join-Path $temporary 'pi-connection'; [void](New-Item -ItemType Directory -Path $aiExport)
     $aiMetadataPath = Join-Path $temporary 'setup.json'; $aiLauncher = Join-Path $temporary 'Run-Gateway.cmd'
@@ -267,6 +268,7 @@ try {
     $v2 = Get-GatewayConfiguration $settings $token 2
     [IO.File]::WriteAllText($aiConfig, $v1)
     Assert-Test ((Get-GatewayProfile $settings $token) -eq 1 -and (Get-ExistingToken) -ceq $token) 'exact legacy profile and token still adopted'
+    Assert-Test ([string]$env:SystemRoot -ceq [string]$oldRoot) 'profile migration fixture preserves the native system root'
     $preserved = @{}
     foreach ($path in @($aiMetadataPath, $aiLauncher, $aiPublicCa, $aiBinary, (Join-Path $aiExport 'ai.env'), (Join-Path $aiExport 'ca.pem'))) {
         $preserved[$path] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
