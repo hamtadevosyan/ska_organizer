@@ -8,6 +8,7 @@ import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import http.client
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -141,30 +142,72 @@ def read_config(path):
     return value
 
 
-def fixed_ollama_json(path, body=None, timeout=10):
-    connection = http.client.HTTPConnection("127.0.0.1", 11434, timeout=timeout)
+class CheckedSocketReader(io.RawIOBase):
+    """Check for cancellation between reads, including halfway through an HTTP header or body."""
+
+    def __init__(self, sock, check_active):
+        super().__init__()
+        self.source = sock.makefile("rb", buffering=0)
+        self.check_active = check_active
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        while True:
+            self.check_active()
+            if select.select([self.source], [], [], 0.1)[0]:
+                return self.source.readinto(buffer)
+
+    def close(self):
+        self.source.close()
+        super().close()
+
+
+class CheckedResponseSocket:
+    """Supply HTTPResponse's input file while it handles HTTP framing and buffering."""
+
+    def __init__(self, sock, check_active):
+        self.sock = sock
+        self.check_active = check_active
+
+    def makefile(self, mode):
+        if mode != "rb":
+            raise ValueError("Expected a binary HTTP response reader")
+        return io.BufferedReader(CheckedSocketReader(self.sock, self.check_active))
+
+
+def fixed_ollama_json(path, body=None, timeout=10, cancelled=None):
+    data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
+    if data is not None and len(data) > 65536:
+        raise Problem(413, "BODY_TOO_LARGE", "The text request is too large.")
+    connection = http.client.HTTPConnection("127.0.0.1", 11434, timeout=min(10, timeout))
     try:
-        data = None if body is None else json.dumps(body).encode("utf-8")
+        if cancelled is not None:
+            deadline = time.monotonic() + timeout
+
+            def check_active():
+                if cancelled() or time.monotonic() >= deadline:
+                    raise InterruptedError("Text request stopped")
+
+            def make_response(sock, *args, **kwargs):
+                return http.client.HTTPResponse(CheckedResponseSocket(sock, check_active), *args, **kwargs)
+
+            connection.response_class = make_response
+            check_active()
         connection.request("GET" if data is None else "POST", path, body=data,
-                           headers={"Accept": "application/json", **({"Content-Type": "application/json"} if data else {})})
-        response = connection.getresponse()
-        raw = response.read(MAX_JSON + 1)
-        if response.status != 200 or len(raw) > MAX_JSON or not response.getheader("Content-Type", "").lower().startswith("application/json"):
-            raise ValueError("unusable local response")
-        return decode_json(raw)
+                           headers={"Accept": "application/json", **({"Content-Type": "application/json"} if data is not None else {})})
+        with connection.getresponse() as response:
+            raw = response.read(MAX_JSON + 1)
+            if response.status != 200 or len(raw) > MAX_JSON or not response.getheader("Content-Type", "").lower().startswith("application/json"):
+                raise ValueError("unusable local response")
+            return decode_json(raw)
+    except InterruptedError as error:
+        raise Problem(503, "AI_CANCELLED", "The local text AI request was stopped.") from error
     except Exception as error:
         raise Problem(503, "AI_UNAVAILABLE", "The local AI is unavailable. Try again later.") from error
     finally:
         connection.close()
-
-
-def close_connection(connection):
-    try:
-        if connection.sock:
-            connection.sock.shutdown(socket.SHUT_RDWR)
-    except OSError:
-        pass
-    connection.close()
 
 
 class Job:
@@ -194,7 +237,8 @@ class WorkerState:
         self.lock, self.gate = threading.RLock(), threading.Lock()
         self.jobs, self.tombstones = {}, {}
         self.stop_event, self.poisoned = threading.Event(), False
-        self.proxy_connection = None
+        self.proxy_idle = threading.Event()
+        self.proxy_idle.set()
         self._recover()
 
     def _persist(self, job):
@@ -475,61 +519,33 @@ class WorkerState:
         self._admit()
         if not self.gate.acquire(blocking=False):
             raise Problem(429, "AI_BUSY", "Another AI request is running. Try again shortly.")
-        connection, thread, done, result = None, None, threading.Event(), {}
         try:
-            self._admit()
-            if fixed_ollama_json("/api/status").get("cloud", {}).get("disabled") is not True:
+            with self.lock:
+                self._admit()
+                self.proxy_idle.clear()
+
+            def cancelled():
+                return self.stop_event.is_set() or disconnected()
+
+            if fixed_ollama_json("/api/status", cancelled=cancelled).get("cloud", {}).get("disabled") is not True:
                 raise Problem(503, "AI_LOCAL_ONLY_REQUIRED", "The local text AI could not confirm that cloud access is disabled.")
-            data = json.dumps(value, ensure_ascii=False).encode("utf-8")
-            if len(data) > 65536:
-                raise Problem(413, "BODY_TOO_LARGE", "The text request is too large.")
-            if self.stop_event.is_set():
-                raise Problem(503, "AI_UNAVAILABLE", "The local AI worker is unavailable.")
-            connection = http.client.HTTPConnection("127.0.0.1", 11434, timeout=timeout)
-            self.proxy_connection = connection
-            def perform():
-                try:
-                    if self.stop_event.is_set():
-                        raise ValueError("worker stopped")
-                    connection.request("POST", "/api/generate", body=data, headers={"Content-Type": "application/json", "Accept": "application/json"})
-                    response = connection.getresponse()
-                    raw = response.read(MAX_JSON + 1)
-                    if response.status != 200 or len(raw) > MAX_JSON or not response.getheader("Content-Type", "").lower().startswith("application/json"):
-                        raise ValueError("invalid local AI response")
-                    result["value"] = decode_json(raw)
-                except Exception:
-                    result["error"] = True
-                finally:
-                    done.set()
-            thread = threading.Thread(target=perform, daemon=True)
-            thread.start()
-            deadline = time.monotonic() + timeout
-            while not done.wait(0.1):
-                if self.stop_event.is_set() or disconnected() or time.monotonic() >= deadline:
-                    close_connection(connection)
-                    if not done.wait(2):
-                        self.poisoned = True
-                    raise Problem(503, "AI_CANCELLED", "The local text AI request was stopped.")
-            if result.get("error"):
-                raise Problem(503, "AI_UNAVAILABLE", "The local text AI is unavailable. Try again later.")
-            if len(json.dumps(result["value"], ensure_ascii=False).encode("utf-8")) > MAX_JSON:
+            result = fixed_ollama_json("/api/generate", body=value, timeout=timeout, cancelled=cancelled)
+            if len(json.dumps(result, ensure_ascii=False).encode("utf-8")) > MAX_JSON:
                 raise Problem(503, "AI_UNAVAILABLE", "The local text AI returned too much data.")
-            return result["value"]
+            return result
         finally:
-            if connection:
-                close_connection(connection)
-            self.proxy_connection = None
-            if not self.poisoned:
-                self.gate.release()
+            with self.lock:
+                if not self.poisoned:
+                    self.gate.release()
+                self.proxy_idle.set()
 
     def shutdown(self):
-        self.stop_event.set()
         with self.lock:
+            self.stop_event.set()
             jobs = list(self.jobs.values())
             for job in jobs:
                 job.cancel.set()
-        if self.proxy_connection:
-            close_connection(self.proxy_connection)
+        self.proxy_idle.wait()
         for job in jobs:
             if job.thread:
                 # A launch-option probe can take up to 45 seconds; cancellation

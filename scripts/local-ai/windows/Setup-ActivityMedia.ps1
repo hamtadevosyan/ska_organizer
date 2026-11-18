@@ -418,10 +418,16 @@ function Wait-SkaoActivityMediaReady {
 }
 
 function Get-SkaoActivityMediaPreviousSources {
-    # Exact prior release; never trust hashes or filenames supplied by setup.json.
-    return [pscustomobject]@{ id = '57c29e314eb4c299b0a5f5867a1fb71ef214725a98a2a62e2f08aebf3a4739c7'; files = @(
+    # Exact prior releases. Take all filenames and hashes from this list.
+    [pscustomobject]@{ id = '57c29e314eb4c299b0a5f5867a1fb71ef214725a98a2a62e2f08aebf3a4739c7'; files = @(
         [pscustomobject][ordered]@{ name = 'activity_image_worker.py'; bytes = [long]32657; sha256 = 'c92c3421ffffddcbdc41d49da11f160513ded2a4dffc67b77c3d65e935be00ba' },
         [pscustomobject][ordered]@{ name = 'activity_image_engine.py'; bytes = [long]17196; sha256 = '34ebd32eae1956e993165c02ae68196761bba51f5ac25ff72e96ecbd06af77f0' },
+        [pscustomobject][ordered]@{ name = 'run-activity-images.py'; bytes = [long]49658; sha256 = '077391046f9933f58625946a06049947984a97b9d58ab139e2d07031f057960e' },
+        [pscustomobject][ordered]@{ name = 'activity_image_layouts.py'; bytes = [long]6381; sha256 = 'cfe6efeb70845a43e6934517f614467a4bf7cb86b9fe87414d1ca22c45256890' }
+    ) }
+    [pscustomobject]@{ id = '8bacbea44398e956dd8c71c6650b9ef8f007fcb23e45e440d2f3a52e9c55251b'; files = @(
+        [pscustomobject][ordered]@{ name = 'activity_image_worker.py'; bytes = [long]34846; sha256 = '97821eb0624e32dcf1e4c9a2641c59c11ce72703f6787028e596b252a1600ae0' },
+        [pscustomobject][ordered]@{ name = 'activity_image_engine.py'; bytes = [long]19281; sha256 = '02d91948947872f47a50d39ae6f9bf715a29c05bf9fb812ef037272cb58c0f38' },
         [pscustomobject][ordered]@{ name = 'run-activity-images.py'; bytes = [long]49658; sha256 = '077391046f9933f58625946a06049947984a97b9d58ab139e2d07031f057960e' },
         [pscustomobject][ordered]@{ name = 'activity_image_layouts.py'; bytes = [long]6381; sha256 = 'cfe6efeb70845a43e6934517f614467a4bf7cb86b9fe87414d1ca22c45256890' }
     ) }

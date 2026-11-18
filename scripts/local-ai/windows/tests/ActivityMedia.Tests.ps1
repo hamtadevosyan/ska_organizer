@@ -219,7 +219,25 @@ Assert-MediaTrue $true 'literal Any package filter remains accepted'
     Assert-MediaThrows { Invoke-SkaoActivityMediaSetup } 'AI_MEDIA_CONFLICT:*' 'new package identity requires an explicit reviewed migration'
     Assert-MediaTrue ((Get-MediaTree $script:Context.Root) -ceq $foreign) 'package drift preserves the installed worker'
 
-    # Explicit updates recognize only the pinned previous source and close the
+    # Resolve both released standalone installers using their original package IDs.
+    $priorContext = [pscustomobject]@{ Root = (Join-Path $fixture 'prior-receipts'); Sid = $script:Context.Sid }
+    [void][IO.Directory]::CreateDirectory($priorContext.Root)
+    $priorReceipt = Join-Path $priorContext.Root 'setup.json'
+    foreach ($releaseId in @(
+        '57c29e314eb4c299b0a5f5867a1fb71ef214725a98a2a62e2f08aebf3a4739c7',
+        '8bacbea44398e956dd8c71c6650b9ef8f007fcb23e45e440d2f3a52e9c55251b'
+    )) {
+        [IO.File]::WriteAllText($priorReceipt, (@{ packageId = $releaseId } | ConvertTo-Json))
+        $pinned = Resolve-SkaoActivityMediaInstalledSources -Context $priorContext -Sources $sources
+        Assert-MediaTrue ($pinned.id -ceq $releaseId -and $pinned.files.Count -eq 4) 'installed package resolves to all four trusted companions'
+        $identity = ($pinned.files | ForEach-Object { $_.name + ':' + $_.sha256 + ':' + $_.bytes }) -join "`n"
+        $hash = [Security.Cryptography.SHA256]::Create()
+        try { $digest = [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($identity))).Replace('-', '').ToLowerInvariant() }
+        finally { $hash.Dispose() }
+        Assert-MediaTrue ($digest -ceq $releaseId) 'historical filenames, lengths and hashes match the released identity'
+    }
+
+    # Explicit updates recognize only pinned previous sources and close the
     # already verified gateway ingress while the owned worker is switched.
     $script:PreviousSources = $sources
     function Get-SkaoActivityMediaPreviousSources { return $script:PreviousSources }

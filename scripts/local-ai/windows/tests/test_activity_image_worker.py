@@ -8,7 +8,6 @@ import io
 import json
 import os
 from pathlib import Path
-import socket
 import struct
 import subprocess
 import sys
@@ -87,6 +86,7 @@ class LocalOllama:
         self.loaded = []
         self.text_started, self.text_release = threading.Event(), threading.Event()
         self.block_text = False
+        self.text_handler = None
         self.response = {"response": "Synthetic local answer", "done": True}
         owner = self
         class Handler(BaseHTTPRequestHandler):
@@ -111,7 +111,10 @@ class LocalOllama:
                 owner.text_started.set()
                 if owner.block_text:
                     owner.text_release.wait(4)
-                self.reply(owner.response)
+                if owner.text_handler is None:
+                    self.reply(owner.response)
+                else:
+                    owner.text_handler(self)
 
             def log_message(self, *_):
                 pass
@@ -355,15 +358,93 @@ class WorkerTests(unittest.TestCase):
         recovered._prune()
         self.assertFalse(expired.directory.exists())
 
+    @contextmanager
+    def stalled_upstream(self, prefix):
+        # Keep the upstream response incomplete until the assertions finish.
+        started, upstream_closed = threading.Event(), threading.Event()
+        def stall(handler):
+            handler.wfile.write(prefix)
+            started.set()
+            handler.connection.settimeout(12)
+            try:
+                if handler.connection.recv(1) == b"":
+                    upstream_closed.set()
+            except (ConnectionResetError, ConnectionAbortedError):
+                upstream_closed.set()
+            except TimeoutError:
+                return
+            self.ollama.text_release.wait(12)
+
+        with patch.object(self.ollama, "text_handler", stall):
+            try:
+                yield started, upstream_closed
+            finally:
+                self.ollama.text_release.set()
+
+    @contextmanager
+    def stalled_generation(self, prefix):
+        with self.stalled_upstream(prefix) as (started, upstream_closed):
+            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+            try:
+                body = json.dumps({"model": "qwen3:4b", "stream": False, "prompt": "Synthetic"})
+                connection.request("POST", "/api/generate", body, {
+                    "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json",
+                })
+                self.assertTrue(started.wait(3), "The upstream request did not reach the selected response stage.")
+                yield connection, upstream_closed
+            finally:
+                connection.close()
+
+    def assert_disconnect_recovers(self, prefix):
+        with self.stalled_generation(prefix) as (connection, upstream_closed):
+            connection.close()
+            self.assertTrue(upstream_closed.wait(4), "The worker did not disconnect from the stalled upstream.")
+            wait_until(lambda: not self.state.status()["busy"])
+        status, answer = self.request("POST", "/api/generate", {"model": "qwen3:4b", "stream": False})
+        self.assertEqual((status, answer), (200, self.ollama.response))
+
     def test_client_disconnect_stops_text_proxy_and_releases_gate(self):
-        self.ollama.block_text = True
-        body = json.dumps({"model": "qwen3:4b", "stream": False, "prompt": "Synthetic"}).encode()
-        connection = socket.create_connection(("127.0.0.1", self.server.server_port), timeout=3)
-        request = (f"POST /api/generate HTTP/1.1\r\nHost: 127.0.0.1:{self.server.server_port}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n").encode() + body
-        connection.sendall(request)
-        self.assertTrue(self.ollama.text_started.wait(2))
-        connection.close()
-        wait_until(lambda: not self.state.gate.locked())
+        self.assert_disconnect_recovers(b"")
+
+    def test_client_disconnect_during_partial_body_with_connection_close(self):
+        self.assert_disconnect_recovers(
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: 128\r\n\r\n{"
+        )
+
+    def test_worker_shutdown_interrupts_partial_response_headers(self):
+        with self.stalled_generation(b"HTTP/1.1 200 OK\r\nContent-Type: application/") as (connection, upstream_closed):
+            self.state.shutdown()
+            self.assertTrue(upstream_closed.wait(4), "The worker left the upstream connected during shutdown.")
+            with connection.getresponse() as response:
+                self.assertEqual(response.status, 503)
+            self.assertFalse(self.state.status()["busy"])
+
+    def test_stalled_generation_deadline_closes_upstream_and_allows_next_request(self):
+        payload = {"model": "qwen3:4b", "stream": False}
+        with self.stalled_upstream(b"") as (started, upstream_closed):
+            with self.assertRaises(WORKER.Problem) as error:
+                self.state.proxy_generate(payload, timeout=1)
+            self.assertEqual(error.exception.code, "AI_CANCELLED")
+            self.assertTrue(started.is_set())
+            self.assertTrue(upstream_closed.wait(4))
+            self.assertFalse(self.state.status()["busy"])
+        self.assertEqual(self.request("POST", "/api/generate", payload), (200, self.ollama.response))
+
+    def test_chunked_text_response_is_forwarded_as_complete_json(self):
+        def send_chunks(handler):
+            handler.protocol_version = "HTTP/1.1"
+            handler.send_response(200)
+            handler.send_header("Transfer-Encoding", "chunked")
+            handler.send_header("Content-Type", "application/json")
+            handler.send_header("Connection", "close")
+            handler.end_headers()
+            for piece in (b'{"response":"Two ', b'parts","done":true}'):
+                handler.wfile.write(f"{len(piece):x}\r\n".encode() + piece + b"\r\n")
+            handler.wfile.write(b"0\r\n\r\n")
+
+        with patch.object(self.ollama, "text_handler", send_chunks):
+            status, answer = self.request("POST", "/api/generate", {"model": "qwen3:4b", "stream": False})
+        self.assertEqual((status, answer), (200, {"response": "Two parts", "done": True}))
 
 
 class ConfigurationTests(unittest.TestCase):
