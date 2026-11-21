@@ -43,7 +43,7 @@ test('current backups require staff files and warning settings while older backu
     ? { ...table, count: 0 } : table)).registrationForms).toBe(false);
 });
 
-const fileTables = ['ChildDocumentRevisions', 'RegistrationFormRevisions', 'StaffDocumentRevisions'];
+const fileTables = ['ChildDocumentRevisions', 'RegistrationFormRevisions', 'StaffDocumentRevisions', 'ActivityMedia'];
 function fixtureClient(version, extraTables = []) {
   let table; let finished;
   return { query: jest.fn(async (sql, values) => {
@@ -61,7 +61,7 @@ function fixtureClient(version, extraTables = []) {
 }
 
 test('all file fingerprints read one revision at a time and hash the complete binary content', async () => {
-  const client = fixtureClient(4);
+  const client = fixtureClient(4, ['ActivityMedia']);
   const result = await fingerprint(client);
   const commands = client.query.mock.calls.map(([sql]) => sql);
   for (const name of fileTables) {

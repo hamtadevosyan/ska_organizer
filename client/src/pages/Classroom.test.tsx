@@ -76,6 +76,18 @@ test('activities default to Monday in the facility date, and show only saved ent
   expect(screen.getByText('Read together.')).toBeVisible();
   expect(screen.queryByRole('button', { name: /generate|save|copy|materials/i })).not.toBeInTheDocument();
 });
+test.each(['teacher', 'viewer'] as const)('%s can open saved activity video examples without editing the class plan', async role => {
+  const tutorial = { title: 'Paper city demonstration', publisher: 'Synthetic teaching source', url: 'https://example.com/videos/paper-city' };
+  vi.mocked(api.getClassroomActivities).mockResolvedValue({ ...activities, entries: [{ ...activities.entries[0],
+    activity: { ...activities.entries[0].activity, description: 'Prepare the paper.\n\n1. Fold it.\n2. Build together.', tutorialLinks: [tutorial] },
+  }] });
+  render(view('activities', { ...account, role }));
+  const link = await screen.findByRole('link', { name: 'Paper city demonstration (opens in a new tab)' });
+  expect(link).toHaveAttribute('href', tutorial.url);
+  expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  expect(screen.getByText(/Prepare the paper/)).toHaveClass('whitespace-pre-wrap');
+  expect(screen.queryByRole('button', { name: /remove|save|generate/i })).not.toBeInTheDocument();
+});
 test('meal view clearly identifies the saved academy menu', async () => {
   render(view('meals'));
   expect(await screen.findByText('Vegetable rice')).toBeVisible();

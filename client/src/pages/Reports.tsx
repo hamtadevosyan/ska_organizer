@@ -4,6 +4,7 @@ import { authError } from '../auth/transport';
 import { dateRange, downloadReport, readReport, reportConfig, saveReportDownload } from '../api/reports';
 import type { ReportConfig, ReportData, ReportFilters, ReportKind } from '../api/reports';
 import { ReportTable } from '../components/reports/ReportTable';
+import { LoadingScene } from '../components/LoadingScene';
 
 const button = 'rounded-lg border bg-white px-4 py-2 font-medium disabled:opacity-50';
 const selectedButton = 'rounded-lg border border-emerald-700 bg-emerald-700 px-4 py-2 font-semibold text-white';
@@ -89,7 +90,7 @@ export default function Reports() {
     }`}</style>
     <header className="ska-page-head print:hidden"><div><h1><span className="ska-heading-icon"><FileText size={24} aria-hidden="true" /></span>Reports</h1>
       <p>Choose dates to review attendance or purchases.</p></div></header>
-    {!config && !configError && <p role="status">Loading report settings…</p>}
+    {!config && !configError && <LoadingScene compact label="Loading report settings…" />}
     {configError && <div role="alert" className="rounded-lg bg-red-50 p-4 text-red-800">{configError} <button className={button} onClick={() => setConfigRetry((n) => n + 1)}>Retry report settings</button></div>}
     {config && <section aria-label="Report filters" className="space-y-4 rounded-2xl border bg-white p-5 print:hidden">
       <div className="flex flex-wrap gap-2" role="group" aria-label="Report type">
@@ -114,7 +115,8 @@ export default function Reports() {
       <button className={button} disabled={!visible || downloading} onClick={() => window.print()}>Print report</button>
       <button className={selectedButton + ' disabled:opacity-50'} disabled={!visible || downloading} onClick={() => void download()}>{downloading ? 'Downloading…' : 'Download CSV'}</button>
     </div>}
-    {loading && <p role="status">Loading report…</p>}
+    {loading && <LoadingScene label="Loading report…" detail="Gathering records for the selected dates." />}
+    {downloading && <div className="print:hidden"><LoadingScene label="Preparing CSV download…" detail="Preparing the report for the selected dates." /></div>}
     {datesError && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{datesError}</p>}
     {error && <div role="alert" className="rounded-lg bg-red-50 p-4 text-red-800">{error} <button className={button} onClick={() => setRetry((n) => n + 1)}>Retry report</button></div>}
     {exportError && <p role="alert" className="text-red-800 print:hidden">{exportError}</p>}

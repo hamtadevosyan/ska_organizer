@@ -1,3 +1,4 @@
+import { LoadingScene } from '../components/LoadingScene';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { CalendarDays, CheckCircle2, Copy, Library, Plus, Printer, Sparkles, Undo2 } from 'lucide-react';
 import { useAuth } from '../auth/context';
@@ -12,6 +13,7 @@ import { ActivityReuse } from '../components/activities/ActivityReuse';
 import { ActivityMove } from '../components/activities/ActivityMove';
 import { ActivityGenerate } from '../components/activities/ActivityGenerate';
 import { ActivityAiIdeas } from '../components/activities/ActivityAiIdeas';
+import { useActivityPicturePrint } from '../components/activities/useActivityPicturePrint';
 import { dayLabel, entryProblem, suitable, weekDates, materialUnitLabel } from '../api/activities';
 import type { Activity, Entry } from '../api/activities';
 import { useUnsavedChanges } from '../components/UnsavedChangesContext';
@@ -22,6 +24,7 @@ export default function Activities() {
   const editable = account?.role === 'admin' || account?.role === 'editor';
   const rooms = useRooms();
   const planner = useActivityPlanner();
+  const picturePrint = useActivityPicturePrint(planner.entries);
   const [catalogForm, setCatalogForm] = useState<{ activity: Activity | null } | null>(null);
   const [composer, setComposer] = useState<{ entry?: Entry } | null>(null);
   const [reuse, setReuse] = useState<'day' | 'week' | null>(null);
@@ -36,6 +39,17 @@ export default function Activities() {
   const [dayIndex, setDayIndex] = useState(0);
   const [view, setView] = useState<'day' | 'week'>('day');
   const [search, setSearch] = useState('');
+  // Generated titles only, in memory, scoped to this account's current access.
+  // Closing the dialog or changing the week must not reset variation history.
+  const aiScope = JSON.stringify([account?.id, account?.role, account?.roomId ?? null, account?.staffMemberId ?? null, account?.workAccess ?? null]);
+  const aiHistory = useRef<{ scope: string; rooms: Map<string, string[]> }>({ scope: aiScope, rooms: new Map() });
+  if (aiHistory.current.scope !== aiScope) aiHistory.current = { scope: aiScope, rooms: new Map() };
+  function rememberAiNames(roomId: string, names: string[]) {
+    if (aiHistory.current.scope !== aiScope) return;
+    aiHistory.current.rooms.delete(roomId);
+    aiHistory.current.rooms.set(roomId, names.slice(-20));
+    while (aiHistory.current.rooms.size > 32) aiHistory.current.rooms.delete(aiHistory.current.rooms.keys().next().value!);
+  }
   const addRef = useRef<HTMLButtonElement>(null);
   const composerTrigger = useRef<HTMLButtonElement | null>(null);
   const restoreFocus = useRef(false);
@@ -79,16 +93,18 @@ export default function Activities() {
         <label className="ska-field">Room<RoomSelect rooms={rooms.rooms} value={planner.roomId} onChange={planner.chooseRoom} allowArchived disabled={rooms.loading || planner.saving || focusedForm} /></label>
         <label className="ska-field">Week starting Monday<input type="date" value={planner.weekStart} min="1970-01-05" step="7" disabled={planner.saving || focusedForm} onChange={event => planner.chooseWeek(event.target.value)} /></label>
         <div className="planner-save-actions">{editable && <button disabled={!ready || locked || focusedForm || incomplete || (!planner.dirty && !!planner.plan?.savedAt)} onClick={() => void planner.save()} className="ska-button is-primary"><CheckCircle2 size={18} aria-hidden="true" />{planner.saving ? 'Saving…' : 'Save week'}</button>}
-          <button disabled={!ready || planner.saving || focusedForm || !planner.entries.length || incomplete} onClick={() => window.print()} className="ska-button"><Printer size={18} aria-hidden="true" />Print</button></div>
+          <button disabled={!ready || planner.saving || focusedForm || !planner.entries.length || incomplete || picturePrint.busy} onClick={() => void picturePrint.print()} className="ska-button"><Printer size={18} aria-hidden="true" />{picturePrint.busy ? 'Preparing pictures…' : 'Print'}</button></div>
       </section>
+      {picturePrint.busy && <div><LoadingScene compact label="Preparing step pictures for printing…" /><button type="button" className="ska-button" onClick={picturePrint.cancel}>Cancel print preparation</button></div>}
+      {picturePrint.error && <p role="alert" className="ska-alert is-error">{picturePrint.error}</p>}
       {(rooms.error || planner.catalogError || planner.error) && <div className="planner-errors">
         {rooms.error && <p role="alert" className="ska-alert is-error">{rooms.error} <button className="ska-button" onClick={() => void rooms.refresh()}>Retry rooms</button></p>}
         {planner.catalogError && <p role="alert" className="ska-alert is-error">{planner.catalogError} <button className="ska-button" disabled={focusedForm} onClick={planner.refreshCatalog}>Refresh activities</button></p>}
         {planner.error && <p role="alert" className="ska-alert is-error">{planner.error} <button className="ska-button" disabled={planner.saving || focusedForm} onClick={() => { planner.reloadWeek(); void rooms.refresh(); }}>Reload week</button></p>}
       </div>}
       {planner.notice && <p role="status" className="planner-notice">{planner.notice}</p>}
-      {rooms.loading ? <p role="status" className="ska-loading">Loading rooms…</p> : !planner.roomId && <p className="planner-welcome">{rooms.rooms.length ? 'Choose a room to begin.' : 'No rooms yet. Add a room in Rooms & Classes first.'}</p>}
-      {planner.busy && <p role="status" className="ska-loading">Loading week…</p>}
+      {rooms.loading ? <LoadingScene compact label="Loading rooms…" /> : !planner.roomId && <p className="planner-welcome">{rooms.rooms.length ? 'Choose a room to begin.' : 'No rooms yet. Add a room in Rooms & Classes first.'}</p>}
+      {planner.busy && <LoadingScene compact label="Loading week…" />}
       {ready && <>
         <div className="planner-status-row"><p className={'planner-save-state ' + (planner.dirty ? 'is-draft' : 'is-saved')}><CheckCircle2 size={16} aria-hidden="true" />{planner.dirty ? 'Unsaved changes' : planner.plan?.savedAt ? 'Saved week' : 'No schedule saved yet'}</p>
           <button className="ska-link" disabled={planner.saving || focusedForm} onClick={() => { planner.reloadWeek(); void rooms.refresh(); }}>Reload week</button></div>
@@ -146,9 +162,10 @@ export default function Activities() {
         onCancel={() => setMoving(null)} onApply={entries => { planner.applyDraftChange(entries, 'Undo move'); setMoving(null); }} />}
       {ready && room && generating && <ActivityGenerate plan={planner.plan!} entries={planner.entries} room={room} catalog={planner.catalog} onDirtyChange={setGenerationDirty}
         onCancel={closeGeneration} onApply={entries => { planner.applyDraftChange(entries, 'Undo generation'); closeGeneration(); }} />}
-      {ready && room && aiIdeas && <ActivityAiIdeas room={room} onDirtyChange={setAiDirty} onBusyChange={setActivitySaving}
+      {ready && room && aiIdeas && <ActivityAiIdeas key={aiScope + room.id} room={room} onDirtyChange={setAiDirty} onBusyChange={setActivitySaving}
+        rememberedNames={aiHistory.current.rooms.get(room.id)} onRememberNames={names => rememberAiNames(room.id, names)}
         onSaved={planner.activitySaved} onCancel={() => { setAiIdeas(false); setAiDirty(false); }} />}
     </div>
-    {ready && <ActivityPrint roomName={room?.name || 'Room'} weekStart={planner.weekStart} dates={allDates} entries={planner.entries} draft={planner.dirty || !planner.plan?.savedAt} />}
+    {ready && <ActivityPrint roomName={room?.name || 'Room'} weekStart={planner.weekStart} dates={allDates} entries={planner.entries} draft={planner.dirty || !planner.plan?.savedAt} pictureSources={picturePrint.sources} />}
   </div>;
 }

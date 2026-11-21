@@ -99,7 +99,14 @@ for (const width of [320, 1280]) test(`Class viewer sees only assigned children 
     const nav = page.getByRole('navigation', { name: width === 320 ? 'Mobile navigation' : 'Desktop navigation' });
     expect(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual([
       '/classroom', '/classroom/children', '/classroom/activities', '/classroom/meals',
+      ...(width === 1280 ? ['/assistant'] : []),
     ]);
+    if (width === 320) {
+      await nav.getByRole('button', { name: 'More', exact: true }).click();
+      const more = page.getByRole('dialog', { name: 'More', exact: true });
+      await expect(more.getByRole('link', { name: 'AI assistant', exact: true })).toHaveAttribute('href', '/assistant');
+      await more.getByRole('button', { name: 'Close more', exact: true }).click();
+    }
     await nav.getByRole('link', { name: 'Children', exact: true }).click();
     const main = page.locator('main');
     await expect(main).toContainText(saved.ownChild.firstName);

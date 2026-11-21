@@ -194,7 +194,7 @@ test('stopping or canceling a request aborts it and ignores late responses', asy
   expect(screen.queryByRole('region', { name: 'Generated week preview' })).not.toBeInTheDocument();
   expect(callbacks.onApply).not.toHaveBeenCalled();
   const next = deferred<ReturnType<typeof response<ActivityGeneration>>>(); vi.mocked(axios.post).mockReturnValueOnce(next.promise);
-  generate(); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  generate(); fireEvent.click(screen.getByRole('button', { name: 'Close generate week' }));
   expect(vi.mocked(axios.post).mock.calls[1][2]?.signal?.aborted).toBe(true); view.unmount();
   await act(async () => next.resolve(response(result(request(1).slots))));
   expect(callbacks.onCancel).toHaveBeenCalledOnce(); expect(callbacks.onApply).not.toHaveBeenCalled();
@@ -222,4 +222,23 @@ test('invalid preview times block applying and validation conflicts preserve the
   expect(await screen.findByRole('alert')).toHaveTextContent('This week changed');
   expect(apply()).toBeDisabled(); expect(screen.getByLabelText('Suggested activity 1')).toHaveValue(art.id);
   expect(callbacks.onApply).not.toHaveBeenCalled();
+});
+
+
+test('the pending view takes focus while retaining all settings for stop and retry', async () => {
+  const pending = deferred<ReturnType<typeof response<ActivityGeneration>>>();
+  vi.mocked(axios.post).mockReturnValueOnce(pending.promise);
+  render(<ActivityGenerate {...props()} />);
+  const start = screen.getByLabelText('Window 1 start');
+  fireEvent.change(start, { target: { value: '09:10' } });
+  const create = screen.getByRole('button', { name: 'Preview generated week' });
+  create.focus(); generate();
+  const panel = document.querySelector('.app-modal-pending');
+  expect(panel).toHaveFocus();
+  expect(start).not.toBeVisible();
+  expect(screen.getByRole('status')).toHaveTextContent('Finding activities and checking this week…');
+  fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }));
+  expect(screen.getByRole('alert')).toHaveFocus();
+  expect(start).toBeVisible(); expect(start).toHaveValue('09:10');
+  expect(screen.getByRole('button', { name: 'Preview generated week' })).toBeEnabled();
 });

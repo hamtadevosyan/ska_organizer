@@ -19,6 +19,7 @@ from pathlib import Path
 import pwd
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -193,7 +194,7 @@ def read_source_environment(repo, node):
             **activity_ai_environment(values, repo=repo)}
 
 
-AI_ENV_KEYS = ('SKAO_AI_MODEL', 'SKAO_AI_URL', 'SKAO_AI_TIMEOUT_MS', 'SKAO_AI_SOURCES_FILE')
+AI_ENV_KEYS = ('SKAO_AI_MODEL', 'SKAO_AI_URL', 'SKAO_AI_TIMEOUT_MS', 'SKAO_AI_SOURCES_FILE', 'SKAO_AI_LAN', 'SKAO_AI_TOKEN', 'SKAO_AI_CA_FILE')
 
 
 def activity_ai_environment(values, *, repo=None):
@@ -206,20 +207,33 @@ def activity_ai_environment(values, *, repo=None):
     if model and (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}', model) or
                   any(part in model.lower() for part in ('cloud', 'remote')) or '://' in model or re.search(r':.*:', model)):
         raise Failure('SKAO_AI_MODEL must name an installed local model, not a cloud model or URL.')
+    if result.get('SKAO_AI_LAN', '') not in ('', '0', '1'):
+        raise Failure('SKAO_AI_LAN must be 0 or 1.')
+    if result.get('SKAO_AI_TOKEN') and not re.fullmatch(r'[A-Za-z0-9_-]{32,256}', result['SKAO_AI_TOKEN']):
+        raise Failure('Use a dedicated AI token of 32 to 256 letters, numbers, underscores or hyphens.')
     if result.get('SKAO_AI_URL'):
         try:
-            url = urlsplit(result['SKAO_AI_URL'])
-            if (url.scheme != 'http' or url.hostname not in ('127.0.0.1', '::1') or
-                    url.username is not None or url.password is not None or url.query or url.fragment or
-                    url.path not in ('', '/') or not 1 <= (url.port or 80) <= 65535):
+            raw = result['SKAO_AI_URL']
+            url = urlsplit(raw)
+            parts = url.hostname.split('.')
+            private = len(parts) == 4 and all(p.isdigit() and str(int(p)) == p and 0 <= int(p) <= 255 for p in parts)
+            private = private and (int(parts[0]) == 10 or (int(parts[0]) == 172 and 16 <= int(parts[1]) <= 31) or parts[:2] == ['192', '168'])
+            loopback = bool(re.fullmatch(r'http://(127\.0\.0\.1|\[::1\])(:[0-9]+)?/?', raw))
+            lan = (private and result.get('SKAO_AI_LAN') == '1' and
+                   bool(re.fullmatch(r'https://[0-9.]+(:[0-9]+)?/?', raw)) and
+                   bool(re.fullmatch(r'[A-Za-z0-9_-]{32,256}', result.get('SKAO_AI_TOKEN', ''))))
+            if (not (loopback or lan) or url.username is not None or url.password is not None or
+                    url.query or url.fragment or url.path not in ('', '/') or not 1 <= (url.port or 80) <= 65535):
                 raise ValueError()
-        except ValueError:
-            raise Failure('SKAO_AI_URL must use a literal loopback HTTP address, with no credentials or extra path.') from None
+        except (ValueError, AttributeError):
+            raise Failure('Use loopback HTTP, or explicitly enable a private literal HTTPS AI address with a dedicated token. No credentials or extra URL paths are allowed.') from None
     if result.get('SKAO_AI_TIMEOUT_MS') and (not re.fullmatch(r'[0-9]+', result['SKAO_AI_TIMEOUT_MS']) or
                                              not 1000 <= int(result['SKAO_AI_TIMEOUT_MS']) <= 300000):
         raise Failure('SKAO_AI_TIMEOUT_MS must be a whole number from 1000 to 300000.')
-    if result.get('SKAO_AI_SOURCES_FILE'):
-        path = Path(result['SKAO_AI_SOURCES_FILE'])
+    for file_key in ('SKAO_AI_SOURCES_FILE', 'SKAO_AI_CA_FILE'):
+        if not result.get(file_key):
+            continue
+        path = Path(result[file_key])
         # Native services deliberately cannot read home folders. References live
         # outside the checkout/releases and are maintained separately by admin.
         forbidden = [ROOT, Path('/home'), Path('/root'), Path('/run/user')]
@@ -241,7 +255,8 @@ def read_activity_ai_environment(repo, node):
 
 
 def merge_activity_ai_environment(environment, changes):
-    return {**environment, **activity_ai_environment(changes)}
+    merged = {**environment, **{key: value for key, value in changes.items() if key in AI_ENV_KEYS}}
+    return {**environment, **activity_ai_environment(merged)}
 
 
 def server_environment(cfg):
@@ -308,6 +323,11 @@ def public_build():
           'Build files were temporary; the deployment host builds its own native dependencies.')
 
 
+def prepare_local_ai(repo):
+    # Offline preparation only: updates remain available while the AI host sleeps.
+    run(['bash', str(repo / 'scripts/local-ai/pi/setup.sh'), '--prepare', '--if-configured'])
+
+
 def public_deploy(args):
     if os.geteuid() == 0:
         raise Failure('Run SKAO.sh as your normal user, without sudo. It requests sudo only for host management.')
@@ -320,6 +340,7 @@ def public_deploy(args):
         run(['git', 'pull', '--ff-only'], cwd=repo)
         # Re-execute so changes to this helper are used after pulling.
         os.execv(sys.executable, [sys.executable, str(Path(__file__)), 'update', '--local'])
+    prepare_local_ai(repo)
     metadata = {'node': node, 'operation': args.command}
     if args.command == 'setup':
         metadata.update(lan_address(args.ip))
@@ -338,12 +359,50 @@ def public_deploy(args):
         root_call('_install', stage)
 
 
+def public_ai_only_state():
+    """Accept only the public CA installed before the first native setup.
+
+    This does not mark a native deployment as owned. Unrelated existing state
+    still requires inspection instead of being claimed by this installer.
+    """
+    try:
+        parent = CONF.parent
+        ai = parent / 'ai'
+        certificate = ai / 'ca.pem'
+        for directory in (parent, ai):
+            metadata = directory.lstat()
+            if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o755:
+                return False
+        if {p.name for p in parent.iterdir()} != {'ai'} or {p.name for p in ai.iterdir()} != {'ca.pem'}:
+            return False
+        descriptor = os.open(certificate, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o644 or not 1 <= metadata.st_size <= 65536:
+                return False
+            raw = os.read(descriptor, 65537)
+            if len(raw) != metadata.st_size:
+                return False
+            data = raw.decode('ascii')
+        finally:
+            os.close(descriptor)
+        if not re.fullmatch(r'\s*-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----\s*', data):
+            return False
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cadata=data)
+        return ssl.PEM_cert_to_DER_cert(data.strip()) in context.get_ca_certs(binary_form=True)
+    except (OSError, ValueError, UnicodeError, ssl.SSLError):
+        return False
+
+
 def check_managed():
     if CONF.exists() and (not (CONF / 'owner').is_file() or (CONF / 'owner').read_text() != MARKER):
         raise Failure('/etc/skao/native is not owned by this installer; refusing to overwrite it.')
     if not CONF.exists():
         for path in [ROOT, HELPER.parent, CONF.parent, *UNITS.glob('skao*')]:
             if path.exists():
+                if path == CONF.parent and public_ai_only_state():
+                    continue
                 raise Failure('An unmanaged SKAO installation exists; inspect it before installing.')
 
 

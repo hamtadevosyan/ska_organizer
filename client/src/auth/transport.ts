@@ -17,6 +17,8 @@ export function replaceSession(token = '') {
   csrf = token;
   epoch++;
 }
+// Capture once for operations that also wait between HTTP requests.
+export function currentSessionSignal() { return pending.signal; }
 export function onSessionExpired(callback: () => void) {
   expired.add(callback);
   return () => { expired.delete(callback); };

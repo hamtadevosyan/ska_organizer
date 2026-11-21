@@ -50,7 +50,8 @@ async function fingerprint(client, manifestFormat = 4) {
     // key instead of sorting full file contents, and hold just one row at a time.
     const fileRows = (name === 'ChildDocumentRevisions' && manifestFormat >= 2) ||
       (name === 'RegistrationFormRevisions' && manifestFormat >= 3) ||
-      (name === 'StaffDocumentRevisions' && manifestFormat >= 4);
+      (name === 'StaffDocumentRevisions' && manifestFormat >= 4) ||
+      (name === 'ActivityMedia' && manifestFormat >= 4);
     const order = fileRows ? 't."id" COLLATE "C"' : 'to_jsonb(t)::text COLLATE "C"';
     await client.query(`DECLARE pilot_rows NO SCROLL CURSOR FOR SELECT to_jsonb(t)::text AS value FROM public.${quote(name)} t ORDER BY ${order}`);
     const digest = format.rowDigest();

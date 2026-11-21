@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import AppModal from '../AppModal';
+import { LoadingScene } from '../LoadingScene';
 import { authError } from '../../auth/transport';
 import { inventoryRequestId } from '../../api/inventory';
 import { activityPlanUrl, clockTime, dayLabel, entryPayload, entryProblem, orderedEntries, suitable, timeMinutes, timeRange, weekDates, materialUnitLabel } from '../../api/activities';
@@ -9,6 +10,8 @@ import type { Activity, ActivityGeneration, ActivityPlan, Entry, GenerationSlot 
 import type { Room } from '../../api/rooms';
 import { countOverlaps } from './planReuse';
 import { PlanActionPreview } from './PlanActionPreview';
+import { ActivityTutorialLinks } from './ActivityTutorialLinks';
+import { ActivityIllustrations } from './ActivityIllustrations';
 
 type Props = { plan: ActivityPlan; entries: Entry[]; room: Room; catalog: Activity[]; onApply: (entries: Entry[]) => void;
   onCancel: () => void; onDirtyChange: (dirty: boolean) => void };
@@ -117,8 +120,11 @@ export function ActivityGenerate({ plan, entries, room, catalog, onApply, onCanc
     }) });
   }
   function selectSlot(id: string, checked: boolean) { setSelectedSlots(values => checked ? [...values, id] : values.filter(value => value !== id)); setDirty(true); }
-  return <AppModal id="planner-generate" title="Generate week" initialFocusId="generation-first-day" onDismiss={cancel}>
+  return <AppModal id="planner-generate" title="Generate week" initialFocusId="generation-first-day" onDismiss={cancel}
+    pendingContent={pending ? <><LoadingScene label="Finding activities and checking this week…" detail="Making room for learning, play and a little discovery." /><button type="button" className="ska-button" onClick={stopRequest}>Stop generation</button></> : null}
+    pendingKey="week" attentionKey={error}>
     <div className="planner-generation planner-reuse">
+      {error && <p role="alert" data-modal-error className="ska-alert is-error">{error}</p>}
       <div className="planner-generation-intro"><Sparkles size={26} aria-hidden="true" /><div><strong>A week of possibilities</strong><p>Choose the days and times. We suggest suitable saved activities, then you make them your own.</p></div></div>
       <p className="planner-copy-summary"><strong>{room.name}</strong> · Week of {plan.weekStart}<br />Uses your local activity library. Nothing is saved until you use the draft and choose Save week.</p>
       {!candidate && <>
@@ -138,10 +144,8 @@ export function ActivityGenerate({ plan, entries, room, catalog, onApply, onCanc
       <label className="planner-reuse-check"><input type="checkbox" disabled={pending} checked={allowRepeats} onChange={event => { setAllowRepeats(event.target.checked); setDirty(true); }} />Allow repeated activities when needed</label>
       <p className="planner-generation-small">Repeated activities are off by default. Missing materials are flagged for your review; stock is never used or reserved.</p>
       <p className="planner-generation-small">Materials are checked for this room only. Other rooms may also need the same reusable supplies.</p>
-      {error && <p role="alert" className="ska-alert is-error">{error}</p>}
-      {pending ? <div role="status" className="planner-generation-pending"><p>Finding activities and checking this week…</p><button type="button" className="ska-button" onClick={stopRequest}>Stop generation</button></div>
-        : !candidate && <><button type="button" className="ska-button is-primary" disabled={!!settingsProblem || !choices.length || (replaceIds.length > 0 && !replaceConsent) || context !== initialContext.current} onClick={() => void generate(false)}><Sparkles size={18} aria-hidden="true" />Preview generated week</button>{settingsProblem && <p role="alert">{settingsProblem}</p>}</>}
-      {candidate && <section className="planner-generation-review" aria-label="Generated week preview"><h3>Make it your week</h3>
+      {!candidate && <><button id="generation-preview" type="button" className="ska-button is-primary" disabled={!!settingsProblem || !choices.length || (replaceIds.length > 0 && !replaceConsent) || context !== initialContext.current} onClick={() => void generate(false)}><Sparkles size={18} aria-hidden="true" />Preview generated week</button>{settingsProblem && <p role="alert">{settingsProblem}</p>}</>}
+      {candidate && <section className="planner-generation-review" aria-label="Generated week preview" data-modal-result tabIndex={-1}><h3>Make it your week</h3>
         <p>{previewEntries.length} suggested activities. {candidate.replacedIds.length ? candidate.replacedIds.length + ' selected existing activities will be replaced.' : 'Existing activities stay in your week.'} Edit a suggestion or select just the slots you want to try again.</p>
         {candidate.replacedIds.length > 0 && <div className="planner-generation-unfilled"><strong>Selected activities to replace</strong><ul>{original.filter(entry => candidate.replacedIds.includes(entry.id)).map(entry => <li key={entry.id}>{entry.activity?.name} · {dayLabel(entry.date)} · {timeRange(entry)}</li>)}</ul></div>}
         {candidate.entries.some(entry => !candidate.generatedIds.includes(entry.id)) && <details><summary>Existing activities kept in this preview</summary><ul>{orderedEntries(candidate.entries.filter(entry => !candidate.generatedIds.includes(entry.id))).map(entry => <li key={entry.id}>{entry.activity?.name} · {dayLabel(entry.date)} · {timeRange(entry)}</li>)}</ul></details>}
@@ -154,7 +158,7 @@ export function ActivityGenerate({ plan, entries, room, catalog, onApply, onCanc
             <div className="planner-generation-times"><label className="ska-field">Suggested start {index + 1}<input type="time" value={entry.startTime || ''} aria-invalid={!!entryProblem(entry)} onChange={event => editEntry(entry.id, 'startTime', event.target.value)} /></label>
               <label className="ska-field">Suggested end {index + 1}<input type="time" value={endValue(entry.endTime || '')} aria-invalid={!!entryProblem(entry)} onChange={event => editEntry(entry.id, 'endTime', event.target.value)} /></label></div>
             {entryProblem(entry) && <p role="alert">{entryProblem(entry)}</p>}
-            <details><summary>Instructions and materials</summary><p>{entry.activity?.description || 'No instructions listed.'}</p><ul>{entry.activity?.materials.map(material => <li key={material.itemId}>{material.name || 'Inventory item'} · {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</li>)}</ul></details>
+            <details><summary>Instructions and materials</summary><p className="whitespace-pre-wrap break-words">{entry.activity?.description || 'No instructions listed.'}</p><ul>{entry.activity?.materials.map(material => <li key={material.itemId}>{material.name || 'Inventory item'} · {material.quantity} {materialUnitLabel(material.unit)}{material.reusable ? ' · reusable' : ''}</li>)}</ul><ActivityTutorialLinks links={entry.activity?.tutorialLinks} /><ActivityIllustrations images={entry.activity?.illustrations} /></details>
             {slotId && <label className="planner-reuse-check"><input type="checkbox" aria-label={'Try another activity for suggestion ' + (index + 1)} checked={selectedSlots.includes(slotId)} onChange={event => selectSlot(slotId, event.target.checked)} />Try another activity for this slot</label>}</fieldset>;
         })}
         {candidate.unfilledSlots.length > 0 && <div className="planner-generation-unfilled"><h3>Slots that need your choice</h3>{candidate.unfilledSlots.map(slot => <label key={slot.id} className="planner-reuse-check"><input type="checkbox" disabled={pending} checked={selectedSlots.includes(slot.id)} aria-label={'Retry ' + dayLabel(slot.date) + ' at ' + slot.startTime} onChange={event => selectSlot(slot.id, event.target.checked)} /><span><strong>{dayLabel(slot.date)} · {slot.startTime}–{slot.endTime}</strong><br />{slot.reason}</span></label>)}<p>You can use the filled suggestions now and add more activities later.</p></div>}

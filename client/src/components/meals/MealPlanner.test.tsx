@@ -461,9 +461,12 @@ describe('menu generation recovery', () => {
     input('Children', '7'); input('Children for Tuesday', '3'); await flush();
     fireEvent.click(generateButton()); await act(async () => {});
     expect(generateButton()).toBeDisabled(); expect(screen.getByLabelText('Week starting Monday')).toBeDisabled();
+    expect(screen.getByText('Generating a menu. Your previous menu stays unchanged until generation finishes.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause animation' })).toBeEnabled();
     const request = vi.mocked(axios.get).mock.calls.find(([path]) => path.endsWith('/api/menu/generate'))!;
     expect(request[1]?.signal?.aborted).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel generation' }));
+    expect(screen.queryByText('Generating a menu. Your previous menu stays unchanged until generation finishes.')).not.toBeInTheDocument();
     expect(request[1]?.signal?.aborted).toBe(true);
     input('Children', '9'); input('Week starting Monday', secondWeek); await flush();
     await act(async () => slow.resolve(response({ week: generatedWeek() })));

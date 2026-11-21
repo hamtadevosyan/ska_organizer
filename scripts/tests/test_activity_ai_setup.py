@@ -50,6 +50,21 @@ class ActivityAiEnvironmentTests(unittest.TestCase):
                 self.assertNotIn('password', str(caught.exception))
                 self.assertNotIn('SECRET', str(caught.exception))
 
+    def test_private_ai_host_requires_https_opt_in_and_token(self):
+        values = {'SKAO_AI_URL': 'https://192.168.1.50:8443', 'SKAO_AI_LAN': '1',
+                  'SKAO_AI_TOKEN': 'x' * 48, 'SKAO_AI_CA_FILE': '/etc/skao/ai/ca.pem'}
+        self.assertEqual(u.activity_ai_environment(values), values)
+        for changes in ({'SKAO_AI_LAN': '0'}, {'SKAO_AI_TOKEN': ''}, {'SKAO_AI_URL': 'http://192.168.1.50'},
+                        {'SKAO_AI_URL': 'https://8.8.8.8'}, {'SKAO_AI_URL': 'https://ai.example.test'},
+                        {'SKAO_AI_CA_FILE': '/home/user/private.pem'}):
+            with self.subTest(changes=changes), self.assertRaises(u.Failure):
+                u.activity_ai_environment({**values, **changes})
+        old = {'DATABASE_URL': 'private', **values}
+        self.assertEqual(u.merge_activity_ai_environment(old, {'SKAO_AI_MODEL': 'local:v2'}),
+                         {**old, 'SKAO_AI_MODEL': 'local:v2'})
+        self.assertEqual(u.merge_activity_ai_environment(old, {'SKAO_AI_URL': 'https://192.168.1.60'}),
+                         {**old, 'SKAO_AI_URL': 'https://192.168.1.60'})
+
     def test_native_source_path_stays_outside_home_checkout_and_release(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory) / 'checkout'; repo.mkdir()
@@ -84,7 +99,7 @@ class ActivityAiDiagnosticTests(unittest.TestCase):
             for name in ('SKAO.sh', 'scripts/activity-ai-check.sh', 'server/scripts/check-activity-ai.js'):
                 shutil.copyfile(REPO / name, repo / name)
             (repo / 'server/config/environment.js').write_text('// synthetic environment only\n')
-            (repo / 'server/services/localActivityAi.js').write_text(body)
+            (repo / 'server/services/localAiStatus.js').write_text(body)
             before = sorted(str(path.relative_to(repo)) for path in repo.rglob('*'))
             result = subprocess.run(['bash', str(repo / 'SKAO.sh'), 'ai-check', *args],
                                     text=True, capture_output=True, timeout=10, cwd='/')

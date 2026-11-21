@@ -80,3 +80,12 @@
   .app-main { overflow: visible; padding: 0; }
   .app-topbar, .app-sidebar, .mobile-bottom-nav, .app-skip-link, .app-modal { display: none; }
 }
+
+/* An admitted task gets its own viewport, so no long form can hide its status. */
+.app-modal-content{min-width:0}
+.app-modal-content [tabindex="-1"],.app-modal-content [role="alert"]{scroll-margin-top:5rem}
+.app-modal-content[hidden]{display:none!important}
+.app-modal-pending{display:flex;flex-direction:column;justify-content:center;gap:.75rem;min-width:0;min-height:min(24rem,calc(100dvh - 10rem));outline:none}
+.app-modal-pending>.ska-loading-scene{margin:0;align-self:stretch}
+.app-modal-pending>.ska-button{align-self:stretch;justify-content:center}
+@media(max-height:650px){.app-modal-pending{min-height:0}.app-modal-pending .ska-loading-scene__visual{flex-basis:78px}.app-modal-pending .ska-loading-scene{padding:.75rem;gap:.5rem}.app-modal-pending .ska-loading-scene__detail{font-size:.82rem}}
